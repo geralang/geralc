@@ -8,6 +8,7 @@
 
 - [x] Lexer
 - [ ] Parser
+- [ ] Pretty errors
 - [ ] Type checker
 - [ ] Interpreter
 - [ ] Emitter

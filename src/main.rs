@@ -3,21 +3,25 @@
 
 mod compiler;
 
-use compiler::lexer::Lexer;
+use compiler::{
+    strings::StringMap,
+    lexer::Lexer,
+    parser::Parser
+};
 
 fn main() {
+    let mut strings = StringMap::new();
     let mut lexer = Lexer::new(r#"
-proc main {
-    println "You could also say Gera is \"based\"."
-}
 
+[2, 3, 5, 7, 11, 13]#[0]
 
-    "#, "test.gera");
-    loop {
-        match lexer.next_token() {
-            None => break,
-            Some(token) => println!("{:?}(\"{}\")", token.token_type, token.content)
-        }
-    }
+"#, "test.gera", &mut strings);
+    let mut parser = if let Some(parser) = Parser::new(&mut strings, &mut lexer) { parser } else { return };
+    let tree = match parser.parse_block(&mut strings, &mut lexer) {
+        Ok(tree) => tree,
+        Err(_) => panic!("Something went wrong while parsing"),
+    };
+
+    for node in tree { println!("{}", node.to_string(&strings)); }
 }
 

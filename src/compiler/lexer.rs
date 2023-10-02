@@ -1,15 +1,17 @@
 
 use crate::compiler::tokens::{TokenType, Token};
-pub struct Lexer<'l> {
-    file: &'l str,
+use crate::compiler::strings::{StringMap, StringIdx};
+
+pub struct Lexer {
+    file: StringIdx,
     source_chars: Vec<char>,
     position: usize
 }
 
-impl<'l> Lexer<'l> {
-    pub fn new(source: &str, file: &'l str) -> Lexer<'l> {
+impl Lexer {
+    pub fn new(source: &str, file: &str, string_map: &mut StringMap) -> Lexer {
         Lexer {
-            file,
+            file: string_map.insert(file),
             source_chars: source.chars().collect(),
             position: 0
         }
@@ -21,15 +23,15 @@ impl<'l> Lexer<'l> {
     fn peek(&self) -> char { self.source_chars[self.position + 1] }
     fn next(&mut self) { self.position += 1; }
 
-    fn make_token(&self, content: &str, token_type: TokenType) -> Token<'l> {
+    fn make_token(&self, content: &str, token_type: TokenType, string_map: &mut StringMap) -> Token {
         Token {
-            content: String::from(content),
+            content: string_map.insert(content),
             file: self.file,
             token_type
         }
     }
 
-    pub fn next_token(&mut self) -> Option<Token<'l>> {
+    pub fn next_token(&mut self, string_map: &mut StringMap) -> Option<Token> {
         loop {
             if !self.has() { return None; }
             match self.current() {
@@ -37,25 +39,25 @@ impl<'l> Lexer<'l> {
                     let c = self.current();
                     self.next();
                     return Some(Token {
-                        content: String::from(c),
+                        content: string_map.insert(c.encode_utf8(&mut [0; 4])),
                         file: self.file,
                         token_type: TokenType::Newline
                     })
                 },
-                '|' => { self.next(); return Some(self.make_token("|", TokenType::Pipe)) },
-                '=' => { self.next(); return Some(self.make_token("=", TokenType::Equals)) },
-                '#' => { self.next(); return Some(self.make_token("#", TokenType::Hashtag)) },
-                ',' => { self.next(); return Some(self.make_token(",", TokenType::Comma)) },
-                '(' => { self.next(); return Some(self.make_token("(", TokenType::ParenOpen)) },
-                ')' => { self.next(); return Some(self.make_token(")", TokenType::ParenClose)) },
-                '[' => { self.next(); return Some(self.make_token("[", TokenType::BracketOpen)) },
-                ']' => { self.next(); return Some(self.make_token("]", TokenType::BracketClose)) },
-                '{' => { self.next(); return Some(self.make_token("{", TokenType::BraceOpen)) },
-                '}' => { self.next(); return Some(self.make_token("}", TokenType::BraceClose)) },
+                '|' => { self.next(); return Some(self.make_token("|", TokenType::Pipe, string_map)) },
+                '=' => { self.next(); return Some(self.make_token("=", TokenType::Equals, string_map)) },
+                '#' => { self.next(); return Some(self.make_token("#", TokenType::Hashtag, string_map)) },
+                ',' => { self.next(); return Some(self.make_token(",", TokenType::Comma, string_map)) },
+                '(' => { self.next(); return Some(self.make_token("(", TokenType::ParenOpen, string_map)) },
+                ')' => { self.next(); return Some(self.make_token(")", TokenType::ParenClose, string_map)) },
+                '[' => { self.next(); return Some(self.make_token("[", TokenType::BracketOpen, string_map)) },
+                ']' => { self.next(); return Some(self.make_token("]", TokenType::BracketClose, string_map)) },
+                '{' => { self.next(); return Some(self.make_token("{", TokenType::BraceOpen, string_map)) },
+                '}' => { self.next(); return Some(self.make_token("}", TokenType::BraceClose, string_map)) },
                 '-' => if self.has_next() && self.peek() == '>' {
                     self.next();
                     self.next();
-                    return Some(self.make_token("->", TokenType::Arrow))
+                    return Some(self.make_token("->", TokenType::Arrow, string_map))
                 },
                 '/' => if self.has_next() && self.peek() == '/' {
                     while self.has() {
@@ -88,7 +90,7 @@ impl<'l> Lexer<'l> {
                     }
                     self.next();
                     return Some(Token {
-                        content,
+                        content: string_map.insert(&content),
                         file: self.file,
                         token_type: TokenType::String
                     });
@@ -126,14 +128,14 @@ impl<'l> Lexer<'l> {
                 self.next();
             }
             match &identifier[..] {
-                "proc" => return Some(self.make_token("proc", TokenType::KeywordProcedure)),
-                "func" => return Some(self.make_token("func", TokenType::KeywordFunction)),
-                "case" => return Some(self.make_token("case", TokenType::KeywordCase)),
-                "var" => return Some(self.make_token("var", TokenType::KeywordVariable)),
-                "mut" => return Some(self.make_token("mut", TokenType::KeywordMutable)),
-                "return" => return Some(self.make_token("return", TokenType::KeywordReturn)),
+                "proc" => return Some(self.make_token("proc", TokenType::KeywordProcedure, string_map)),
+                "func" => return Some(self.make_token("func", TokenType::KeywordFunction, string_map)),
+                "case" => return Some(self.make_token("case", TokenType::KeywordCase, string_map)),
+                "var" => return Some(self.make_token("var", TokenType::KeywordVariable, string_map)),
+                "mut" => return Some(self.make_token("mut", TokenType::KeywordMutable, string_map)),
+                "return" => return Some(self.make_token("return", TokenType::KeywordReturn, string_map)),
                 _ => return Some(Token {
-                    content: identifier,
+                    content: string_map.insert(&identifier),
                     file: self.file,
                     token_type: if is_integer { TokenType::Integer }
                         else if is_fraction { TokenType::Fraction }

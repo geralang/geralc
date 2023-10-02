@@ -1,5 +1,7 @@
 
-#[derive(Debug)]
+use crate::compiler::strings::StringIdx;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
     Newline,
     Identifier,
@@ -26,8 +28,8 @@ pub enum TokenType {
 }
 
 #[derive(Debug)]
-pub struct Token<'t> {
-    pub content: String,
-    pub file: &'t str,
+pub struct Token {
+    pub content: StringIdx,
+    pub file: StringIdx,
     pub token_type: TokenType
 }
