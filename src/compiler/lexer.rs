@@ -44,8 +44,8 @@ impl Lexer {
                         token_type: TokenType::Newline
                     })
                 },
-                '|' => { self.next(); return Some(self.make_token("|", TokenType::Pipe, string_map)) },
-                '=' => { self.next(); return Some(self.make_token("=", TokenType::Equals, string_map)) },
+                '|' => if !self.has_next() || self.peek().is_whitespace() { self.next(); return Some(self.make_token("|", TokenType::Pipe, string_map)) },
+                '=' => if !self.has_next() || self.peek().is_whitespace() { self.next(); return Some(self.make_token("=", TokenType::Equals, string_map)) },
                 '#' => { self.next(); return Some(self.make_token("#", TokenType::Hashtag, string_map)) },
                 ',' => { self.next(); return Some(self.make_token(",", TokenType::Comma, string_map)) },
                 '(' => { self.next(); return Some(self.make_token("(", TokenType::ParenOpen, string_map)) },
@@ -111,7 +111,6 @@ impl Lexer {
             let mut is_fraction = true;
             while self.has() && !self.current().is_whitespace() {
                 match self.current() {
-                    '|' | '=' |
                     '#' | ',' |
                     '(' | ')' |
                     '[' | ']' |

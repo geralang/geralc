@@ -13,7 +13,9 @@ fn main() {
     let mut strings = StringMap::new();
     let mut lexer = Lexer::new(r#"
 
-[2, 3, 5, 7, 11, 13]#[0]
+proc add x y {
+    return x | + y
+}
 
 "#, "test.gera", &mut strings);
     let mut parser = if let Some(parser) = Parser::new(&mut strings, &mut lexer) { parser } else { return };

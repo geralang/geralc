@@ -7,8 +7,10 @@
 *This is a rough outline of the progress made. For further details, feel free to have a look at [the Trello board](https://trello.com/b/BaAKwZsO/gera).*
 
 - [x] Lexer
-- [ ] Parser
+- [x] Parser
 - [ ] Pretty errors
-- [ ] Type checker
+- [ ] Grammar checking
+- [ ] Modules
+- [ ] Type checking
 - [ ] Interpreter
 - [ ] Emitter

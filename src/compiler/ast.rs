@@ -8,7 +8,7 @@ pub enum AstNode {
     CaseBranches { value: Box<AstNode>, branches: Vec<(AstNode, Vec<AstNode>)> },
     CaseConditon { condition: Box<AstNode>, body: Vec<AstNode> },
     Assignment { variable: Box<AstNode>, value: Box<AstNode> },
-    Return { value: Box<AstNode> },
+    Return { value: Option<Box<AstNode>> },
     Call { called: Box<AstNode>, arguments: Vec<AstNode> },
     Object { values: Vec<(StringIdx, AstNode)> },
     Array { values: Vec<AstNode> },
@@ -17,7 +17,8 @@ pub enum AstNode {
     VariableAccess { name: StringIdx },
     IntegerLiteral { value: u64 },
     FractionLiteral { value: f64 },
-    StringLiteral { value: StringIdx }
+    StringLiteral { value: StringIdx },
+    UnitLiteral
 }
 
 fn indent(input: String, amount: usize) -> String {
@@ -64,7 +65,7 @@ impl AstNode {
                 ),
             AstNode::Return { value } =>
                 format!("Return\n  value = \n    {}",
-                    indent(value.to_string(strings), 4)
+                    indent(value.as_ref().map(|v| v.to_string(strings)).unwrap_or(String::from("<none>")), 4)
                 ),
             AstNode::Call { called, arguments } =>
                 format!("Call\n  called = \n    {}\n  arguments = \n    {}",
@@ -96,6 +97,7 @@ impl AstNode {
             AstNode::IntegerLiteral { value } => format!("IntegerLiteral\n  value = {}", value),
             AstNode::FractionLiteral { value } => format!("FractionLiteral\n  value = {}", value),
             AstNode::StringLiteral { value } => format!("StringLiteral\n  value = '{}'", strings.get(*value)),
+            AstNode::UnitLiteral => format!("Unit")
         }
     }
 }
