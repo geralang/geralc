@@ -1,18 +1,23 @@
 
 use crate::compiler::tokens::{TokenType, Token};
-use crate::compiler::strings::{StringMap, StringIdx};
+use crate::util::{
+    strings::{StringMap, StringIdx},
+    source::SourceRange
+};
 
 pub struct Lexer {
-    file: StringIdx,
+    file_name: StringIdx,
+    file_content: StringIdx,
     source_chars: Vec<char>,
     position: usize
 }
 
 impl Lexer {
-    pub fn new(source: &str, file: &str, string_map: &mut StringMap) -> Lexer {
+    pub fn new(file_name: StringIdx, file_content: StringIdx, string_map: &mut StringMap) -> Lexer {
         Lexer {
-            file: string_map.insert(file),
-            source_chars: source.chars().collect(),
+            file_name,
+            file_content,
+            source_chars: string_map.get(file_content).chars().collect(),
             position: 0
         }
     }
@@ -25,9 +30,9 @@ impl Lexer {
 
     fn make_token(&self, content: &str, token_type: TokenType, string_map: &mut StringMap) -> Token {
         Token {
-            content: string_map.insert(content),
-            file: self.file,
-            token_type
+            token_type,
+            token_content: string_map.insert(content),
+            source: SourceRange::new(self.file_name, self.file_content, self.position - content.len(), self.position)
         }
     }
 
@@ -37,11 +42,16 @@ impl Lexer {
             match self.current() {
                 '\n' | '\r' => {
                     let c = self.current();
+                    let p = self.position;
                     self.next();
+                    while self.has() && self.current().is_whitespace() && self.current() != '\n' && self.current() != '\r' {
+                        self.next();
+                    }
+                    if self.has() && self.current() == '|' { continue }
                     return Some(Token {
-                        content: string_map.insert(c.encode_utf8(&mut [0; 4])),
-                        file: self.file,
-                        token_type: TokenType::Newline
+                        token_type: TokenType::Newline,
+                        token_content: string_map.insert(c.encode_utf8(&mut [0; 4])),
+                        source: SourceRange::new(self.file_name, self.file_content, p, p + 1)
                     })
                 },
                 '|' => if !self.has_next() || self.peek().is_whitespace() { self.next(); return Some(self.make_token("|", TokenType::Pipe, string_map)) },
@@ -69,6 +79,7 @@ impl Lexer {
                     continue;     
                 },
                 '"' => {
+                    let start = self.position;
                     self.next();
                     let mut content = String::new();
                     let mut escaped = false;
@@ -90,9 +101,9 @@ impl Lexer {
                     }
                     self.next();
                     return Some(Token {
-                        content: string_map.insert(&content),
-                        file: self.file,
-                        token_type: TokenType::String
+                        token_type: TokenType::String,
+                        token_content: string_map.insert(&content),
+                        source: SourceRange::new(self.file_name, self.file_content, start, self.position)
                     });
                 }
                 _ => {}
@@ -107,6 +118,7 @@ impl Lexer {
                 continue;
             }
             let mut identifier = String::new();
+            let start = self.position;
             let mut is_integer = true;
             let mut is_fraction = true;
             while self.has() && !self.current().is_whitespace() {
@@ -134,11 +146,11 @@ impl Lexer {
                 "mut" => return Some(self.make_token("mut", TokenType::KeywordMutable, string_map)),
                 "return" => return Some(self.make_token("return", TokenType::KeywordReturn, string_map)),
                 _ => return Some(Token {
-                    content: string_map.insert(&identifier),
-                    file: self.file,
                     token_type: if is_integer { TokenType::Integer }
                         else if is_fraction { TokenType::Fraction }
-                        else { TokenType::Identifier }
+                        else { TokenType::Identifier },
+                    token_content: string_map.insert(&identifier),
+                    source: SourceRange::new(self.file_name, self.file_content, start, self.position)
                 }),
             }
         }

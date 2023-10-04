@@ -1,7 +1,7 @@
 
+use crate::util::strings::StringMap;
 use crate::compiler::{
     lexer::Lexer, 
-    strings::StringMap,
     ast::AstNode,
     tokens::{TokenType, Token}
 };
@@ -58,6 +58,8 @@ impl Parser {
     }
 
     fn parse_expression(&mut self, strings: &mut StringMap, lexer: &mut Lexer, end_at_types: &mut Vec<&[TokenType]>) -> Result<Option<AstNode>, ()> {
+        todo!("Fix the parser");
+        /*
         self.reached_end = false;
         let mut previous: Option<AstNode> = None;
         loop {
@@ -130,6 +132,7 @@ impl Parser {
                                 Ok(Some(node)) => node,
                                 Err(error) => return Err(error)
                             };
+                            if self.current.token_type != TokenType::ParenClose { panic!("Parentheses must always be closed, but these ones were not!"); }
                         }
                         TokenType::BraceOpen => {
                             let mut values = Vec::new();
@@ -150,6 +153,7 @@ impl Parser {
                                 };
                                 values.push((member, value));
                             }
+                            if self.current.token_type != TokenType::BraceClose { panic!("Braces must always be closed, but these ones were not!"); }
                             new = AstNode::Object { values };
                         }
                         TokenType::BracketOpen => {
@@ -164,6 +168,7 @@ impl Parser {
                                     Err(error) => return Err(error)
                                 });
                             }
+                            if self.current.token_type != TokenType::BracketClose { panic!("Brackets must always be closed, but these ones were not!"); }
                             new = AstNode::Array { values };
                         }
                         TokenType::KeywordProcedure => {
@@ -322,5 +327,6 @@ impl Parser {
                 }
             }
         }
+        */
     }
 }

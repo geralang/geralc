@@ -1,23 +1,28 @@
 
 #![allow(dead_code)]
 
+mod util;
 mod compiler;
 
-use compiler::{
-    strings::StringMap,
-    lexer::Lexer,
-    parser::Parser
-};
+use util::strings::StringMap;
+use compiler::{lexer::Lexer, parser::Parser};
+
+use util::error::{Error, ErrorType, ErrorSection};
+use util::source::SourceRange;
 
 fn main() {
     let mut strings = StringMap::new();
-    let mut lexer = Lexer::new(r#"
+    let mut lexer = Lexer::new(strings.insert("test.gera"), strings.insert(r#"
 
-proc add x y {
-    return x | + y
-}
+    proc test x {
+        return x
+            | * 2
+            | math::sqrt
+            | / 2
+    }
+    
+    "#), &mut strings);
 
-"#, "test.gera", &mut strings);
     let mut parser = if let Some(parser) = Parser::new(&mut strings, &mut lexer) { parser } else { return };
     let tree = match parser.parse_block(&mut strings, &mut lexer) {
         Ok(tree) => tree,

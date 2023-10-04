@@ -8,7 +8,7 @@
 
 - [x] Lexer
 - [x] Parser
-- [ ] Pretty errors
+- [x] Pretty errors
 - [ ] Grammar checking
 - [ ] Modules
 - [ ] Type checking
