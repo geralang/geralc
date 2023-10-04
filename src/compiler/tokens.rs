@@ -1,5 +1,5 @@
 
-use crate::compiler::strings::StringIdx;
+use crate::util::{strings::StringIdx, source::SourceRange};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
@@ -29,7 +29,7 @@ pub enum TokenType {
 
 #[derive(Debug)]
 pub struct Token {
-    pub content: StringIdx,
-    pub file: StringIdx,
-    pub token_type: TokenType
+    pub token_type: TokenType,
+    pub token_content: StringIdx,
+    pub source: SourceRange
 }

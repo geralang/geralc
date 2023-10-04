@@ -1,4 +1,5 @@
-use crate::compiler::strings::{StringIdx, StringMap};
+
+use crate::util::strings::{StringIdx, StringMap};
 
 #[derive(Debug, Clone)]
 pub enum AstNode {
