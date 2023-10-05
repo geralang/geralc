@@ -1,22 +1,24 @@
-use crate::util::{source::SourceRange, strings::StringMap};
+use crate::util::{source::SourceRange, strings::{StringMap, StringIdx}};
 
 
 pub enum ErrorType {
 
     // parser errors
 
+    MissingLeftExpr(&'static str),
     UnexpectedEnd(&'static str),
-    UnexpectedToken(&'static str, String),
-    UnclosedGroupingSymbol(&'static str, &'static str)
+    UnexpectedToken(&'static str, StringIdx),
+    TotallyUnexpectedToken(StringIdx)
 
 }
 
 impl ErrorType {
-    pub fn display(&self) -> String {
+    pub fn display(&self, strings: &StringMap) -> String {
         match self {
+            ErrorType::MissingLeftExpr(expected) => format!("Expected {} on the left, but got nothing instead", expected),
             ErrorType::UnexpectedEnd(expected) => format!("Expected {}, but reached the end of the expression", expected),
-            ErrorType::UnexpectedToken(expected, got) => format!("Expected {}, but got '{}' instead", expected, got),
-            ErrorType::UnclosedGroupingSymbol(opened, closed) => format!("'{}' was not closed with the corresponding '{}'", opened, closed)
+            ErrorType::UnexpectedToken(expected, got) => format!("Expected {}, but got '{}' instead", expected, strings.get(*got)),
+            ErrorType::TotallyUnexpectedToken(got) => format!("'{}' is totally unexpected here", strings.get(*got))
         }
     }
 }
@@ -32,7 +34,7 @@ pub enum ErrorSection {
 impl ErrorSection {
     pub fn display(&self, strings: &StringMap) -> String {
         match self {
-            ErrorSection::Error(error_type) => format!("[error] {}", error_type.display()),
+            ErrorSection::Error(error_type) => format!("[error] {}", error_type.display(strings)),
             ErrorSection::Info(message) => format!("[info] {}", message),
             ErrorSection::Help(message) => format!("[help] {}", message),
             ErrorSection::Code(source) => {

@@ -1,5 +1,8 @@
 
-use crate::util::strings::StringMap;
+use crate::util::{
+    strings::StringMap,
+    error::{Error, ErrorSection, ErrorType}
+};
 use crate::compiler::{
     lexer::Lexer, 
     ast::AstNode,
@@ -9,7 +12,8 @@ use crate::compiler::{
 
 pub struct Parser {
     current: Token,
-    reached_end: bool
+    reached_end: bool,
+    current_result: Result<Option<AstNode>, Error>
 }
 
 impl Parser {
@@ -17,7 +21,8 @@ impl Parser {
         lexer.next_token(strings)
             .map(|current| Parser {
                 current,
-                reached_end: false
+                reached_end: false,
+                current_result: Ok(None)
             })
     }
 
@@ -31,7 +36,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_block(&mut self, strings: &mut StringMap, lexer: &mut Lexer) -> Result<Vec<AstNode>, ()> {
+    pub fn parse_block(&mut self, strings: &mut StringMap, lexer: &mut Lexer) -> Result<Vec<AstNode>, Error> {
         let mut nodes = Vec::new();
         while self.current.token_type == TokenType::Newline && self.next(strings, lexer) {}
         loop {
@@ -50,53 +55,88 @@ impl Parser {
         Ok(nodes)
     }
 
-    fn parse_expression_until(&mut self, strings: &mut StringMap, lexer: &mut Lexer, end_at_types: &mut Vec<&[TokenType]>, until: &'static [TokenType]) -> Result<Option<AstNode>, ()> {
+    fn parse_expression_until(&mut self, strings: &mut StringMap, lexer: &mut Lexer, end_at_types: &mut Vec<&[TokenType]>, until: &'static [TokenType]) -> Result<Option<AstNode>, Error> {
         end_at_types.push(until);
         let result = self.parse_expression(strings, lexer, end_at_types);
         end_at_types.pop();
         return result;
     }
 
-    fn parse_expression(&mut self, strings: &mut StringMap, lexer: &mut Lexer, end_at_types: &mut Vec<&[TokenType]>) -> Result<Option<AstNode>, ()> {
-        todo!("Fix the parser");
-        /*
+    fn parse_expression(&mut self, strings: &mut StringMap, lexer: &mut Lexer, end_at_types: &mut Vec<&[TokenType]>) -> Result<Option<AstNode>, Error> {
         self.reached_end = false;
         let mut previous: Option<AstNode> = None;
+        macro_rules! enforce_previous {
+            ($expected: expr) => {
+                if let Some(previous) = previous { previous }
+                else { return Err(Error::new([
+                    ErrorSection::Error(ErrorType::MissingLeftExpr($expected)),
+                    ErrorSection::Code(self.current.source.clone())
+                ].into())); }
+            };
+        }
+        macro_rules! enforce_next {
+            ($expected: expr) => {
+                if !self.next(strings, lexer) { return Err(Error::new([
+                    ErrorSection::Error(ErrorType::UnexpectedEnd($expected)),
+                    ErrorSection::Code(self.current.source.clone())
+                ].into())); }
+            };
+        }
+        macro_rules! enforce_current_type {
+            ($types: expr, $expected: expr) => {
+                if !$types.contains(&self.current.token_type) { return Err(Error::new([
+                    ErrorSection::Error(ErrorType::UnexpectedToken($expected, self.current.token_content)),
+                    ErrorSection::Code(self.current.source.clone())
+                ].into())); }
+            };
+        }
+        macro_rules! enforce_expression {
+            ($until: expr, $expected: expr) => {
+                match self.parse_expression_until(strings, lexer, end_at_types, $until) {
+                    Ok(None) => return Err(Error::new([
+                        ErrorSection::Error(ErrorType::UnexpectedEnd($expected)),
+                        ErrorSection::Code(self.current.source.clone())
+                    ].into())),
+                    Ok(Some(node)) => node,
+                    Err(error) => return Err(error)
+                }
+            };
+        }
+        macro_rules! enforce_not_reached_end {
+            ($expected: expr) => {
+                if self.reached_end { return Err(Error::new([
+                    ErrorSection::Error(ErrorType::UnexpectedEnd($expected)),
+                    ErrorSection::Code(self.current.source.clone())
+                ].into())); }
+            };
+        }
         loop {
             for end_at in &*end_at_types {
                 if end_at.contains(&self.current.token_type) { return Ok(previous) }
             }
             match self.current.token_type {
                 TokenType::Hashtag => {
-                    let accessed = if let Some(previous) = previous { previous }
-                        else { panic!("The access operator ('#') must have a thing to access on the left, but there is nothing there!"); };
-                    if !self.next(strings, lexer) { panic!("The access operator ('#') must have the part to access on the right, but got nothing instead!"); }
+                    let accessed = enforce_previous!("the thing to access");
+                    enforce_next!("the name or index of the part to access");
+                    enforce_current_type!(&[TokenType::Identifier, TokenType::BracketOpen], "the name or brackets (for index) of the part to access");
                     match self.current.token_type {
                         TokenType::Identifier => {
-                            previous = Some(AstNode::ObjectAccess { object: Box::new(accessed), member: self.current.content });
+                            previous = Some(AstNode::ObjectAccess { object: Box::new(accessed), member: self.current.token_content });
                         }
                         TokenType::BracketOpen => {
-                            if !self.next(strings, lexer) { panic!("The access operator ('#') must have the part to access on the right, but got nothing instead!"); }
-                            let index = match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::BracketClose]) {
-                                Ok(None) => { panic!("The access operator ('#') must have the part to access on the right, but got nothing instead"); }
-                                Ok(Some(node)) => node,
-                                Err(error) => return Err(error)
-                            };
+                            enforce_next!("the index to access");
+                            let index = enforce_expression!(&[TokenType::BracketClose], "the index to access");
+                            enforce_current_type!(&[TokenType::BracketClose], "the matching closing bracket");
                             previous = Some(AstNode::ArrayAccess { array: Box::new(accessed), index: Box::new(index) });
                         }
-                        _ => { panic!("The access operator ('#') must have the part to access on the right, but got '{}' instead!", strings.get(self.current.content)); }
+                        _ => panic!("unreachable")
                     }
                     if !self.next(strings, lexer) { return Ok(previous); }
                 }
                 TokenType::Pipe => {
-                    let piped = if let Some(previous) = previous { previous }
-                        else { panic!("The pipe operator ('|') must have a thing to pipe on the left, but there is nothing there!"); };
-                    if !self.next(strings, lexer) { panic!("The pipe operator ('|') must have the call to pipe into on the right, but got nothing instead!"); }
-                    let into = match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::Pipe]) {
-                        Ok(None) => { panic!("The pipe operator ('|') must have the call to pipe into on the right, but got nothing instead!"); }
-                        Ok(Some(node)) => node,
-                        Err(error) => return Err(error)
-                    };
+                    let piped = enforce_previous!("the thing to pipe");
+                    enforce_next!("the call to pipe into");
+                    let into = enforce_expression!(&[TokenType::Pipe], "the call to pipe into");
                     if let AstNode::Call { called, mut arguments } = into {
                         arguments.insert(0, piped);
                         previous = Some(AstNode::Call { called, arguments });
@@ -106,14 +146,9 @@ impl Parser {
                     if self.reached_end { return Ok(previous); }
                 }
                 TokenType::Equals => {
-                    let assigned_to = if let Some(previous) = previous { previous }
-                    else { panic!("The assignment operator ('=') must have a thing to assign to on the left, but there is nothing there!"); };
-                    if !self.next(strings, lexer) { panic!("The assignment operator ('=') must have the thing to assign on the right, but got nothing instead!"); }
-                    let assigned = match self.parse_expression(strings, lexer, end_at_types) {
-                        Ok(None) => { panic!("The assignment operator ('=') must have the thing to assign on the right, but got nothing instead!"); }
-                        Ok(Some(node)) => node,
-                        Err(error) => return Err(error)
-                    };
+                    let assigned_to = enforce_previous!("the thing to assign to");
+                    enforce_next!("the value to assign");
+                    let assigned = enforce_expression!(&[], "the value to assign");
                     previous = Some(AstNode::Assignment { variable: Box::new(assigned_to), value: Box::new(assigned) });
                     if self.reached_end { return Ok(previous); }
                 }
@@ -121,173 +156,157 @@ impl Parser {
                     let new;
                     let mut fetch_next = true;
                     match self.current.token_type {
-                        TokenType::Identifier => new = AstNode::VariableAccess { name: self.current.content },
-                        TokenType::String => new = AstNode::StringLiteral { value: self.current.content },
-                        TokenType::Integer => new = AstNode::IntegerLiteral { value: strings.get(self.current.content).parse().expect("Lexer done messed up lmfao") },
-                        TokenType::Fraction => new = AstNode::FractionLiteral { value: strings.get(self.current.content).parse().expect("Lexer done messed up lmfao") },
+                        TokenType::Identifier => new = AstNode::VariableAccess { name: self.current.token_content },
+                        TokenType::String => new = AstNode::StringLiteral { value: self.current.token_content },
+                        TokenType::Integer => new = AstNode::IntegerLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
+                        TokenType::Fraction => new = AstNode::FractionLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
                         TokenType::ParenOpen => {
-                            if !self.next(strings, lexer) { panic!("Parentheses may contain an expression and must be closed, but got nothing instead!"); }
-                            new = match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::ParenClose]) {
-                                Ok(None) => AstNode::UnitLiteral,
-                                Ok(Some(node)) => node,
-                                Err(error) => return Err(error)
-                            };
-                            if self.current.token_type != TokenType::ParenClose { panic!("Parentheses must always be closed, but these ones were not!"); }
+                            enforce_next!("the contained expression");
+                            new = enforce_expression!(&[TokenType::ParenClose], "the contained expression");
+                            enforce_current_type!(&[TokenType::ParenClose], "a closing parenthesis (')')");
                         }
                         TokenType::BraceOpen => {
                             let mut values = Vec::new();
+                            enforce_next!("the name of an object member or a closing brace ('}')");
                             while self.current.token_type != TokenType::BraceClose {
-                                if !self.next(strings, lexer) { panic!("Objects must consist of a list of name and value pairs surrounded by braces, but the object is never closed!"); }
-                                if self.current.token_type == TokenType::Identifier {}
-                                    else if self.current.token_type == TokenType::BraceClose { continue; }
-                                    else { panic!("Objects must consist of a list of name and value pairs, but got '{}' instead!", strings.get(self.current.content)); }
-                                let member = self.current.content;
-                                if !self.next(strings, lexer) { panic!("Objects must consist of a list of name and value pairs, but got nothing instead!"); }
-                                if let TokenType::Equals = self.current.token_type {}
-                                    else { panic!("Objects must consist of a list of name and value pairs, but got '{}' instead!", strings.get(self.current.content)); }
-                                if !self.next(strings, lexer) { panic!("Objects must consist of a list of name and value pairs, but got nothing instead!"); }
-                                let value = match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::Comma, TokenType::BraceClose]) {
-                                    Ok(None) => { panic!("Objects must consist of a list of name and value pairs, but got nothing instead!"); }
-                                    Ok(Some(node)) => node,
-                                    Err(error) => return Err(error)
-                                };
+                                enforce_current_type!(&[TokenType::Identifier], "the name of an object member");
+                                let member = self.current.token_content;
+                                enforce_next!("an equals sign ('=')");
+                                enforce_current_type!(&[TokenType::Equals], "an equals sign ('=')");
+                                enforce_next!("the member value");
+                                let value = enforce_expression!(&[TokenType::Comma, TokenType::BraceClose], "the member value");
                                 values.push((member, value));
+                                enforce_current_type!(&[TokenType::Comma, TokenType::BraceClose], "a comma (',') or a closing brace ('}')");
+                                if self.current.token_type == TokenType::Comma {
+                                    enforce_next!("the name of an object member or a closing brace ('}')");
+                                }
                             }
-                            if self.current.token_type != TokenType::BraceClose { panic!("Braces must always be closed, but these ones were not!"); }
-                            new = AstNode::Object { values };
+                            // enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                            new = if values.len() == 0 { AstNode::UnitLiteral }
+                                else { AstNode::Object { values } };
                         }
                         TokenType::BracketOpen => {
                             let mut values = Vec::new();
+                            enforce_next!("an array value or a closing brace (']')");
                             while self.current.token_type != TokenType::BracketClose {
-                                if !self.next(strings, lexer) { panic!("Arrays must consist of a list of values surrounded by brackets, but the array is never closed!"); }
-                                values.push(match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::Comma, TokenType::BracketClose]) {
-                                    Ok(None) => if self.current.token_type != TokenType::BracketClose {
-                                        panic!("Arrays must consist of a list of values, but got nothing instead!");
-                                    } else { continue },
-                                    Ok(Some(node)) => node,
-                                    Err(error) => return Err(error)
-                                });
+                                values.push(enforce_expression!(&[TokenType::Comma, TokenType::BracketClose], "an array value"));
+                                enforce_current_type!(&[TokenType::Comma, TokenType::BracketClose], "a comma (',') or a closing bracket (']')");
+                                if self.current.token_type == TokenType::Comma {
+                                    enforce_next!("an array value or a closing brace (']')");
+                                }
                             }
-                            if self.current.token_type != TokenType::BracketClose { panic!("Brackets must always be closed, but these ones were not!"); }
+                            // enforce_current_type!(&[TokenType::BracketClose], "a closing bracket (']')");
                             new = AstNode::Array { values };
                         }
                         TokenType::KeywordProcedure => {
-                            if !self.next(strings, lexer) { panic!("'proc' must be followed by its name, but got nothing instead!"); }
-                            if self.current.token_type != TokenType::Identifier { panic!("'proc' must be followed by its name, but got '{}' instead!", strings.get(self.current.content)); }
-                            let name = self.current.content;
-                            if !self.next(strings, lexer) { panic!("'proc' must be followed by its name and its parameter names, but got nothing instead!"); }
+                            enforce_next!("the procedure's name");
+                            enforce_current_type!(&[TokenType::Identifier], "the procedure's name");
+                            let name = self.current.token_content;
                             let mut arguments = Vec::new();
+                            enforce_next!("a procedure parameter's name");
+                            enforce_current_type!(&[TokenType::Identifier], "a procedure parameter's name");
                             loop {
+                                enforce_current_type!(&[TokenType::Identifier, TokenType::BraceOpen], "a procedure parameter's name or an opening brace ('{')");
                                 match self.current.token_type {
-                                    TokenType::Identifier => arguments.push(self.current.content),
+                                    TokenType::Identifier => arguments.push(self.current.token_content),
                                     TokenType::BraceOpen => break,
-                                    _ => { panic!("'proc' must be followed by its name, its parameter names and a block, but got '{}' instead!", strings.get(self.current.content)); }
+                                    _ => panic!("unreachable")
                                 }
-                                if !self.next(strings, lexer) { panic!("'proc' must be followed by its name, its parameter names and a block, but got '{}' instead!", strings.get(self.current.content)); }
+                                enforce_next!("a procedure parameter's name or an opening brace ('{')");
                             }
-                            if !self.next(strings, lexer) { panic!("'proc' must be followed by its name, its parameter names and and a block, but got nothing instead!"); }
+                            enforce_next!("the procedure's body");
                             let body = match self.parse_block(strings, lexer) {
                                 Ok(body) => body,
                                 Err(error) => return Err(error)
                             };
-                            if self.current.token_type != TokenType::BraceClose { panic!("Blocks must always be closed, but this one was not!"); }
+                            enforce_not_reached_end!("a closing brace ('}')");
+                            enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                             new = AstNode::Procedure { name, arguments, body }
                         }
                         TokenType::KeywordFunction => {
-                            if !self.next(strings, lexer) { panic!("'func' must be followed by parameter names, but got nothing instead!"); }
                             let mut arguments = Vec::new();
+                            enforce_next!("a function parameter's name");
+                            enforce_current_type!(&[TokenType::Identifier], "a function parameter's name");
                             loop {
+                                enforce_current_type!(&[TokenType::Identifier, TokenType::BraceOpen], "a function parameter's name or an opening brace ('{')");
                                 match self.current.token_type {
-                                    TokenType::Identifier => arguments.push(self.current.content),
+                                    TokenType::Identifier => arguments.push(self.current.token_content),
                                     TokenType::BraceOpen => break,
-                                    _ => { panic!("'func' must be followed by parameter names and a block, but got '{}' instead!", strings.get(self.current.content)); }
+                                    _ => panic!("unreachable")
                                 }
-                                if !self.next(strings, lexer) { panic!("'func' must be followed by parameter names and a block, but got '{}' instead!", strings.get(self.current.content)); }
+                                enforce_next!("a function parameter's name or an opening brace ('{')");
                             }
-                            if !self.next(strings, lexer) { panic!("'func' must be followed by parameter names and a block, but got nothing instead!"); }
+                            enforce_next!("the function's body");
                             let body = match self.parse_block(strings, lexer) {
                                 Ok(body) => body,
                                 Err(error) => return Err(error)
                             };
-                            if self.current.token_type != TokenType::BraceClose { panic!("Blocks must always be closed, but this one was not!"); }
+                            enforce_not_reached_end!("a closing brace ('}')");
+                            enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                             new = AstNode::Function { arguments, body }
                         }
                         TokenType::KeywordVariable |
                         TokenType::KeywordMutable => {
                             let mutable = self.current.token_type == TokenType::KeywordMutable;
                             if mutable {
-                                if !self.next(strings, lexer) { panic!("'mut' must be followed by 'var', but got nothing instead!"); }
-                                if self.current.token_type != TokenType::KeywordVariable {
-                                    panic!("'mut' must be followed by 'var', but got '{}' instead!", strings.get(self.current.content));
-                                }
+                                enforce_next!("'var'");
+                                enforce_current_type!(&[TokenType::KeywordVariable], "'var'");
                             }
-                            if !self.next(strings, lexer) { panic!("'var' must be followed by the name of the variable, but got nothing instead!"); }
-                            if self.current.token_type != TokenType::Identifier { panic!("'var' must be followed by the name of the variable, but got '{}' instead!", strings.get(self.current.content)); }
-                            let name = self.current.content;
-                            if !self.next(strings, lexer) { panic!("'var' must be followed by the name of the variable and '=', but got nothing instead!"); }
-                            if self.current.token_type != TokenType::Equals { panic!("'var' must be followed by the name of the variable and '=', but got '{}' instead!", strings.get(self.current.content)); }
-                            self.next(strings, lexer);
-                            let value = match self.parse_expression(strings, lexer, end_at_types) {
-                                Ok(None) => { panic!("'var' must be followed by the name of the variable, '=' and the value to assign, but got nothing instead!"); }
-                                Ok(Some(node)) => node,
-                                Err(error) => return Err(error)
-                            };
+                            enforce_next!("the variable's name");
+                            enforce_current_type!(&[TokenType::Identifier], "the variable's name");
+                            let name = self.current.token_content;
+                            enforce_next!("an equals sign ('=')");
+                            enforce_current_type!(&[TokenType::Equals], "an equals sign ('=')");
+                            enforce_next!("the variable's value");
+                            let value = enforce_expression!(&[], "the variable's value");
                             fetch_next = false;
                             new = AstNode::Variable { name, mutable, value: Box::new(value) }
                         }
                         TokenType::KeywordCase => {
-                            if !self.next(strings, lexer) { panic!("'case' must have a value to base decisions on on the right, but got nothing instead!"); }
-                            let value = match self.parse_expression_until(strings, lexer, end_at_types, &[TokenType::Arrow, TokenType::BraceOpen]) {
-                                Ok(None) => { panic!("'case' must have a value to base decisions on on the right, but got nothing instead!"); },
-                                Ok(Some(node)) => node,
-                                Err(error) => return Err(error)
-                            };
-                            if self.reached_end { panic!("'case' must have a value to base decisions on on the right followed by `->` and a value or a block (conditional) or a block of possible branches (branching), but got nothing instead!"); }
+                            enforce_next!("the condition value");
+                            let value = enforce_expression!(&[TokenType::Arrow, TokenType::BraceOpen], "the condition value");
+                            enforce_not_reached_end!("an arrow ('->') (conditonal case) or an opening brace ('{') (branching case)");
+                            enforce_current_type!(&[TokenType::Arrow, TokenType::BraceOpen], "an arrow ('->') (conditonal case) or an opening brace ('{') (branching case)");
                             match self.current.token_type {
                                 TokenType::Arrow => {
-                                    if !self.next(strings, lexer) { panic!("Conditional 'case' must have a value to base decisions on on the right followed by `->` and a value or a block, but got nothing instead!"); }
+                                    enforce_next!("the body of the conditional branch");
                                     let body = if self.current.token_type == TokenType::BraceOpen {
-                                        if !self.next(strings, lexer) { panic!("Conditional 'case' must have a value to base decisions on on the right followed by `->` and a value or a block, but got nothing instead!"); }
+                                        enforce_next!("the body of the conditional branch");
                                         let body = match self.parse_block(strings, lexer) {
                                             Ok(body) => body,
                                             Err(error) => return Err(error)
                                         };
-                                        if self.reached_end || self.current.token_type != TokenType::BraceClose { panic!("Blocks must always be closed, but this one was not!"); }
+                                        enforce_not_reached_end!("a closing brace ('}')");
+                                        enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                                         body
                                     } else {
                                         fetch_next = false;
-                                        vec![match self.parse_expression(strings, lexer, end_at_types) {
-                                            Ok(None) => { panic!("Conditional 'case' must have a value to base decisions on on the right followed by `->` and a value or a block, but got nothing instead!"); },
-                                            Ok(Some(node)) => node,
-                                            Err(error) => return Err(error)
-                                        }]
+                                        vec![enforce_expression!(&[], "the body of the conditional branch")]
                                     };
                                     new = AstNode::CaseConditon { condition: Box::new(value), body };
                                 }
                                 TokenType::BraceOpen => {
-                                    if !self.next(strings, lexer) { panic!("Branching 'case' must have a value to base decisions on on the right followed by a block of possible branches, but got nothing instead!"); }
                                     let mut branches = Vec::new();
+                                    enforce_next!("a branch value");
                                     while self.current.token_type == TokenType::Newline && self.next(strings, lexer) {}
-                                    loop {
+                                    while self.current.token_type != TokenType::BraceClose {
                                         match self.parse_expression(strings, lexer, &mut vec![&[TokenType::Arrow]]) {
                                             Ok(None) => break,
                                             Ok(Some(value)) => {
-                                                if self.reached_end || self.current.token_type != TokenType::Arrow { panic!("Branches must be two expressions divided by an arrow ('->'), but there is no arrow here!"); }
-                                                if !self.next(strings, lexer) { panic!("Branches must have an expresion or block after the arrow ('->'), but got nothing instead!"); }
+                                                enforce_not_reached_end!("an arrow ('->')");
+                                                enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
+                                                enforce_next!("the body of the branch");
                                                 let body = if self.current.token_type == TokenType::BraceOpen {
-                                                    if !self.next(strings, lexer) { panic!("Branches must have an expresion or block after the arrow ('->'), but got nothing instead!"); }
+                                                    enforce_next!("the body of the conditional branch");
                                                     let body = match self.parse_block(strings, lexer) {
                                                         Ok(body) => body,
                                                         Err(error) => return Err(error)
                                                     };
-                                                    if self.current.token_type != TokenType::BraceClose || !self.next(strings, lexer) { panic!("Blocks must always be closed, but this one was not!"); }
+                                                    enforce_not_reached_end!("a closing brace ('}')");
+                                                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                                                     body
                                                 } else {
-                                                    vec![match self.parse_expression(strings, lexer, &mut vec![&[TokenType::Newline, TokenType::BraceClose]]) {
-                                                        Ok(None) => { panic!("Branches must have an expresion or block after the arrow ('->'), but got nothing instead!"); },
-                                                        Ok(Some(node)) => node,
-                                                        Err(error) => return Err(error)
-                                                    }]
+                                                    vec![enforce_expression!(&[TokenType::Newline, TokenType::BraceClose], "the body of the conditional branch")]
                                                 };
                                                 branches.push((value, body));
                                                 while self.current.token_type == TokenType::Newline && self.next(strings, lexer) {}
@@ -296,10 +315,10 @@ impl Parser {
                                             Err(error) => return Err(error)
                                         }
                                     }
-                                    if self.current.token_type != TokenType::BraceClose { panic!("Blocks must always be closed, but this one was not!"); }
+                                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                                     new = AstNode::CaseBranches { value: Box::new(value), branches };
                                 }
-                                _ => { panic!("'case' must have a value to base decisions on on the right followed by `->` and a value or a block (conditional) or a block of possible branches (branching), but got '{}' instead!", strings.get(self.current.content)); }
+                                _ => panic!("unreachable")
                             }
                         }
                         TokenType::KeywordReturn => {
@@ -311,7 +330,10 @@ impl Parser {
                                 }
                             } else { None } };
                         }
-                        _ => panic!("'{}' is completely unexpected here!", strings.get(self.current.content))
+                        _ => return Err(Error::new([
+                            ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),
+                            ErrorSection::Code(self.current.source.clone())
+                        ].into()))
                     }
                     if let Some(prev) = previous {
                         if let AstNode::Call { called, mut arguments } = prev {
@@ -327,6 +349,5 @@ impl Parser {
                 }
             }
         }
-        */
     }
 }

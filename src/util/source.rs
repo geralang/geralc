@@ -28,8 +28,8 @@ impl SourceRange {
     pub fn end_position(&self) -> usize { self.end_position }
 }
 
-impl From<Range<SourceRange>> for SourceRange {
-    fn from(value: Range<SourceRange>) -> SourceRange {
+impl From<Range<&SourceRange>> for SourceRange {
+    fn from(value: Range<&SourceRange>) -> SourceRange {
         SourceRange {
             file_name: value.start.file_name,
             file_content: value.start.file_content,
