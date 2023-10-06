@@ -8,7 +8,11 @@ pub enum ErrorType {
     MissingLeftExpr(&'static str),
     UnexpectedEnd(&'static str),
     UnexpectedToken(&'static str, StringIdx),
-    TotallyUnexpectedToken(StringIdx)
+    TotallyUnexpectedToken(StringIdx),
+
+    // grammar checking errors
+
+    InvalidContext(&'static str, &'static str, &'static str)
 
 }
 
@@ -18,7 +22,8 @@ impl ErrorType {
             ErrorType::MissingLeftExpr(expected) => format!("Expected {} on the left, but got nothing instead", expected),
             ErrorType::UnexpectedEnd(expected) => format!("Expected {}, but reached the end of the expression", expected),
             ErrorType::UnexpectedToken(expected, got) => format!("Expected {}, but got '{}' instead", expected, strings.get(*got)),
-            ErrorType::TotallyUnexpectedToken(got) => format!("'{}' is totally unexpected here", strings.get(*got))
+            ErrorType::TotallyUnexpectedToken(got) => format!("'{}' is totally unexpected here", strings.get(*got)),
+            ErrorType::InvalidContext(thing, expected, got) => format!("{} may only be used as {}, but here one was used as {} instead", thing, expected, got)
         }
     }
 }

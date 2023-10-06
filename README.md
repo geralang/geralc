@@ -9,7 +9,7 @@
 - [x] Lexer
 - [x] Parser
 - [x] Pretty errors
-- [ ] Grammar checking
+- [x] Grammar checking
 - [ ] Modules
 - [ ] Type checking
 - [ ] Interpreter
