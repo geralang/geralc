@@ -2,7 +2,8 @@
 use crate::compiler::tokens::{TokenType, Token};
 use crate::util::{
     strings::{StringMap, StringIdx},
-    source::SourceRange
+    source::SourceRange,
+    error::{Error, ErrorSection, ErrorType}
 };
 
 pub struct Lexer {
@@ -36,7 +37,7 @@ impl Lexer {
         }
     }
 
-    pub fn next_token(&mut self, string_map: &mut StringMap) -> Option<Token> {
+    pub fn next_token(&mut self, string_map: &mut StringMap) -> Option<Result<Token, Error>> {
         loop {
             if !self.has() { return None; }
             match self.current() {
@@ -48,36 +49,101 @@ impl Lexer {
                         self.next();
                     }
                     if self.has() && self.current() == '|' { continue }
-                    return Some(Token {
+                    return Some(Ok(Token {
                         token_type: TokenType::Newline,
                         token_content: string_map.insert(c.encode_utf8(&mut [0; 4])),
                         source: SourceRange::new(self.file_name, self.file_content, p, p + 1)
-                    })
-                },
-                '|' => if !self.has_next() || self.peek().is_whitespace() { self.next(); return Some(self.make_token("|", TokenType::Pipe, string_map)) },
-                '=' => if !self.has_next() || self.peek().is_whitespace() { self.next(); return Some(self.make_token("=", TokenType::Equals, string_map)) },
-                '#' => { self.next(); return Some(self.make_token("#", TokenType::Hashtag, string_map)) },
-                ',' => { self.next(); return Some(self.make_token(",", TokenType::Comma, string_map)) },
-                '(' => { self.next(); return Some(self.make_token("(", TokenType::ParenOpen, string_map)) },
-                ')' => { self.next(); return Some(self.make_token(")", TokenType::ParenClose, string_map)) },
-                '[' => { self.next(); return Some(self.make_token("[", TokenType::BracketOpen, string_map)) },
-                ']' => { self.next(); return Some(self.make_token("]", TokenType::BracketClose, string_map)) },
-                '{' => { self.next(); return Some(self.make_token("{", TokenType::BraceOpen, string_map)) },
-                '}' => { self.next(); return Some(self.make_token("}", TokenType::BraceClose, string_map)) },
-                '-' => if self.has_next() && self.peek() == '>' {
+                    }))
+                }
+                '|' => {
                     self.next();
+                    return Some(Ok(if self.has() && self.current() == '|' {
+                        self.next();
+                        self.make_token("||", TokenType::DoublePipe, string_map)
+                    } else {
+                        self.make_token("|", TokenType::Pipe, string_map)
+                    }))
+                }
+                '=' => {
                     self.next();
-                    return Some(self.make_token("->", TokenType::Arrow, string_map))
+                    return Some(Ok(if self.has() && self.current() == '=' {
+                        self.next();
+                        self.make_token("==", TokenType::DoubleEquals, string_map)
+                    } else {
+                        self.make_token("=", TokenType::Equals, string_map)
+                    }))
+                }
+                '#' => { self.next(); return Some(Ok(self.make_token("#", TokenType::Hashtag, string_map))) },
+                '+' => { self.next(); return Some(Ok(self.make_token("+", TokenType::Plus, string_map))) },
+                '-' => {
+                    self.next();
+                    return Some(Ok(if self.has() && self.current() == '>' {
+                        self.next();
+                        self.make_token("->", TokenType::Arrow, string_map)
+                    } else {
+                        self.make_token("-", TokenType::Minus, string_map)
+                    }))
                 },
-                '/' => if self.has_next() && self.peek() == '/' {
-                    while self.has() {
-                        match self.current() {
-                            '\n' | '\r' => break,
-                            _ => self.next()
+                '*' => { self.next(); return Some(Ok(self.make_token("*", TokenType::Asterisk, string_map))) },
+                '/' => {
+                    self.next();
+                    if self.has() && self.current() == '/' {
+                        while self.has() {
+                            match self.current() {
+                                '\n' | '\r' => break,
+                                _ => self.next()
+                            }
                         }
+                        continue;
+                    } else {
+                        return Some(Ok(self.make_token("/", TokenType::Slash, string_map)))
                     }
-                    continue;     
                 },
+                '%' => { self.next(); return Some(Ok(self.make_token("%", TokenType::Percent, string_map))) },
+                '<' => {
+                    self.next();
+                    return Some(Ok(if self.has() && self.current() == '=' {
+                        self.next();
+                        self.make_token("<=", TokenType::LessThanEqual, string_map)
+                    } else {
+                        self.make_token("<", TokenType::LessThan, string_map)
+                    }))
+                }
+                '>' => {
+                    self.next();
+                    return Some(Ok(if self.has() && self.current() == '=' {
+                        self.next();
+                        self.make_token(">=", TokenType::GreaterThanEqual, string_map)
+                    } else {
+                        self.make_token(">", TokenType::GreaterThan, string_map)
+                    }))
+                }
+                '!' => {
+                    self.next();
+                    return Some(Ok(if self.has() && self.current() == '=' {
+                        self.next();
+                        self.make_token("!=", TokenType::NotEquals, string_map)
+                    } else {
+                        self.make_token("!", TokenType::ExclamationMark, string_map)
+                    }))
+                }
+                '&' => if self.has_next() && self.peek() == '&' {
+                    self.next();
+                    self.next();
+                    return Some(Ok(self.make_token("&&", TokenType::DoubleAmpersand, string_map)))
+                }
+                ':' => if self.has_next() && self.peek() == ':' {
+                    self.next();
+                    self.next();
+                    return Some(Ok(self.make_token("::", TokenType::NamespaceSeparator, string_map)))
+                }
+                ',' => { self.next(); return Some(Ok(self.make_token(",", TokenType::Comma, string_map))) }
+                '(' => { self.next(); return Some(Ok(self.make_token("(", TokenType::ParenOpen, string_map))) }
+                ')' => { self.next(); return Some(Ok(self.make_token(")", TokenType::ParenClose, string_map))) }
+                '[' => { self.next(); return Some(Ok(self.make_token("[", TokenType::BracketOpen, string_map))) }
+                ']' => { self.next(); return Some(Ok(self.make_token("]", TokenType::BracketClose, string_map))) }
+                '{' => { self.next(); return Some(Ok(self.make_token("{", TokenType::BraceOpen, string_map))) }
+                '}' => { self.next(); return Some(Ok(self.make_token("}", TokenType::BraceClose, string_map))) }
                 '"' => {
                     let start = self.position;
                     self.next();
@@ -100,11 +166,11 @@ impl Lexer {
                         self.next();
                     }
                     self.next();
-                    return Some(Token {
+                    return Some(Ok(Token {
                         token_type: TokenType::String,
                         token_content: string_map.insert(&content),
                         source: SourceRange::new(self.file_name, self.file_content, start, self.position)
-                    });
+                    }));
                 }
                 _ => {}
             }
@@ -116,42 +182,52 @@ impl Lexer {
                     }
                 }
                 continue;
+            } else if '0' <= self.current() && self.current() <= '9' {
+                let mut literal = String::new();
+                let start = self.position;
+                let mut is_fraction = false;
+                while self.has() {
+                    if self.current() == '.' && !is_fraction {
+                        is_fraction = true;
+                    } else if '0' <= self.current() && self.current() <= '9' {
+                    } else {
+                        break;
+                    }
+                    literal.push(self.current());
+                    self.next();
+                }
+                return Some(Ok(Token {
+                    token_type: if is_fraction { TokenType::Fraction } else { TokenType::Integer },
+                    token_content: string_map.insert(&literal),
+                    source: SourceRange::new(self.file_name, self.file_content, start, self.position)
+                }))
+
+            } else if !self.current().is_ascii_alphanumeric() && self.current() != '_' {
+                return Some(Err(Error::new([
+                    ErrorSection::Error(ErrorType::InvalidCharacter(self.current())),
+                    ErrorSection::Code(SourceRange::new(self.file_name, self.file_content, self.position, self.position + 1))
+                ].into())))
             }
             let mut identifier = String::new();
             let start = self.position;
-            let mut is_integer = true;
-            let mut is_fraction = true;
-            while self.has() && !self.current().is_whitespace() {
-                match self.current() {
-                    '#' | ',' |
-                    '(' | ')' |
-                    '[' | ']' |
-                    '{' | '}' => break,
-                    '-' => if self.has_next() && self.peek() == '>' { break },
-                    '/' => if self.has_next() && self.peek() == '/' { break },
-                    _ => {}
-                }
-                if self.current() < '0' || '9' < self.current() {
-                    if self.current() != '.' || !is_integer { is_fraction = false; }
-                    is_integer = false;
-                }
+            while self.has() && (self.current().is_ascii_alphanumeric() || self.current() == '_') {
                 identifier.push(self.current());
                 self.next();
             }
             match &identifier[..] {
-                "proc" => return Some(self.make_token("proc", TokenType::KeywordProcedure, string_map)),
-                "func" => return Some(self.make_token("func", TokenType::KeywordFunction, string_map)),
-                "case" => return Some(self.make_token("case", TokenType::KeywordCase, string_map)),
-                "var" => return Some(self.make_token("var", TokenType::KeywordVariable, string_map)),
-                "mut" => return Some(self.make_token("mut", TokenType::KeywordMutable, string_map)),
-                "return" => return Some(self.make_token("return", TokenType::KeywordReturn, string_map)),
-                _ => return Some(Token {
-                    token_type: if is_integer { TokenType::Integer }
-                        else if is_fraction { TokenType::Fraction }
-                        else { TokenType::Identifier },
+                "proc" => return Some(Ok(self.make_token("proc", TokenType::KeywordProcedure, string_map))),
+                "func" => return Some(Ok(self.make_token("func", TokenType::KeywordFunction, string_map))),
+                "case" => return Some(Ok(self.make_token("case", TokenType::KeywordCase, string_map))),
+                "var" => return Some(Ok(self.make_token("var", TokenType::KeywordVariable, string_map))),
+                "mut" => return Some(Ok(self.make_token("mut", TokenType::KeywordMutable, string_map))),
+                "ret" => return Some(Ok(self.make_token("ret", TokenType::KeywordReturn, string_map))),
+                "mod" => return Some(Ok(self.make_token("mod", TokenType::KeywordModule, string_map))),
+                "pub" => return Some(Ok(self.make_token("pub", TokenType::KeywordPublic, string_map))),
+                _ => return Some(Ok(Token {
+                    token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),
                     source: SourceRange::new(self.file_name, self.file_content, start, self.position)
-                }),
+                })),
             }
         }
     }

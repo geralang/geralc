@@ -1,0 +1,6 @@
+
+mod testing
+
+pub proc main args {
+    std::io::println "Hello, world!"
+}

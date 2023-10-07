@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StringIdx(usize);
 
 pub struct StringMap {

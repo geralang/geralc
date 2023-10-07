@@ -1,29 +1,44 @@
+
 use crate::util::{source::SourceRange, strings::{StringMap, StringIdx}};
 
 
 pub enum ErrorType {
 
-    // parser errors
+    // cli errors
+    FileSystemError(String),
 
+    // lexer errors
+    InvalidCharacter(char),
+
+    // parser errors
     MissingLeftExpr(&'static str),
     UnexpectedEnd(&'static str),
     UnexpectedToken(&'static str, StringIdx),
     TotallyUnexpectedToken(StringIdx),
+    MayNotBePublic,
 
     // grammar checking errors
+    InvalidContext(&'static str, &'static str, &'static str),
 
-    InvalidContext(&'static str, &'static str, &'static str)
+    // module errors
+    ModuleDeclarationNotAtTop,
+    SymbolAlreadyExists(String)
 
 }
 
 impl ErrorType {
     pub fn display(&self, strings: &StringMap) -> String {
         match self {
+            ErrorType::FileSystemError(error) => format!("An error occured while interacting with the file system: '{}'", error),
+            ErrorType::InvalidCharacter(got) => format!("Encountered '{}', which is an invalid character", got),
             ErrorType::MissingLeftExpr(expected) => format!("Expected {} on the left, but got nothing instead", expected),
             ErrorType::UnexpectedEnd(expected) => format!("Expected {}, but reached the end of the expression", expected),
             ErrorType::UnexpectedToken(expected, got) => format!("Expected {}, but got '{}' instead", expected, strings.get(*got)),
+            ErrorType::MayNotBePublic => format!("This syntax may not be marked as public"),
             ErrorType::TotallyUnexpectedToken(got) => format!("'{}' is totally unexpected here", strings.get(*got)),
-            ErrorType::InvalidContext(thing, expected, got) => format!("{} may only be used as {}, but here one was used as {} instead", thing, expected, got)
+            ErrorType::InvalidContext(thing, expected, got) => format!("{} may only be used as {}, but here one was used as {} instead", thing, expected, got),
+            ErrorType::ModuleDeclarationNotAtTop => format!("The parent module must be declared at the top of the file"),
+            ErrorType::SymbolAlreadyExists(path) => format!("'{}' already exists", path)
         }
     }
 }
@@ -31,8 +46,8 @@ impl ErrorType {
 
 pub enum ErrorSection {
     Error(ErrorType),
-    Info(&'static str),
-    Help(&'static str),
+    Info(String),
+    Help(String),
     Code(SourceRange)
 }
 
@@ -60,9 +75,9 @@ impl ErrorSection {
                         last_c = *c;
                     }
                 }
-                let displayed_lines_start = source_start_line.max(1) - 1;
-                let displayed_lines_end = source_end_line + 1;
-                output.push_str(&format!("[{}:{}]\n", strings.get(source.file_name()), source_start_line));
+                let displayed_lines_start = source_start_line.max(2) - 2;
+                let displayed_lines_end = source_end_line + 2;
+                output.push_str(&format!("[{}:{}]", strings.get(source.file_name()), source_start_line));
                 {
                     let mut position = 0usize;
                     let mut line = 1usize;
@@ -72,20 +87,21 @@ impl ErrorSection {
                         line_content.push(*c);
                         if (*c == '\n' && last_c != '\r') || *c == '\r' {
                             if line >= displayed_lines_start && line <= displayed_lines_end {
+                                output.push('\n');
                                 output.push_str(&format!(" {: >1$} | ", line, displayed_lines_end.to_string().len()));
-                                for l in &line_content { output.push(*l); }
+                                for l in &line_content[0..line_content.len() - 1] { output.push(*l); }
                                 let mut marked = vec![' '; line_content.len() - 1];
                                 let mut is_marked = false;
                                 for i in source.start_position()..source.end_position() {
-                                    if i < (position - line_content.len() + 1) { continue; }
+                                    if i < (position.max(1) - line_content.len() + 1) { continue; }
                                     if i >= position { continue; }
                                     marked.insert(i - (position - line_content.len() + 1), '^');
                                     is_marked = true;
                                 }
                                 if is_marked {
+                                    output.push('\n');
                                     output.push_str(&format!(" {} | ", " ".repeat(displayed_lines_end.to_string().len())));
                                     for m in marked { output.push(m); }
-                                    output.push('\n');
                                 }
                             }
                             line_content.clear();

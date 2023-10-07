@@ -11,8 +11,23 @@ pub enum TokenType {
     Pipe,
     Equals,
     Hashtag,
+    Plus,
+    Minus,
+    Asterisk,
+    Slash,
+    Percent,
+    LessThan,
+    GreaterThan,
+    LessThanEqual,
+    GreaterThanEqual,
+    DoubleEquals,
+    NotEquals,
+    DoublePipe,
+    DoubleAmpersand,
+    ExclamationMark,
     Comma,
     Arrow,
+    NamespaceSeparator,
     ParenOpen,
     ParenClose,
     BracketOpen,
@@ -24,10 +39,12 @@ pub enum TokenType {
     KeywordCase,
     KeywordVariable,
     KeywordMutable,
-    KeywordReturn
+    KeywordReturn,
+    KeywordModule,
+    KeywordPublic
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub token_content: StringIdx,

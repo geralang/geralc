@@ -1,7 +1,8 @@
 
-use crate::util::{strings::{StringIdx, StringMap}, source::SourceRange};
+use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
+use crate::compiler::modules::NamespacePath;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AstNode {
     variant: AstNodeVariant<AstNode>,
     source: SourceRange
@@ -15,9 +16,7 @@ impl AstNode {
         }
     }
 
-    pub fn source(&self) -> &SourceRange {
-        &self.source
-    }
+    pub fn replace_source(&mut self, new: SourceRange) { self.source = new; }
     pub fn node_variant_mut(&mut self) -> &mut AstNodeVariant<AstNode> { &mut self.variant }
 }
 
@@ -27,16 +26,21 @@ impl HasAstNodeVariant<AstNode> for AstNode {
     }
 }
 
+impl HasSource for AstNode {
+    fn source(&self) -> SourceRange { self.source }
+}
+
+
 pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     fn node_variant(&self) -> &AstNodeVariant<T>;
     fn to_string(&self, strings: &StringMap) -> String { self.node_variant().to_string(strings) }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
-    Procedure { name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
+    Procedure { public: bool, name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
     Function { arguments: Vec<StringIdx>, body: Vec<T> },
-    Variable { name: StringIdx, mutable: bool, value: Box<T> },
+    Variable { public: bool, mutable: bool, name: StringIdx, value: Box<T> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)> },
     CaseConditon { condition: Box<T>, body: Vec<T> },
     Assignment { variable: Box<T>, value: Box<T> },
@@ -50,7 +54,24 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     IntegerLiteral { value: u64 },
     FractionLiteral { value: f64 },
     StringLiteral { value: StringIdx },
-    UnitLiteral
+    UnitLiteral,
+    Add { a: Box<T>, b: Box<T> },
+    Subtract { a: Box<T>, b: Box<T> },
+    Multiply { a: Box<T>, b: Box<T> },
+    Divide { a: Box<T>, b: Box<T> },
+    Modulo { a: Box<T>, b: Box<T> },
+    Negate { x: Box<T> },
+    LessThan { a: Box<T>, b: Box<T> },
+    GreaterThan { a: Box<T>, b: Box<T> },
+    LessThanEqual { a: Box<T>, b: Box<T> },
+    GreaterThanEqual { a: Box<T>, b: Box<T> },
+    Equals { a: Box<T>, b: Box<T> },
+    NotEquals { a: Box<T>, b: Box<T> },
+    Not { x: Box<T> },
+    Or { a: Box<T>, b: Box<T> },
+    And { a: Box<T>, b: Box<T> },
+    Module { path: NamespacePath },
+    ModuleAccess { path: NamespacePath }
 }
 
 fn indent(input: String, amount: usize) -> String {
@@ -60,8 +81,9 @@ fn indent(input: String, amount: usize) -> String {
 impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
     pub fn to_string(&self, strings: &StringMap) -> String {
         match self {
-            AstNodeVariant::Procedure { name, arguments, body } =>
-                format!("Procedure\n  name = '{}'\n  arguments = [{}]\n  body = \n    {}",
+            AstNodeVariant::Procedure { public, name, arguments, body } =>
+                format!("Procedure\n  public = {}\n  name = '{}'\n  arguments = [{}]\n  body = \n    {}",
+                    public,
                     strings.get(*name),
                     arguments.iter().map(|s| strings.get(*s).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
@@ -71,10 +93,11 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                     arguments.iter().map(|s| strings.get(*s).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
-            AstNodeVariant::Variable { name, mutable, value } => 
-                format!("Variable\n  name = '{}'\n  mutable = {}\n  value = \n    {}",
-                    strings.get(*name),
+            AstNodeVariant::Variable { public, mutable, name, value } => 
+                format!("Variable\n  public = {}\n  mutable = {}\n  name = '{}'\n  value = \n    {}",
+                    public,
                     mutable,
+                    strings.get(*name),
                     indent(value.to_string(strings), 4)
                 ),
             AstNodeVariant::CaseBranches { value, branches } =>
@@ -129,7 +152,89 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
             AstNodeVariant::IntegerLiteral { value } => format!("IntegerLiteral\n  value = {}", value),
             AstNodeVariant::FractionLiteral { value } => format!("FractionLiteral\n  value = {}", value),
             AstNodeVariant::StringLiteral { value } => format!("StringLiteral\n  value = '{}'", strings.get(*value)),
-            AstNodeVariant::UnitLiteral => format!("Unit")
+            AstNodeVariant::UnitLiteral => format!("Unit"),
+            AstNodeVariant::Add { a, b } =>
+                format!("Add\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Subtract { a, b } =>
+                format!("Subtract\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Multiply { a, b } =>
+                format!("Multiply\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Divide { a, b } =>
+                format!("Divide\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Modulo { a, b } =>
+                format!("Modulo\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Negate { x } =>
+                format!("Negate\n  x = \n    {}",
+                    indent(x.to_string(strings), 4),
+                ),
+            AstNodeVariant::LessThan { a, b } =>
+                format!("LessThan\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::GreaterThan { a, b } =>
+                format!("GreaterThan\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::LessThanEqual { a, b } =>
+                format!("LessThanEqual\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::GreaterThanEqual { a, b } =>
+                format!("GreaterThanEqual\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Equals { a, b } =>
+                format!("Equals\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::NotEquals { a, b } =>
+                format!("NotEquals\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Not { x } =>
+                format!("Not\n  x = \n    {}",
+                    indent(x.to_string(strings), 4),
+                ),
+            AstNodeVariant::Or { a, b } =>
+                format!("Or\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::And { a, b } =>
+                format!("And\n  a = \n    {}\n  b = \n    {}",
+                    indent(a.to_string(strings), 4),
+                    indent(b.to_string(strings), 4)
+                ),
+            AstNodeVariant::Module { path } =>
+                format!("Module\n  path = {}",
+                    path.display(strings)
+                ),
+            AstNodeVariant::ModuleAccess { path } =>
+                format!("ModuleAccess\n  path = {}",
+                    path.display(strings)
+                )
+            
         }
     }
 }

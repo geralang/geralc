@@ -4,7 +4,7 @@ use std::ops::Range;
 use crate::util::strings::StringIdx;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SourceRange {
     file_name: StringIdx,
     file_content: StringIdx,
@@ -37,4 +37,9 @@ impl From<Range<&SourceRange>> for SourceRange {
             end_position: value.end.end_position
         }
     }
+}
+
+
+pub trait HasSource {
+    fn source(&self) -> SourceRange;
 }
