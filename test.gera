@@ -3,19 +3,8 @@ mod testing
 
 use std::io
 
+mut var xp lmfao
+
 proc main args {
-    io::println (add 5 10)
-    var cat = {
-        name = "Snowball",
-        age = 5
-    }
-    var primes = [
-        2,
-        3,
-        5,
-        7,
-        11
-    ]
+    io::println (5 + 10)
 }
-
-

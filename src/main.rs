@@ -3,11 +3,68 @@
 
 mod util;
 mod compiler;
+mod cli;
 
 use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
 use compiler::{lexer::Lexer, parser::Parser, ast::{HasAstNodeVariant, AstNode, AstNodeVariant}, grammar::{check_grammar, ScopeType}, modules::{Module, NamespacePath}};
+use cli::{CliArgs, CliArg};
 
-use std::{fs, collections::HashMap};
+use std::{fs, env, collections::HashMap, ops::BitOr};
+
+
+fn main() {
+    if cfg!(target_os = "windows") {
+        use windows::Win32::System::Console;
+        unsafe {
+            let output = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE)
+                .expect("Failed to get console handle");
+            let mut console_mode: Console::CONSOLE_MODE = Default::default();
+            Console::GetConsoleMode(output, &mut console_mode)
+                .expect("Failed to get console mode");
+            console_mode = console_mode.bitor(Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+            Console::SetConsoleMode(output, console_mode)
+                .expect("Failed to set console mode");
+        }
+    }
+    let mut strings = StringMap::new();
+    // parse cli args
+    const CLI_ARG_OUTPUT: CliArg = CliArg::required("output", 1);
+    let args = match CliArgs::parse(&[
+        //CLI_ARG_OUTPUT
+    ], &env::args().collect::<Vec<String>>()[1..]) {
+        Ok(args) => args,
+        Err(error) => {
+            println!("{}\n", error.display(&strings));
+            return;
+        }
+    };
+    // read all files 
+    let mut modules = HashMap::new();
+    let mut errored = false;
+    for file_name in args.free_values() {
+        match load_file(strings.insert(file_name), &mut strings, &mut modules) {
+            Ok(_) => {}
+            Err(errors) => {
+                for error in errors { println!("{}\n", error.display(&strings)); }
+                errored = true;
+            }
+        }
+    }
+    if errored { return; }
+    // canonicalize modules
+    let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
+    for module_path in module_paths {
+        let mut module = modules.remove(&module_path).expect("key must be valid");
+        let canonicalization_errors = module.canonicalize(&modules, &mut strings);
+        modules.insert(module_path, module);
+        if canonicalization_errors.len() > 0 {
+            for error in canonicalization_errors { println!("{}\n", error.display(&strings)); }
+            return;
+        }
+    }
+    // debug
+    println!("{:?}", modules);
+}
 
 fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMap<NamespacePath, Module<AstNode>>) -> Result<NamespacePath, Vec<Error>> {
     // read the file
@@ -65,36 +122,3 @@ fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMa
     }
     Ok(module_path)
 }
-
-fn main() {
-    let mut strings = StringMap::new();
-    let mut modules = HashMap::new();
-    // load files (CLI will do this later on)
-    if match load_file(strings.insert("test.gera"), &mut strings, &mut modules) {
-        Ok(_) => { false }
-        Err(errors) => {
-            for error in errors { println!("{}\n", error.display(&strings)); }
-            true
-        }
-    } || match load_file(strings.insert("test2.gera"), &mut strings, &mut modules) {
-        Ok(_) => { false }
-        Err(errors) => {
-            for error in errors { println!("{}\n", error.display(&strings)); }
-            true
-        }
-    } { return; }
-    // canonicalize modules
-    let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
-    for module_path in module_paths {
-        let mut module = modules.remove(&module_path).expect("key must be valid");
-        let canonicalization_errors = module.canonicalize(&modules, &mut strings);
-        modules.insert(module_path, module);
-        if canonicalization_errors.len() > 0 {
-            for error in canonicalization_errors { println!("{}\n", error.display(&strings)); }
-            return;
-        }
-    }
-    // debug
-    println!("{:?}", modules);
-}
-
