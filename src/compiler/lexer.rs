@@ -223,6 +223,7 @@ impl Lexer {
                 "ret" => return Some(Ok(self.make_token("ret", TokenType::KeywordReturn, string_map))),
                 "mod" => return Some(Ok(self.make_token("mod", TokenType::KeywordModule, string_map))),
                 "pub" => return Some(Ok(self.make_token("pub", TokenType::KeywordPublic, string_map))),
+                "use" => return Some(Ok(self.make_token("use", TokenType::KeywordUse, string_map))),
                 _ => return Some(Ok(Token {
                     token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),

@@ -41,7 +41,8 @@ pub enum TokenType {
     KeywordMutable,
     KeywordReturn,
     KeywordModule,
-    KeywordPublic
+    KeywordPublic,
+    KeywordUse
 }
 
 #[derive(Debug, Clone)]

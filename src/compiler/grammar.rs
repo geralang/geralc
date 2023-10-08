@@ -202,6 +202,9 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
         AstNodeVariant::ModuleAccess { path: _ } => {
             enforce_min_scope!("Variables", ScopeType::Variable);
             enforce_max_scope!("Variables", ScopeType::Statement, ScopeType::Expression);
-        },
+        }
+        AstNodeVariant::Use { paths: _ } => {
+            enforce_min_scope!("'mod'", ScopeType::GlobalStatement);
+        }
     }
 }

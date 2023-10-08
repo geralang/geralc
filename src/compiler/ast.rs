@@ -17,12 +17,14 @@ impl AstNode {
     }
 
     pub fn replace_source(&mut self, new: SourceRange) { self.source = new; }
-    pub fn node_variant_mut(&mut self) -> &mut AstNodeVariant<AstNode> { &mut self.variant }
 }
 
 impl HasAstNodeVariant<AstNode> for AstNode {
     fn node_variant(&self) -> &AstNodeVariant<AstNode> {
         &self.variant
+    }
+    fn node_variant_mut(&mut self) -> &mut AstNodeVariant<AstNode> {
+        &mut self.variant
     }
 }
 
@@ -33,6 +35,7 @@ impl HasSource for AstNode {
 
 pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     fn node_variant(&self) -> &AstNodeVariant<T>;
+    fn node_variant_mut(&mut self) -> &mut AstNodeVariant<T>;
     fn to_string(&self, strings: &StringMap) -> String { self.node_variant().to_string(strings) }
 }
 
@@ -71,7 +74,8 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Or { a: Box<T>, b: Box<T> },
     And { a: Box<T>, b: Box<T> },
     Module { path: NamespacePath },
-    ModuleAccess { path: NamespacePath }
+    ModuleAccess { path: NamespacePath },
+    Use { paths: Vec<NamespacePath> }
 }
 
 fn indent(input: String, amount: usize) -> String {
@@ -233,8 +237,11 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
             AstNodeVariant::ModuleAccess { path } =>
                 format!("ModuleAccess\n  path = {}",
                     path.display(strings)
+                ),
+                AstNodeVariant::Use { paths } =>
+                format!("Use\n  paths = \n    {}",
+                    indent(paths.iter().map(|p| p.display(strings)).collect::<Vec<String>>().join("\n"), 4)
                 )
-            
         }
     }
 }

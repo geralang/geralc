@@ -10,7 +10,7 @@
 - [x] Parser
 - [x] Pretty errors
 - [x] Grammar checking
-- [ ] Modules
+- [x] Modules
 - [ ] Type checking
 - [ ] Interpreter
 - [ ] Emitter

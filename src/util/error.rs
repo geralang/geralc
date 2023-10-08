@@ -22,7 +22,11 @@ pub enum ErrorType {
 
     // module errors
     ModuleDeclarationNotAtTop,
-    SymbolAlreadyExists(String)
+    SymbolAlreadyExists(String),
+    ModuleDoesNotExist(String),
+    SymbolDoesNotExist(String),
+    SymbolIsNotPublic(String),
+    ModuleAlreadyDefined(String)
 
 }
 
@@ -38,7 +42,11 @@ impl ErrorType {
             ErrorType::TotallyUnexpectedToken(got) => format!("'{}' is totally unexpected here", strings.get(*got)),
             ErrorType::InvalidContext(thing, expected, got) => format!("{} may only be used as {}, but here one was used as {} instead", thing, expected, got),
             ErrorType::ModuleDeclarationNotAtTop => format!("The parent module must be declared at the top of the file"),
-            ErrorType::SymbolAlreadyExists(path) => format!("'{}' already exists", path)
+            ErrorType::SymbolAlreadyExists(path) => format!("'{}' already exists", path),
+            ErrorType::ModuleDoesNotExist(path) => format!("'{}' is not a known module", path),
+            ErrorType::SymbolDoesNotExist(path) => format!("'{}' is not a known symbol", path),
+            ErrorType::SymbolIsNotPublic(path) => format!("'{}' exists but is not public; therefore, this module may not access it", path),
+            ErrorType::ModuleAlreadyDefined(path) => format!("The module '{}' is already defined in another file", path)
         }
     }
 }

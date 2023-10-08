@@ -4,7 +4,7 @@
 mod util;
 mod compiler;
 
-use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}};
+use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
 use compiler::{lexer::Lexer, parser::Parser, ast::{HasAstNodeVariant, AstNode, AstNodeVariant}, grammar::{check_grammar, ScopeType}, modules::{Module, NamespacePath}};
 
 use std::{fs, collections::HashMap};
@@ -36,23 +36,32 @@ fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMa
     check_grammar(&nodes, ScopeType::GlobalStatement, &mut grammar_errors);
     if grammar_errors.len() > 0 { return Err(grammar_errors); }
     // put the file into a module
-    let mut module_path = NamespacePath::new(Vec::new());
+    let mut module_path: NamespacePath = NamespacePath::new(Vec::new());
     if nodes.len() == 0 || match nodes[0].node_variant() {
-        AstNodeVariant::Module { path } => { module_path = path.clone(); false }
+        AstNodeVariant::Module { path } => {
+            module_path = path.clone();
+            false
+        }
         _ => true
     } { return Err(vec![Error::new([
         ErrorSection::Error(ErrorType::ModuleDeclarationNotAtTop),
-        ErrorSection::Info(format!("In the file '{}'", strings.get(file_path)))
+        ErrorSection::Info(format!("In the file '{}'", strings.get(file_path))),
     ].into())]) }
-    nodes.remove(0);
-    if let Some(module) = modules.get_mut(&module_path) {
-        let module_load_errors = module.load(nodes, strings);
-        if module_load_errors.len() > 0 { return Err(module_load_errors); }
+    let module_declaration = nodes.remove(0);
+    if let Some(module) = modules.get(&module_path) {
+        return Err(vec![Error::new([
+            ErrorSection::Error(ErrorType::ModuleAlreadyDefined(module_path.display(strings))),
+            ErrorSection::Code(module_declaration.source()),
+            ErrorSection::Info(format!("'{}' is already defined in the file '{}'", module_path.display(strings), strings.get(module.file_name())))
+        ].into())]);
     } else {
-        let mut module = Module::new(module_path.clone());
-        let module_load_errors = module.load(nodes, strings);
-        if module_load_errors.len() > 0 { return Err(module_load_errors); }
-        modules.insert(module_path.clone(), module);
+        modules.insert(
+            module_path.clone(),
+            match Module::new(module_path.clone(), module_declaration.source().file_name(), nodes, strings) {
+                Ok(module) => module,
+                Err(errors) => return Err(errors)
+            }
+        );
     }
     Ok(module_path)
 }
@@ -60,19 +69,32 @@ fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMa
 fn main() {
     let mut strings = StringMap::new();
     let mut modules = HashMap::new();
-    match load_file(strings.insert("test.gera"), &mut strings, &mut modules) {
-        Ok(_) => {}
+    // load files (CLI will do this later on)
+    if match load_file(strings.insert("test.gera"), &mut strings, &mut modules) {
+        Ok(_) => { false }
         Err(errors) => {
             for error in errors { println!("{}\n", error.display(&strings)); }
-            return;
+            true
         }
-    }
-    for module in modules.keys() {
-        let canonicalization_errors = Module::canonicalize(module, &modules);
+    } || match load_file(strings.insert("test2.gera"), &mut strings, &mut modules) {
+        Ok(_) => { false }
+        Err(errors) => {
+            for error in errors { println!("{}\n", error.display(&strings)); }
+            true
+        }
+    } { return; }
+    // canonicalize modules
+    let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
+    for module_path in module_paths {
+        let mut module = modules.remove(&module_path).expect("key must be valid");
+        let canonicalization_errors = module.canonicalize(&modules, &mut strings);
+        modules.insert(module_path, module);
         if canonicalization_errors.len() > 0 {
             for error in canonicalization_errors { println!("{}\n", error.display(&strings)); }
             return;
         }
     }
+    // debug
+    println!("{:?}", modules);
 }
 

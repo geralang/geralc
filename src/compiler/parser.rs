@@ -2,7 +2,7 @@
 use crate::util::{
     strings::StringMap,
     error::{Error, ErrorSection, ErrorType},
-    source::HasSource
+    source::{HasSource, SourceRange}
 };
 use crate::compiler::{
     lexer::Lexer, 
@@ -373,18 +373,20 @@ impl Parser {
                     let mut values = Vec::new();
                     let source_start = self.current.source;
                     enforce_next!("the name of an object member or a closing brace ('}')");
+                    while self.current.token_type == TokenType::Newline && next!() {}
                     while self.current.token_type != TokenType::BraceClose {
                         enforce_current_type!(&[TokenType::Identifier], "the name of an object member");
                         let member = self.current.token_content;
                         enforce_next!("an equals sign ('=')");
                         enforce_current_type!(&[TokenType::Equals], "an equals sign ('=')");
                         enforce_next!("the member value");
-                        let value = enforce_expression!(&[TokenType::Comma, TokenType::BraceClose], None, "the member value");
+                        let value = enforce_expression!(&[TokenType::Comma, TokenType::BraceClose, TokenType::Newline], None, "the member value");
                         values.push((member, value));
-                        enforce_current_type!(&[TokenType::Comma, TokenType::BraceClose], "a comma (',') or a closing brace ('}')");
+                        enforce_current_type!(&[TokenType::Comma, TokenType::BraceClose, TokenType::Newline], "a comma (',') or a closing brace ('}')");
                         if self.current.token_type == TokenType::Comma {
                             enforce_next!("the name of an object member or a closing brace ('}')");
                         }
+                        while self.current.token_type == TokenType::Newline && next!() {}
                     }
                     // enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                     new = AstNode::new(
@@ -397,12 +399,14 @@ impl Parser {
                     let mut values = Vec::new();
                     let source_start = self.current.source;
                     enforce_next!("an array value or a closing brace (']')");
+                    while self.current.token_type == TokenType::Newline && next!() {}
                     while self.current.token_type != TokenType::BracketClose {
-                        values.push(enforce_expression!(&[TokenType::Comma, TokenType::BracketClose], None, "an array value"));
-                        enforce_current_type!(&[TokenType::Comma, TokenType::BracketClose], "a comma (',') or a closing bracket (']')");
+                        values.push(enforce_expression!(&[TokenType::Comma, TokenType::BracketClose, TokenType::Newline], None, "an array value"));
+                        enforce_current_type!(&[TokenType::Comma, TokenType::BracketClose, TokenType::Newline], "a comma (',') or a closing bracket (']')");
                         if self.current.token_type == TokenType::Comma {
                             enforce_next!("an array value or a closing brace (']')");
                         }
+                        while self.current.token_type == TokenType::Newline && next!() {}
                     }
                     // enforce_current_type!(&[TokenType::BracketClose], "a closing bracket (']')");
                     new = AstNode::new(
@@ -623,6 +627,82 @@ impl Parser {
                             ].into()));
                         }
                     }
+                }
+                TokenType::KeywordUse => {
+                    let start_source = self.current.source;
+                    enforce_next!("the things to use");
+                    let mut end_source = self.current.source;
+                    fn parse_usage_paths(parser: &mut Parser, strings: &mut StringMap, lexer: &mut Lexer, end_source: &mut SourceRange) -> Result<Vec<NamespacePath>, Error> {
+                        macro_rules! next { () => {
+                            match parser.next(strings, lexer) {
+                                Ok(did) => did,
+                                Err(error) => return Err(error)
+                            }
+                        } }
+                        macro_rules! enforce_next { ($expected: expr) => {
+                            if !match parser.next(strings, lexer) {
+                                Ok(did) => did,
+                                Err(error) => return Err(error)
+                            } { return Err(Error::new([
+                                ErrorSection::Error(ErrorType::UnexpectedEnd($expected)),
+                                ErrorSection::Code(parser.current.source)
+                            ].into())); }
+                        } }
+                        macro_rules! enforce_current_type { ($types: expr, $expected: expr) => {
+                            if !$types.contains(&parser.current.token_type) { return Err(Error::new([
+                                ErrorSection::Error(ErrorType::UnexpectedToken($expected, parser.current.token_content)),
+                                ErrorSection::Code(parser.current.source)
+                            ].into())); }
+                        } }
+                        let mut path_segments = Vec::new();
+                        enforce_current_type!(&[TokenType::Identifier], "the name of the module");
+                        path_segments.push(parser.current.token_content);
+                        enforce_next!("the name of the module");
+                        while parser.current.token_type == TokenType::NamespaceSeparator {
+                            enforce_next!("the name of the module, '(' or '*'");
+                            enforce_current_type!(&[TokenType::Identifier, TokenType::ParenOpen, TokenType::Asterisk], "the name of the module, '(' or '*'");
+                            match parser.current.token_type {
+                                TokenType::Identifier |
+                                TokenType::Asterisk => {
+                                    path_segments.push(parser.current.token_content);
+                                    *end_source = parser.current.source;
+                                }
+                                TokenType::ParenOpen => {
+                                    enforce_next!("the name of the module");
+                                    let mut paths = Vec::new();
+                                    while parser.current.token_type != TokenType::ParenClose {
+                                        match parse_usage_paths(parser, strings, lexer, end_source) {
+                                            Ok(mut p) => paths.append(&mut p),
+                                            Err(errors) => return Err(errors)
+                                        }
+                                        enforce_current_type!(&[TokenType::Comma, TokenType::ParenClose], "',' or ')'");
+                                        if parser.current.token_type == TokenType::Comma { enforce_next!("the name of the module or ')'"); }
+                                    }
+                                    enforce_current_type!(&[TokenType::ParenClose], "')'");
+                                    *end_source = parser.current.source;
+                                    next!();
+                                    for path in &mut paths {
+                                        let mut new_segments = path_segments.clone();
+                                        new_segments.append(&mut path.get_segments().clone());
+                                        *path = NamespacePath::new(new_segments);
+                                    }
+                                    return Ok(paths);
+                                }
+                                _ => { panic!("impossible") }
+                            }
+                            if !next!() { break; }
+                        }
+                        Ok(vec![NamespacePath::new(path_segments)])
+                    }
+                    new = AstNode::new(
+                        AstNodeVariant::Use {
+                            paths: match parse_usage_paths(self, strings, lexer, &mut end_source) {
+                                Ok(p) => p,
+                                Err(errors) => return Err(errors)
+                            }
+                        },
+                        (&start_source..&end_source).into()
+                    );
                 }
                 _ => return Err(Error::new([
                     ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),
