@@ -55,7 +55,7 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     ArrayAccess { array: Box<T>, index: Box<T> },
     VariableAccess { name: StringIdx },
     IntegerLiteral { value: u64 },
-    FractionLiteral { value: f64 },
+    FloatLiteral { value: f64 },
     StringLiteral { value: StringIdx },
     UnitLiteral,
     Add { a: Box<T>, b: Box<T> },
@@ -154,7 +154,7 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                 ),
             AstNodeVariant::VariableAccess { name } => format!("VariableAccess\n  name = '{}'", strings.get(*name)),
             AstNodeVariant::IntegerLiteral { value } => format!("IntegerLiteral\n  value = {}", value),
-            AstNodeVariant::FractionLiteral { value } => format!("FractionLiteral\n  value = {}", value),
+            AstNodeVariant::FloatLiteral { value } => format!("FloatLiteral\n  value = {}", value),
             AstNodeVariant::StringLiteral { value } => format!("StringLiteral\n  value = '{}'", strings.get(*value)),
             AstNodeVariant::UnitLiteral => format!("Unit"),
             AstNodeVariant::Add { a, b } =>

@@ -5,3 +5,4 @@ pub mod ast;
 pub mod parser;
 pub mod grammar;
 pub mod modules;
+pub mod types;

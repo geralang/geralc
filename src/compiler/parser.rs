@@ -338,7 +338,7 @@ impl Parser {
                 }
                 TokenType::Fraction => {
                     new = AstNode::new(
-                        AstNodeVariant::FractionLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
+                        AstNodeVariant::FloatLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
                         self.current.source
                     );
                     next!();

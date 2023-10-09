@@ -146,9 +146,9 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_min_scope!("Integer literals", ScopeType::Expression);
             enforce_max_scope!("Integer literals", ScopeType::Statement, ScopeType::Expression);
         },
-        AstNodeVariant::FractionLiteral { value: _ } => {
-            enforce_min_scope!("Fraction literals", ScopeType::Expression);
-            enforce_max_scope!("Fraction literals", ScopeType::Statement, ScopeType::Expression);
+        AstNodeVariant::FloatLiteral { value: _ } => {
+            enforce_min_scope!("Float literals", ScopeType::Expression);
+            enforce_max_scope!("Float literals", ScopeType::Statement, ScopeType::Expression);
         },
         AstNodeVariant::StringLiteral { value: _ } => {
             enforce_min_scope!("String literals", ScopeType::Expression);

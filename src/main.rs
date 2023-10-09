@@ -9,7 +9,7 @@ use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorTy
 use compiler::{lexer::Lexer, parser::Parser, ast::{HasAstNodeVariant, AstNode, AstNodeVariant}, grammar::{check_grammar, ScopeType}, modules::{Module, NamespacePath}};
 use cli::{CliArgs, CliArg};
 
-use std::{fs, env, collections::HashMap, ops::BitOr};
+use std::{fs, env, collections::HashMap};
 
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
             let mut console_mode: Console::CONSOLE_MODE = Default::default();
             Console::GetConsoleMode(output, &mut console_mode)
                 .expect("Failed to get console mode");
-            console_mode = console_mode.bitor(Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+            console_mode |= Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
             Console::SetConsoleMode(output, console_mode)
                 .expect("Failed to set console mode");
         }

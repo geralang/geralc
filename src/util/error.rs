@@ -36,7 +36,10 @@ pub enum ErrorType {
     ModuleDoesNotExist(String),
     SymbolDoesNotExist(String),
     SymbolIsNotPublic(String),
-    ModuleAlreadyDefined(String)
+    ModuleAlreadyDefined(String),
+
+    // type errors
+    NoPossibleTypes(String, String)
 
 }
 
@@ -110,6 +113,11 @@ impl ErrorType {
             ErrorType::ModuleAlreadyDefined(path) => format!(
                 concat!("The module ", style_red!(), "{}", style_dark_red!(), " is already defined in another file"),
                 path
+            ),
+            ErrorType::NoPossibleTypes(limited, to_only) => format!(
+                concat!("Limiting ", style_red!(), "{}", style_dark_red!(), " to only ", style_red!(), "{}", style_dark_red!(), " results in no remaining possible types!"),
+                limited,
+                to_only
             )
         }
     }
