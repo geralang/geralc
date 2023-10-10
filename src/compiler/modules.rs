@@ -228,6 +228,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     }
                 }
             }
+            AstNodeVariant::BooleanLiteral { value: _ } |
             AstNodeVariant::IntegerLiteral { value: _ } |
             AstNodeVariant::FloatLiteral { value: _ } |
             AstNodeVariant::StringLiteral { value: _ } |

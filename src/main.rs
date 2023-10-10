@@ -11,8 +11,32 @@ use cli::{CliArgs, CliArg};
 
 use std::{fs, env, collections::HashMap};
 
+use crate::compiler::types::{TypeScope, PossibleTypes, Type};
+
 
 fn main() {
+
+    // proc change_name thing new_name {
+    //     thing#name = new_name
+    //     thing#name + 1
+    // }
+
+    let mut strings = StringMap::new();
+    let mut type_scope = TypeScope::new();
+    let thing = type_scope.register_variable();
+    let new_name = type_scope.register_variable();
+    let _ = type_scope.limit_possible_types(
+        &PossibleTypes::OfGroup(thing),
+        &PossibleTypes::OneOf(vec![Type::Object(HashMap::from([(strings.insert("name"), PossibleTypes::OfGroup(new_name))]))])
+    );
+    // accessing '#name' of 'thing' then results in 'PossibleTypes::OfGroup(new_name)'
+    let _ = type_scope.limit_possible_types(
+        &PossibleTypes::OfGroup(new_name),
+        &PossibleTypes::OneOf(vec![Type::Integer])
+    );
+    println!("{:?}", type_scope.get_group_types(&new_name));
+    return;
+
     if cfg!(target_os = "windows") {
         use windows::Win32::System::Console;
         unsafe {

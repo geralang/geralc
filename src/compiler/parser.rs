@@ -704,6 +704,20 @@ impl Parser {
                         (&start_source..&end_source).into()
                     );
                 }
+                TokenType::KeywordTrue => {
+                    new = AstNode::new(
+                        AstNodeVariant::BooleanLiteral { value: true },
+                        self.current.source
+                    );
+                    next!();
+                }
+                TokenType::KeywordFalse => {
+                    new = AstNode::new(
+                        AstNodeVariant::BooleanLiteral { value: false },
+                        self.current.source
+                    );
+                    next!();
+                }
                 _ => return Err(Error::new([
                     ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),
                     ErrorSection::Code(self.current.source)

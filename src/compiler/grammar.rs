@@ -142,6 +142,10 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_min_scope!("Variables", ScopeType::Variable);
             enforce_max_scope!("Variables", ScopeType::Statement, ScopeType::Expression);
         },
+        AstNodeVariant::BooleanLiteral { value: _ } => {
+            enforce_min_scope!("Boolean literals", ScopeType::Expression);
+            enforce_max_scope!("Boolean literals", ScopeType::Statement, ScopeType::Expression);
+        },
         AstNodeVariant::IntegerLiteral { value: _ } => {
             enforce_min_scope!("Integer literals", ScopeType::Expression);
             enforce_max_scope!("Integer literals", ScopeType::Statement, ScopeType::Expression);
