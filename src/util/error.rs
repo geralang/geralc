@@ -8,6 +8,7 @@ macro_rules! style_bold_dark_red { () => { "\x1b[1;31m" } }
 macro_rules! style_red { () => { "\x1b[0;91m" } }
 macro_rules! style_bold_green { () => { "\x1b[1;92m" } }
 macro_rules! style_bold_cyan { () => { "\x1b[1;96m" } }
+macro_rules! style_gray { () => { "\x1b[0;90m" } }
 
 
 pub enum ErrorType {
@@ -39,7 +40,8 @@ pub enum ErrorType {
     ModuleAlreadyDefined(String),
 
     // type errors
-    NoPossibleTypes(String, String)
+    NoPossibleTypes(String, String),
+    VariableDoesNotExist(StringIdx)
 
 }
 
@@ -115,9 +117,13 @@ impl ErrorType {
                 path
             ),
             ErrorType::NoPossibleTypes(limited, to_only) => format!(
-                concat!("Limiting ", style_red!(), "{}", style_dark_red!(), " to only ", style_red!(), "{}", style_dark_red!(), " results in no remaining possible types!"),
+                concat!("Limiting ", style_red!(), "{}", style_dark_red!(), " to only ", style_red!(), "{}", style_dark_red!(), " results in no remaining possible types"),
                 limited,
                 to_only
+            ),
+            ErrorType::VariableDoesNotExist(name) => format!(
+                concat!("There is no variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope"),
+                strings.get(*name)
             )
         }
     }
@@ -157,7 +163,10 @@ impl ErrorSection {
                 }
                 let displayed_lines_start = source_start_line.max(1) - 1;
                 let displayed_lines_end = source_end_line + 2;
-                output.push_str(&format!("at: {}:{}", strings.get(source.file_name()), source_start_line));
+                output.push_str(&format!("at: {}:{}",
+                    strings.get(source.file_name()),
+                    displayed_lines_start + 1
+                ));
                 {
                     let mut position = 0usize;
                     let mut line = 1usize;
@@ -169,28 +178,31 @@ impl ErrorSection {
                         if (*c == '\n' && last_c != '\r') || *c == '\r' {
                             if line >= displayed_lines_start && line <= displayed_lines_end {
                                 if (line.max(source_start_line) - source_start_line).min(source_end_line.max(line) - line) < 2 {
-                                    output.push('\n');
-                                    output.push_str(&format!(" {: >1$} | ", line, displayed_lines_end.to_string().len()));
-                                    for l in &line_content[0..line_content.len() - 1] { output.push(*l); }
-                                    let mut marked = vec![' '; line_content.len() - 1];
-                                    let mut is_marked = false;
+                                    let mut marked = vec![false; line_content.len() - 1];
                                     for i in source.start_position()..source.end_position() {
                                         if i < (position.max(1) - line_content.len() + 1) { continue; }
                                         if i >= position { continue; }
-                                        marked.insert(i - (position - line_content.len() + 1), '^');
-                                        is_marked = true;
+                                        marked.insert(i - (position - line_content.len() + 1), true);
                                     }
-                                    if is_marked {
-                                        output.push('\n');
-                                        output.push_str(&format!(" {} | ", " ".repeat(displayed_lines_end.to_string().len())));
-                                        output.push_str(style_bold_dark_red!());
-                                        for m in marked { output.push(m); }
-                                        output.push_str(style_reset!());
+                                    output.push('\n');
+                                    if !marked.contains(&true) { output.push_str(style_gray!()); }
+                                    output.push_str(&format!(" {: >1$}  ", line, displayed_lines_end.to_string().len()));
+                                    let mut last_marked: bool = false;
+                                    for c in 0..line_content.len() - 1 {
+                                        if marked[c] && !last_marked {
+                                            output.push_str(style_dark_red!());
+                                            last_marked = true;
+                                        } else if !marked[c] && last_marked {
+                                            output.push_str(style_reset!());
+                                            last_marked = false;
+                                        }
+                                        output.push(line_content[c]);
                                     }
+                                    output.push_str(style_reset!());
                                 } else if !printed_filler {
                                     output.push('\n');
-                                    output.push_str(&format!(" {} | ", " ".repeat(displayed_lines_end.to_string().len())));
-                                    output.push_str(style_dark_red!());
+                                    output.push_str(&format!(" {}  ", " ".repeat(displayed_lines_end.to_string().len())));
+                                    output.push_str(style_gray!());
                                     output.push_str(&format!("... ({} lines hidden)", source_end_line - source_start_line - 3 /* don't ask where '3' comes from, it just works */));
                                     output.push_str(style_reset!());
                                     printed_filler = true;

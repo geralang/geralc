@@ -1,6 +1,6 @@
 
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
-use crate::compiler::modules::NamespacePath;
+use crate::compiler::{modules::NamespacePath, types::PossibleTypes};
 
 #[derive(Debug, Clone)]
 pub struct AstNode {
@@ -20,12 +20,9 @@ impl AstNode {
 }
 
 impl HasAstNodeVariant<AstNode> for AstNode {
-    fn node_variant(&self) -> &AstNodeVariant<AstNode> {
-        &self.variant
-    }
-    fn node_variant_mut(&mut self) -> &mut AstNodeVariant<AstNode> {
-        &mut self.variant
-    }
+    fn node_variant(&self) -> &AstNodeVariant<AstNode> { &self.variant }
+    fn node_variant_mut(&mut self) -> &mut AstNodeVariant<AstNode> { &mut self.variant }
+    fn move_node(self) -> AstNodeVariant<AstNode> { self.variant }
 }
 
 impl HasSource for AstNode {
@@ -33,9 +30,42 @@ impl HasSource for AstNode {
 }
 
 
+#[derive(Debug, Clone)]
+pub struct TypedAstNode {
+    variant: AstNodeVariant<TypedAstNode>,
+    node_type: PossibleTypes,
+    source: SourceRange
+}
+
+impl TypedAstNode {
+    pub fn new(variant: AstNodeVariant<TypedAstNode>, node_type: PossibleTypes, source: SourceRange) -> TypedAstNode {
+        TypedAstNode {
+            variant,
+            node_type,
+            source
+        }
+    }
+
+    pub fn replace_source(&mut self, new: SourceRange) { self.source = new; }
+    pub fn get_types(&self) -> &PossibleTypes { &self.node_type }
+    pub fn get_types_mut(&mut self) -> &mut PossibleTypes { &mut self.node_type }
+}
+
+impl HasAstNodeVariant<TypedAstNode> for TypedAstNode {
+    fn node_variant(&self) -> &AstNodeVariant<TypedAstNode> { &self.variant }
+    fn node_variant_mut(&mut self) -> &mut AstNodeVariant<TypedAstNode> { &mut self.variant}
+    fn move_node(self) -> AstNodeVariant<TypedAstNode> { self.variant }
+}
+
+impl HasSource for TypedAstNode {
+    fn source(&self) -> SourceRange { self.source }
+}
+
+
 pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     fn node_variant(&self) -> &AstNodeVariant<T>;
     fn node_variant_mut(&mut self) -> &mut AstNodeVariant<T>;
+    fn move_node(self) -> AstNodeVariant<T>;
     fn to_string(&self, strings: &StringMap) -> String { self.node_variant().to_string(strings) }
 }
 
