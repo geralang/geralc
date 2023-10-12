@@ -98,6 +98,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
     }
 
     pub fn file_name(&self) -> StringIdx { self.file_name }
+    pub fn symbols(self) -> HashMap<StringIdx, T> { self.symbols }
 
     pub fn canonicalize(&mut self, modules: &HashMap<NamespacePath, Module<T>>, strings: &mut StringMap) -> Vec<Error> {
         self.expand_wildcards(modules, strings);

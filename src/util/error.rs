@@ -41,7 +41,8 @@ pub enum ErrorType {
 
     // type errors
     NoPossibleTypes(String, String),
-    VariableDoesNotExist(StringIdx)
+    VariableDoesNotExist(StringIdx),
+    ImmutableAssignmant(StringIdx)
 
 }
 
@@ -123,6 +124,10 @@ impl ErrorType {
             ),
             ErrorType::VariableDoesNotExist(name) => format!(
                 concat!("There is no variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope"),
+                strings.get(*name)
+            ),
+            ErrorType::ImmutableAssignmant(name) => format!(
+                concat!("The variable ", style_red!(), "{}", style_dark_red!(), " was not as declared as mutable, but a new value is assigned"),
                 strings.get(*name)
             )
         }

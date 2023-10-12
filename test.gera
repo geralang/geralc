@@ -1,10 +1,30 @@
 
 mod testing
 
-use std::io
-
-mut var xp lmfao
-
 proc main args {
-    io::println (5 + 10)
+    mut var x = 5
+    x = 25
 }
+
+proc add x y {
+    ret x + y
+}
+
+proc test lol {
+    ret
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

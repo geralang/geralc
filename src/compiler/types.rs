@@ -90,21 +90,23 @@ impl TypeScope {
                 Some(a.clone())
             }
             (PossibleTypes::OfGroup(a_group), PossibleTypes::OfGroup(b_group)) => {
-                if let Some(new_type) = self.possible_types_limited(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
-                    self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type;
-                } else {
-                    return None;
-                }
                 let a_group_idx = self.var_type_groups[a_group.0];
                 let b_group_idx = self.var_type_groups[b_group.0];
-                let b_group = &mut self.type_groups[b_group_idx];
-                for var_idx in &b_group.members {
-                    self.var_type_groups[var_idx.0] = a_group_idx;
-                }
-                self.type_groups.remove(b_group_idx);
-                for var_idx in &mut self.var_type_groups {
-                    if *var_idx <= b_group_idx { continue; }
-                    *var_idx -= 1;
+                if a_group_idx != b_group_idx {
+                    if let Some(new_type) = self.possible_types_limited(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
+                        self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type;
+                    } else {
+                        return None;
+                    } 
+                    let b_group = &mut self.type_groups[b_group_idx];
+                    for var_idx in &b_group.members {
+                        self.var_type_groups[var_idx.0] = a_group_idx;
+                    }
+                    self.type_groups.remove(b_group_idx);
+                    for var_idx in &mut self.var_type_groups {
+                        if *var_idx <= b_group_idx { continue; }
+                        *var_idx -= 1;
+                    }
                 }
                 Some(PossibleTypes::OfGroup(a_group.clone()))
             },
