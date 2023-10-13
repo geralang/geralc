@@ -118,7 +118,7 @@ impl ErrorType {
                 path
             ),
             ErrorType::NoPossibleTypes(limited, to_only) => format!(
-                concat!("Limiting ", style_red!(), "{}", style_dark_red!(), " to only ", style_red!(), "{}", style_dark_red!(), " results in no remaining possible types"),
+                "The type of this expression must be {} and {}, which results in no remaining possible types",
                 limited,
                 to_only
             ),

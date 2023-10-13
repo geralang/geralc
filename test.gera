@@ -6,13 +6,30 @@ proc main args {
     x = 25
 }
 
-proc add x y {
-    ret x + y
+
+
+
+
+
+
+proc idx_to_weekday idx {
+    case idx {
+        0 -> ret "Monday"
+        1 -> ret "Tuesday"
+        2 -> ret "Wednesday"
+        3 -> ret "Thursday"
+        4 -> ret "Friday"
+        5 -> ret "Saturday"
+        6 -> ret "Sunday"
+    }
 }
 
-proc test lol {
-    ret
-}
+
+
+
+
+
+
 
 
 

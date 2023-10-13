@@ -11,7 +11,7 @@ use cli::{CliArgs, CliArg};
 
 use std::{fs, env, collections::HashMap};
 
-use crate::compiler::{types::{TypeScope, PossibleTypes, Type}, type_checking::type_check_modules};
+use crate::compiler::type_checking::type_check_modules;
 
 
 fn main() {
@@ -72,6 +72,8 @@ fn main() {
             return;
         }
     };
+    // debug
+    println!("{:?}", typed_ast);
 }
 
 fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMap<NamespacePath, Module<AstNode>>) -> Result<NamespacePath, Vec<Error>> {

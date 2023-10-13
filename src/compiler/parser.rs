@@ -543,6 +543,7 @@ impl Parser {
                                             };
                                             enforce_not_reached_end!("a closing brace ('}')");
                                             enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                            enforce_next!("the value for the branch or a closing brace ('}')");
                                             body
                                         } else {
                                             vec![enforce_expression!(&[TokenType::Newline, TokenType::BraceClose], None, "the body of the conditional branch")]
@@ -581,7 +582,6 @@ impl Parser {
                         AstNodeVariant::Return { value },
                         result_source
                     );
-                    next!();
                 }
                 TokenType::KeywordModule => {
                     let start_source: crate::util::source::SourceRange = self.current.source;
