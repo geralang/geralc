@@ -1,16 +1,15 @@
 
 mod testing
 
-proc main args {
-    mut var x = 5
-    x = 25
+
+proc apply f x {
+    ret f x
 }
 
-
-
-
-
-
+proc main args {
+    var apply = func f x { ret f x }
+    var x = apply func n { ret n } 0
+}
 
 proc idx_to_weekday idx {
     case idx {
@@ -23,25 +22,3 @@ proc idx_to_weekday idx {
         6 -> ret "Sunday"
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,8 +1,5 @@
 
-use crate::util::{
-    strings::StringIdx,
-    error::{Error, ErrorSection, ErrorType}
-};
+use crate::util::strings::StringIdx;
 
 use std::collections::HashMap;
 
@@ -39,8 +36,8 @@ pub enum Type {
     Float,
     String,
     Array(PossibleTypes),
-    Object(HashMap<StringIdx, PossibleTypes>),
-    Closure(TypeScope, Vec<VarTypeIdx>, PossibleTypes)
+    Object(HashMap<StringIdx, PossibleTypes>, bool),
+    Closure(Vec<VarTypeIdx>, VarTypeIdx)
 }
 
 impl TypeScope {
@@ -71,17 +68,14 @@ impl TypeScope {
         &mut self.type_groups[self.var_type_groups[var.0]].possible_types
     }
 
-    pub fn limit_possible_types(&mut self, a: &PossibleTypes, b: &PossibleTypes) -> Result<PossibleTypes, Error> {
-        if let Some(new_type) = self.possible_types_limited(a, b) {
-            Ok(new_type)
-        } else {
-            Err(Error::new([
-                ErrorSection::Error(ErrorType::NoPossibleTypes(format!("{:?}", a), format!("{:?}", b)))
-            ].into()))
-        }
+    pub fn get_group_internal_index(&self, var: &VarTypeIdx) -> usize {
+        self.var_type_groups[var.0]
+    }
+    pub fn get_group_types_from_internal_index(&self, idx: usize) -> &PossibleTypes {
+        &self.type_groups[idx].possible_types
     }
 
-    fn possible_types_limited(&mut self, a: &PossibleTypes, b: &PossibleTypes) -> Option<PossibleTypes> {
+    pub fn limit_possible_types(&mut self, a: &PossibleTypes, b: &PossibleTypes) -> Option<PossibleTypes> {
         match (a, b) {
             (PossibleTypes::Any, _) => {
                 Some(b.clone())
@@ -93,7 +87,7 @@ impl TypeScope {
                 let a_group_idx = self.var_type_groups[a_group.0];
                 let b_group_idx = self.var_type_groups[b_group.0];
                 if a_group_idx != b_group_idx {
-                    if let Some(new_type) = self.possible_types_limited(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
+                    if let Some(new_type) = self.limit_possible_types(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
                         self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type;
                     } else {
                         return None;
@@ -111,7 +105,7 @@ impl TypeScope {
                 Some(PossibleTypes::OfGroup(a_group.clone()))
             },
             (PossibleTypes::OfGroup(a_group), _) => {
-                if let Some(new_type) = self.possible_types_limited(&self.get_group_types(a_group).clone(), b) {
+                if let Some(new_type) = self.limit_possible_types(&self.get_group_types(a_group).clone(), b) {
                     self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type.clone();
                     Some(PossibleTypes::OfGroup(a_group.clone()))
                 } else {
@@ -119,7 +113,7 @@ impl TypeScope {
                 }
             }
             (_, PossibleTypes::OfGroup(b_group)) => {
-                if let Some(new_type) = self.possible_types_limited(a, &self.get_group_types(b_group).clone()) {
+                if let Some(new_type) = self.limit_possible_types(a, &self.get_group_types(b_group).clone()) {
                     self.type_groups[self.var_type_groups[b_group.0]].possible_types = new_type.clone();
                     Some(PossibleTypes::OfGroup(b_group.clone()))
                 } else {
@@ -147,18 +141,28 @@ impl TypeScope {
                 Type::Array(a_element_type),
                 Type::Array(b_element_type)
             ) => {
-                if let Some(new_element_type) = self.possible_types_limited(a_element_type, b_element_type) {
+                if let Some(new_element_type) = self.limit_possible_types(a_element_type, b_element_type) {
                     Some(Type::Array(new_element_type))
                 } else { None }
             }
             (
-                Type::Object(a_member_types),
-                Type::Object(b_member_types)
+                Type::Object(a_member_types, a_fixed),
+                Type::Object(b_member_types, b_fixed)
             ) => {
                 let mut new_member_types: HashMap<StringIdx, PossibleTypes> = a_member_types.clone();
+                if *a_fixed {
+                    for (member_name, _) in b_member_types {
+                        if !a_member_types.contains_key(member_name) { return None; }
+                    }
+                }
+                if *b_fixed {
+                    for (member_name, _) in a_member_types {
+                        if !b_member_types.contains_key(member_name) { return None; }
+                    }
+                }
                 for (member_name, b_member_type) in b_member_types {
                     if let Some(a_member_type) = a_member_types.get(member_name) {
-                        if let Some(new_member_type) = self.possible_types_limited(a_member_type, b_member_type) {
+                        if let Some(new_member_type) = self.limit_possible_types(a_member_type, b_member_type) {
                             new_member_types.insert(*member_name, new_member_type);
                         } else {
                             return None;
@@ -167,59 +171,36 @@ impl TypeScope {
                         new_member_types.insert(*member_name, b_member_type.clone());
                     }
                 }
-                Some(Type::Object(new_member_types))
+                Some(Type::Object(new_member_types, *a_fixed && *b_fixed))
             }
             (
-                Type::Closure(a_type_scope, a_param_groups, a_return_type),
-                Type::Closure(b_type_scope, b_param_groups, b_return_type)
+                Type::Closure(a_param_groups, a_returned_group),
+                Type::Closure(b_param_groups, b_returned_group)
             ) => {
-                let mut new_scope = TypeScope::new();
-                if a_param_groups.len() != b_param_groups.len() { return None }
-                let mut a_param_group_map = HashMap::new();
-                let mut b_param_group_map = HashMap::new();
+                if a_param_groups.len() != b_param_groups.len() { return None; }
                 let mut n_param_groups = Vec::new();
-                for param_idx in 0..a_param_groups.len() {
-                    let a_param_group = a_param_groups[param_idx];
-                    let b_param_group = b_param_groups[param_idx];
-                    let n_param_group = if let Some(n_param_group) = a_param_group_map.get(&a_param_group) {
-                        if let Some(n_param_group_b) = b_param_group_map.get(&b_param_group) {
-                            if n_param_group != n_param_group_b { return None; }
-                            *n_param_group
-                        } else { return None; }
-                    } else {
-                        if b_param_group_map.contains_key(&b_param_group) { return None; }
-                        let n_param_group = new_scope.register_variable();
-                        a_param_group_map.insert(a_param_group, n_param_group);
-                        b_param_group_map.insert(b_param_group, n_param_group);
-                        n_param_group
-                    };
+                let n_returned_group = self.register_variable();
+                for p in 0..a_param_groups.len() {
+                    let n_param_group = self.register_variable();
+                    if let None = self.limit_possible_types(
+                        &PossibleTypes::OfGroup(n_param_group),
+                        &PossibleTypes::OfGroup(a_param_groups[p])
+                    ) { return None; }
+                    if let None = self.limit_possible_types(
+                        &PossibleTypes::OfGroup(n_param_group),
+                        &PossibleTypes::OfGroup(b_param_groups[p])
+                    ) { return None; }
                     n_param_groups.push(n_param_group);
-                    if let Ok(_) = new_scope.limit_possible_types(
-                        &PossibleTypes::OfGroup(n_param_group), 
-                        a_type_scope.get_group_types(&a_param_group)
-                    ) {
-                        return None;
-                    }
-                    if let Ok(_) = new_scope.limit_possible_types(
-                        &PossibleTypes::OfGroup(n_param_group), 
-                        b_type_scope.get_group_types(&b_param_group)
-                    ) {
-                        return None;
-                    }
                 }
-                let a_return_type = if let PossibleTypes::OfGroup(a_returned_group) = a_return_type {
-                    if let Some(n_returned_group) = a_param_group_map.get(a_returned_group) {
-                        PossibleTypes::OfGroup(*n_returned_group)
-                    } else { return None; }
-                } else { a_return_type.clone() };
-                let b_return_type = if let PossibleTypes::OfGroup(b_returned_group) = b_return_type {
-                    if let Some(n_returned_group) = b_param_group_map.get(b_returned_group) {
-                        PossibleTypes::OfGroup(*n_returned_group)
-                    } else { return None; }
-                } else { b_return_type.clone() };
-                if let Some(returned_type) = new_scope.possible_types_limited(&a_return_type, &b_return_type) {
-                    Some(Type::Closure(new_scope, n_param_groups, returned_type))
-                } else { return None; }
+                if let None = self.limit_possible_types(
+                    &PossibleTypes::OfGroup(n_returned_group),
+                    &PossibleTypes::OfGroup(*a_returned_group)
+                ) { return None; }
+                if let None = self.limit_possible_types(
+                    &PossibleTypes::OfGroup(n_returned_group),
+                    &PossibleTypes::OfGroup(*b_returned_group)
+                ) { return None; }
+                Some(Type::Closure(n_param_groups, n_returned_group))
             }
             _ => if std::mem::discriminant(a) == std::mem::discriminant(b) { Some(a.clone()) } else { None }
         }
