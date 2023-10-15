@@ -1,24 +1,31 @@
 
 mod testing
 
+var tau = pi * 2.0
+var pi = 3.1415
 
-proc apply f x {
-    ret f x
+proc apply f arg {
+    ret f arg
 }
 
 proc main args {
-    var apply = func f x { ret f x }
-    var x = apply func n { ret n } 0
+    var circumference = func radius {
+        ret radius * tau
+    }
+    var unit_c = apply circumference 1
 }
 
-proc idx_to_weekday idx {
-    case idx {
-        0 -> ret "Monday"
-        1 -> ret "Tuesday"
-        2 -> ret "Wednesday"
-        3 -> ret "Thursday"
-        4 -> ret "Friday"
-        5 -> ret "Saturday"
-        6 -> ret "Sunday"
-    }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

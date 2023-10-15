@@ -42,7 +42,9 @@ pub enum ErrorType {
     // type errors
     NoPossibleTypes(String, String),
     VariableDoesNotExist(StringIdx),
-    ImmutableAssignmant(StringIdx)
+    ImmutableAssignmant(StringIdx),
+    RecursiveConstant(String),
+    InvalidParameterCount(String, usize, usize)
 
 }
 
@@ -129,7 +131,18 @@ impl ErrorType {
             ErrorType::ImmutableAssignmant(name) => format!(
                 concat!("The variable ", style_red!(), "{}", style_dark_red!(), " was not as declared as mutable, but a new value is assigned"),
                 strings.get(*name)
-            )
+            ),
+            ErrorType::RecursiveConstant(name) => format!(
+                concat!("The global constant ", style_red!(), "{}", style_dark_red!(), " is recursive"),
+                name
+            ),
+            ErrorType::InvalidParameterCount(argument, expected, got) => format!(
+                concat!(style_red!(), "{}", style_dark_red!(), " expects {} parameter{}, got {} instead"),
+                argument,
+                expected,
+                if *expected == 1 { "" } else { "s" },
+                got
+            ),
         }
     }
 }

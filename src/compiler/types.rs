@@ -12,13 +12,7 @@ pub struct TypeScope {
     // The index stored in the array is the index of the actual type group.
     var_type_groups: Vec<usize>,
     // This vector stores the actual type groups.
-    type_groups: Vec<TypeGroup>
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeGroup {
-    possible_types: PossibleTypes,
-    members: Vec<VarTypeIdx>
+    type_groups: Vec<PossibleTypes>
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +34,11 @@ pub enum Type {
     Closure(Vec<VarTypeIdx>, VarTypeIdx)
 }
 
+pub struct TypeScopeTranslation {
+    var_type_groups: Vec<usize>,
+    mappings: HashMap<usize, VarTypeIdx>
+}
+
 impl TypeScope {
     pub fn new() -> TypeScope {
         TypeScope {
@@ -50,29 +49,43 @@ impl TypeScope {
 
     // creates a new type group with any type and returns the index.
     pub fn register_variable(&mut self) -> VarTypeIdx {
-        let var_index = self.var_type_groups.len();
         let type_group_index = self.type_groups.len();
+        self.type_groups.push(PossibleTypes::Any);
+        let var_index = self.var_type_groups.len();
         self.var_type_groups.push(type_group_index);
-        self.type_groups.push(TypeGroup {
-            possible_types: PossibleTypes::Any,
-            members: vec![VarTypeIdx(var_index)]
-        });
         return VarTypeIdx(var_index);
     }
 
     // get the possible types of the type group of a given var type index
     pub fn get_group_types(&self, var: &VarTypeIdx) -> &PossibleTypes {
-        &self.type_groups[self.var_type_groups[var.0]].possible_types
+        let i = self.get_group_internal_index(var);
+        &self.type_groups[i]
     }
     pub fn get_group_types_mut(&mut self, var: &VarTypeIdx) -> &mut PossibleTypes {
-        &mut self.type_groups[self.var_type_groups[var.0]].possible_types
+        let i = self.get_group_internal_index(var);
+        &mut self.type_groups[i]
     }
 
     pub fn get_group_internal_index(&self, var: &VarTypeIdx) -> usize {
         self.var_type_groups[var.0]
     }
     pub fn get_group_types_from_internal_index(&self, idx: usize) -> &PossibleTypes {
-        &self.type_groups[idx].possible_types
+        &self.type_groups[idx]
+    }
+
+    pub fn insert_type_scope(&mut self, inserted: &TypeScope) -> TypeScopeTranslation {
+        let mut mappings = HashMap::new();
+        for internal_group_idx in 0..inserted.type_groups.len() {
+            mappings.insert(internal_group_idx, self.register_variable());
+        }
+        let translation = TypeScopeTranslation {
+            var_type_groups: inserted.var_type_groups.clone(),
+            mappings: mappings.clone()
+        };
+        for (old_internal_idx, new_idx) in &mappings {
+            *self.get_group_types_mut(new_idx) = translation.translate(&inserted.type_groups[*old_internal_idx]);
+        }
+        translation
     }
 
     pub fn limit_possible_types(&mut self, a: &PossibleTypes, b: &PossibleTypes) -> Option<PossibleTypes> {
@@ -84,29 +97,30 @@ impl TypeScope {
                 Some(a.clone())
             }
             (PossibleTypes::OfGroup(a_group), PossibleTypes::OfGroup(b_group)) => {
-                let a_group_idx = self.var_type_groups[a_group.0];
-                let b_group_idx = self.var_type_groups[b_group.0];
+                if let Some(new_type) = self.limit_possible_types(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
+                    *self.get_group_types_mut(a_group) = new_type.clone();
+                    *self.get_group_types_mut(b_group) = new_type;
+                } else {
+                    return None;
+                }
+                let a_group_idx = self.get_group_internal_index(a_group);
+                let b_group_idx = self.get_group_internal_index(b_group);
                 if a_group_idx != b_group_idx {
-                    if let Some(new_type) = self.limit_possible_types(&self.get_group_types(a_group).clone(), &self.get_group_types(b_group).clone()) {
-                        self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type;
-                    } else {
-                        return None;
-                    } 
-                    let b_group = &mut self.type_groups[b_group_idx];
-                    for var_idx in &b_group.members {
-                        self.var_type_groups[var_idx.0] = a_group_idx;
-                    }
                     self.type_groups.remove(b_group_idx);
                     for var_idx in &mut self.var_type_groups {
-                        if *var_idx <= b_group_idx { continue; }
-                        *var_idx -= 1;
+                        if *var_idx == b_group_idx {
+                            *var_idx = a_group_idx;
+                        }
+                        if *var_idx > b_group_idx {
+                            *var_idx -= 1;
+                        }
                     }
                 }
                 Some(PossibleTypes::OfGroup(a_group.clone()))
             },
             (PossibleTypes::OfGroup(a_group), _) => {
                 if let Some(new_type) = self.limit_possible_types(&self.get_group_types(a_group).clone(), b) {
-                    self.type_groups[self.var_type_groups[a_group.0]].possible_types = new_type.clone();
+                    self.type_groups[self.var_type_groups[a_group.0]] = new_type.clone();
                     Some(PossibleTypes::OfGroup(a_group.clone()))
                 } else {
                     None
@@ -114,7 +128,7 @@ impl TypeScope {
             }
             (_, PossibleTypes::OfGroup(b_group)) => {
                 if let Some(new_type) = self.limit_possible_types(a, &self.get_group_types(b_group).clone()) {
-                    self.type_groups[self.var_type_groups[b_group.0]].possible_types = new_type.clone();
+                    self.type_groups[self.var_type_groups[b_group.0]] = new_type.clone();
                     Some(PossibleTypes::OfGroup(b_group.clone()))
                 } else {
                     None
@@ -203,6 +217,45 @@ impl TypeScope {
                 Some(Type::Closure(n_param_groups, n_returned_group))
             }
             _ => if std::mem::discriminant(a) == std::mem::discriminant(b) { Some(a.clone()) } else { None }
+        }
+    }
+}
+
+impl TypeScopeTranslation {
+    pub fn translate(&self, translated: &PossibleTypes) -> PossibleTypes {
+        match translated {
+            PossibleTypes::Any => PossibleTypes::Any,
+            PossibleTypes::OneOf(possible_types) => PossibleTypes::OneOf(
+                possible_types.iter().map(|t| self.translate_type(t)).collect()
+            ),
+            PossibleTypes::OfGroup(old_group) => PossibleTypes::OfGroup(
+                *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
+            )
+        }
+    }
+
+    fn translate_type(&self, translated: &Type) -> Type {
+        match translated {
+            Type::Unit => Type::Unit,
+            Type::Boolean => Type::Boolean,
+            Type::Integer => Type::Integer,
+            Type::Float => Type::Float,
+            Type::String => Type::String,
+            Type::Array(element_types) => Type::Array(
+                self.translate(element_types)
+            ),
+            Type::Object(member_types, fixed) => Type::Object(
+                member_types.iter().map(|(member_name, member_types)| {
+                    (*member_name, self.translate(member_types))
+                }).collect(),
+                *fixed
+            ),
+            Type::Closure(old_param_groups, old_return_group) => Type::Closure(
+                old_param_groups.iter().map(|old_group| {
+                    *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
+                }).collect(),
+                *self.mappings.get(&self.var_type_groups[old_return_group.0]).expect("mapping should exist")
+            )
         }
     }
 }

@@ -36,7 +36,7 @@ fn main() {
     ], &env::args().collect::<Vec<String>>()[1..]) {
         Ok(args) => args,
         Err(error) => {
-            println!("{}\n", error.display(&strings));
+            println!("{}", error.display(&strings));
             return;
         }
     };
@@ -47,7 +47,7 @@ fn main() {
         match load_file(strings.insert(file_name), &mut strings, &mut modules) {
             Ok(_) => {}
             Err(errors) => {
-                for error in errors { println!("{}\n", error.display(&strings)); }
+                for error in errors { println!("{}", error.display(&strings)); }
                 errored = true;
             }
         }
@@ -60,7 +60,7 @@ fn main() {
         let canonicalization_errors = module.canonicalize(&modules, &mut strings);
         modules.insert(module_path, module);
         if canonicalization_errors.len() > 0 {
-            for error in canonicalization_errors { println!("{}\n", error.display(&strings)); }
+            for error in canonicalization_errors { println!("{}", error.display(&strings)); }
             return;
         }
     }
@@ -68,7 +68,7 @@ fn main() {
     let typed_ast = match type_check_modules(modules, &strings) {
         Ok(typed_ast) => typed_ast,
         Err(errors) => {
-            for error in errors { println!("{}\n", error.display(&strings)); }
+            for error in errors { println!("{}", error.display(&strings)); }
             return;
         }
     };
