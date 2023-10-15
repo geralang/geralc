@@ -502,7 +502,7 @@ impl Parser {
                     match self.current.token_type {
                         TokenType::Arrow => {
                             enforce_next!("the body of the conditional branch");
-                            let source_end;
+                            let mut source_end;
                             let body = if self.current.token_type == TokenType::BraceOpen {
                                 enforce_next!("the body of the conditional branch");
                                 let body = match self.parse_block(strings, lexer) {
@@ -519,8 +519,27 @@ impl Parser {
                                 source_end = body.source();
                                 vec![body]
                             };
+                            let else_body = if !self.reached_end && self.current.token_type == TokenType::KeywordElse {
+                                enforce_next!("the body of the 'else'-branch");
+                                if self.current.token_type == TokenType::BraceOpen {
+                                    enforce_next!("the body of the 'else'-branch");
+                                    let body = match self.parse_block(strings, lexer) {
+                                        Ok(body) => body,
+                                        Err(error) => return Err(error)
+                                    };
+                                    enforce_not_reached_end!("a closing brace ('}')");
+                                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                    source_end = self.current.source;
+                                    next!();
+                                    body
+                                } else {
+                                    let body = enforce_expression!(&[], None, "the body of the 'else'-branch");
+                                    source_end = body.source();
+                                    vec![body]
+                                }
+                            } else { Vec::new() };
                             new = AstNode::new(
-                                AstNodeVariant::CaseConditon { condition: Box::new(value), body },
+                                AstNodeVariant::CaseConditon { condition: Box::new(value), body, else_body },
                                 (&source_start..&source_end).into()
                             )
                         }
@@ -556,11 +575,31 @@ impl Parser {
                                 }
                             }
                             enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                            new = AstNode::new(
-                                AstNodeVariant::CaseBranches { value: Box::new(value), branches },
-                                (&source_start..&self.current.source).into()
-                            );
+                            let mut source_end = self.current.source;
                             next!();
+                            let else_body = if !self.reached_end && self.current.token_type == TokenType::KeywordElse {
+                                enforce_next!("the body of the 'else'-branch");
+                                if self.current.token_type == TokenType::BraceOpen {
+                                    enforce_next!("the body of the 'else'-branch");
+                                    let body = match self.parse_block(strings, lexer) {
+                                        Ok(body) => body,
+                                        Err(error) => return Err(error)
+                                    };
+                                    enforce_not_reached_end!("a closing brace ('}')");
+                                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                    source_end = self.current.source;
+                                    next!();
+                                    body
+                                } else {
+                                    let body = enforce_expression!(&[], None, "the body of the 'else'-branch");
+                                    source_end = body.source();
+                                    vec![body]
+                                }
+                            } else { Vec::new() };
+                            new = AstNode::new(
+                                AstNodeVariant::CaseBranches { value: Box::new(value), branches, else_body },
+                                (&source_start..&source_end).into()
+                            );
                         }
                         _ => panic!("unreachable")
                     }

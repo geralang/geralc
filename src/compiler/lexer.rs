@@ -226,11 +226,12 @@ impl Lexer {
                 "use" => return Some(Ok(self.make_token("use", TokenType::KeywordUse, string_map))),
                 "true" => return Some(Ok(self.make_token("true", TokenType::KeywordTrue, string_map))),
                 "false" => return Some(Ok(self.make_token("false", TokenType::KeywordFalse, string_map))),
+                "else" => return Some(Ok(self.make_token("else", TokenType::KeywordElse, string_map))),
                 _ => return Some(Ok(Token {
                     token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),
                     source: SourceRange::new(self.file_name, self.file_content, start, self.position)
-                })),
+                }))
             }
         }
     }

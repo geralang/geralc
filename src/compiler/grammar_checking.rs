@@ -81,7 +81,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             if *mutable { enforce_max_scope!("'mut var'", ScopeType::Statement, ScopeType::Statement); }
             check_grammar_singular(&*value, ScopeType::Expression, errors);
         },
-        AstNodeVariant::CaseBranches { value, branches } => {
+        AstNodeVariant::CaseBranches { value, branches, else_body } => {
             enforce_min_scope!("'case'", ScopeType::Statement);
             enforce_max_scope!("'case'", ScopeType::Statement, ScopeType::Statement);
             check_grammar_singular(&*value, ScopeType::Expression, errors);
@@ -89,12 +89,14 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
                 check_grammar_singular(&branch.0, ScopeType::Expression, errors);
                 check_grammar(&branch.1, ScopeType::Statement, errors);
             }
+            check_grammar(else_body, ScopeType::Statement, errors);
         },
-        AstNodeVariant::CaseConditon { condition, body } => {
+        AstNodeVariant::CaseConditon { condition, body, else_body } => {
             enforce_min_scope!("'case'", ScopeType::Statement);
             enforce_max_scope!("'case'", ScopeType::Statement, ScopeType::Statement);
             check_grammar_singular(&*condition, ScopeType::Expression, errors);
             check_grammar(body, ScopeType::Statement, errors);
+            check_grammar(else_body, ScopeType::Statement, errors);
         },
         AstNodeVariant::Assignment { variable, value } => {
             enforce_min_scope!("Assignments", ScopeType::Statement);

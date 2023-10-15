@@ -243,23 +243,27 @@ fn type_check_node(
                 value: Box::new(typed_value)
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source))
         }
-        AstNodeVariant::CaseBranches { value, branches } => {
+        AstNodeVariant::CaseBranches { value, branches, else_body } => {
             let typed_value = type_check_node!(*value, &PossibleTypes::Any);
             let mut typed_branches = Vec::new();
             for (branch_value, branch_body) in branches {
                 typed_branches.push((type_check_node!(branch_value, typed_value.get_types()), type_check_nodes!(branch_body, &mut variables.clone())));
             }
+            let typed_else_body = type_check_nodes!(else_body, &mut variables.clone());
             Ok(TypedAstNode::new(AstNodeVariant::CaseBranches {
                 value: Box::new(typed_value),
-                branches: typed_branches
+                branches: typed_branches,
+                else_body: typed_else_body
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source))
         }
-        AstNodeVariant::CaseConditon { condition, body } => {
+        AstNodeVariant::CaseConditon { condition, body, else_body } => {
             let typed_condition = type_check_node!(*condition, &PossibleTypes::OneOf(vec![Type::Boolean]));
             let typed_body = type_check_nodes!(body, &mut variables.clone());
+            let typed_else_body = type_check_nodes!(else_body, &mut variables.clone());
             Ok(TypedAstNode::new(AstNodeVariant::CaseConditon {
                 condition: Box::new(typed_condition),
-                body: typed_body
+                body: typed_body,
+                else_body: typed_else_body
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source))
         }
         AstNodeVariant::Assignment { variable, value } => {
@@ -544,9 +548,8 @@ fn type_check_node(
             }, node_type, node_source))
         }
         AstNodeVariant::LessThan { a, b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::LessThan {
@@ -555,9 +558,8 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Boolean]), node_source))
         }
         AstNodeVariant::LessThanEqual { a , b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::LessThanEqual {
@@ -566,9 +568,8 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Boolean]), node_source))
         }
         AstNodeVariant::GreaterThan { a, b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::GreaterThan {
@@ -577,9 +578,8 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Boolean]), node_source))
         }
         AstNodeVariant::GreaterThanEqual { a, b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::GreaterThanEqual {
@@ -588,9 +588,8 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Boolean]), node_source))
         }
         AstNodeVariant::Equals { a, b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::Equals {
@@ -599,9 +598,8 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Boolean]), node_source))
         }
         AstNodeVariant::NotEquals { a, b } => {
-            limit!(limited_to, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
-            let a_typed = type_check_node!(*a, limited_to);
-            let b_typed = type_check_node!(*b, limited_to);
+            let a_typed = type_check_node!(*a, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
+            let b_typed = type_check_node!(*b, &PossibleTypes::OneOf(vec![Type::Integer, Type::Float]));
             limit_typed_node!(&a_typed, b_typed.get_types());
             limit_typed_node!(&b_typed, a_typed.get_types());
             Ok(TypedAstNode::new(AstNodeVariant::NotEquals {
@@ -683,8 +681,8 @@ fn limit_typed_node(
         AstNodeVariant::Procedure { public: _, name: _, arguments: _, body: _ } |
         AstNodeVariant::Function { arguments: _, body: _ } |
         AstNodeVariant::Variable { public: _, mutable: _, name: _, value: _ } |
-        AstNodeVariant::CaseBranches { value: _, branches: _ } |
-        AstNodeVariant::CaseConditon { condition: _, body: _ } |
+        AstNodeVariant::CaseBranches { value: _, branches: _, else_body: _ } |
+        AstNodeVariant::CaseConditon { condition: _, body: _, else_body: _ } |
         AstNodeVariant::Assignment { variable: _, value: _ } |
         AstNodeVariant::Return { value: _ } => {
             // result of these operations is 'unit', or there is nothing to infer (function)

@@ -174,16 +174,18 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_node!(&mut **value);
                 variables.insert(*name);
             }
-            AstNodeVariant::CaseBranches { value, branches } => {
+            AstNodeVariant::CaseBranches { value, branches, else_body } => {
                 visit_node!(&mut **value);
                 for branch in branches {
                     visit_node!(&mut branch.0);
                     visit_nodes!(&mut branch.1);
                 }
+                visit_nodes!(else_body);
             }
-            AstNodeVariant::CaseConditon { condition, body } => {
+            AstNodeVariant::CaseConditon { condition, body, else_body } => {
                 visit_node!(&mut **condition);
                 visit_nodes!(body);
+                visit_nodes!(else_body);
             }
             AstNodeVariant::Assignment { variable, value } => {
                 visit_node!(&mut **variable);
@@ -218,6 +220,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     let mut path_segments = self.path.get_segments().clone();
                     path_segments.push(*name);
                     *node_variant = AstNodeVariant::ModuleAccess { path: NamespacePath::new(path_segments) };
+                    errors.append(&mut self.canonicalize_node(node, modules, variables, strings));
                 } else if !variables.contains(name) {
                     let mut last_usage = None;
                     for usage in &self.usages {
@@ -226,6 +229,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     }
                     if let Some(usage) = last_usage {
                         *node_variant = AstNodeVariant::ModuleAccess { path: usage.clone() };
+                        errors.append(&mut self.canonicalize_node(node, modules, variables, strings));
                     }
                 }
             }
@@ -277,7 +281,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     ].into())); None };
                 if let Some(module) = module {
                     if let Some(is_public) = module.exported.get(&accessed_name) {
-                        if !is_public { errors.push(Error::new([
+                        if !is_public && module.symbols.get(&accessed_name).expect("symbol should exist").source().file_name() != node_source.file_name() { errors.push(Error::new([
                             ErrorSection::Error(ErrorType::SymbolIsNotPublic(path.display(strings))),
                             ErrorSection::Code(node_source)
                         ].into())); }

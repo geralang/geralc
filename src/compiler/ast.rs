@@ -74,8 +74,8 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
     Function { arguments: Vec<StringIdx>, body: Vec<T> },
     Variable { public: bool, mutable: bool, name: StringIdx, value: Box<T> },
-    CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)> },
-    CaseConditon { condition: Box<T>, body: Vec<T> },
+    CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
+    CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
     Assignment { variable: Box<T>, value: Box<T> },
     Return { value: Option<Box<T>> },
     Call { called: Box<T>, arguments: Vec<T> },
@@ -135,18 +135,20 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                     strings.get(*name),
                     indent(value.to_string(strings), 4)
                 ),
-            AstNodeVariant::CaseBranches { value, branches } =>
-                format!("CaseBranches\n  value = \n    {}\n  branches = \n    {}",
+            AstNodeVariant::CaseBranches { value, branches, else_body } =>
+                format!("CaseBranches\n  value = \n    {}\n  branches = \n    {}\n  else_body = \n    {}",
                     indent(value.to_string(strings), 4),
                     indent(branches.iter().map(|(branch_value, branch_body)| format!("branch\n  value = \n    {}\n  body = \n    {}",
                         indent(branch_value.to_string(strings), 4),
                         indent(branch_body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
-                    )).collect::<Vec<String>>().join("\n"), 4)
+                    )).collect::<Vec<String>>().join("\n"), 4),
+                    indent(else_body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
-            AstNodeVariant::CaseConditon { condition, body } =>
-                format!("CaseConditon\n  condition = \n    {}\n  body = \n    {}",
+            AstNodeVariant::CaseConditon { condition, body, else_body } =>
+                format!("CaseConditon\n  condition = \n    {}\n  body = \n    {}\n  else_body = \n    {}",
                     indent(condition.to_string(strings), 4),
-                    indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
+                    indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4),
+                    indent(else_body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
             AstNodeVariant::Assignment { variable, value } => 
                 format!("Assignment\n  variable = \n    {}\n  value = \n    {}",
@@ -270,7 +272,7 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                 format!("ModuleAccess\n  path = {}",
                     path.display(strings)
                 ),
-                AstNodeVariant::Use { paths } =>
+            AstNodeVariant::Use { paths } =>
                 format!("Use\n  paths = \n    {}",
                     indent(paths.iter().map(|p| p.display(strings)).collect::<Vec<String>>().join("\n"), 4)
                 )

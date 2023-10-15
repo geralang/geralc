@@ -44,7 +44,8 @@ pub enum TokenType {
     KeywordPublic,
     KeywordUse,
     KeywordTrue,
-    KeywordFalse
+    KeywordFalse,
+    KeywordElse
 }
 
 #[derive(Debug, Clone)]
