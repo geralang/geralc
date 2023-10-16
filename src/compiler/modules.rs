@@ -192,9 +192,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_node!(&mut **value);
             }
             AstNodeVariant::Return { value } => {
-                if let Some(value) = value {
-                    visit_node!(&mut **value);
-                }
+                visit_node!(&mut **value);
             }
             AstNodeVariant::Call { called, arguments } => {
                 visit_node!(&mut **called);

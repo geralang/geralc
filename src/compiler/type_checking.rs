@@ -87,7 +87,13 @@ fn type_check_symbol<'s>(
                     Err(error) => return Err(error),
                 };
                 if let Some(Symbol::Procedure { scope, parameters: _, returns: _, body }) = symbols.get_mut(name) {
-                    if returns.0 && !returns.1 { return Err(Error::new([
+                    if match scope.get_group_types(&return_types) {
+                        PossibleTypes::OneOf(types) => types.len() == 1 && match &types[0] {
+                            Type::Unit => false,
+                            _ => true
+                        },
+                        _ => true 
+                    } && returns.0 && !returns.1 { return Err(Error::new([
                         ErrorSection::Error(ErrorType::DoesNotAlwaysReturn("Procedure")),
                         ErrorSection::Code(symbol_source)
                     ].into())); }
@@ -243,7 +249,13 @@ fn type_check_node(
                 Ok(typed_nodes) => typed_nodes,
                 Err(error) => return Err(error),
             };
-            if returns.0 && !returns.1 { return Err(Error::new([
+            if match type_scope!().get_group_types(&return_types) {
+                PossibleTypes::OneOf(types) => types.len() == 1 && match &types[0] {
+                    Type::Unit => false,
+                    _ => true
+                },
+                _ => true 
+            } && returns.0 && !returns.1 { return Err(Error::new([
                 ErrorSection::Error(ErrorType::DoesNotAlwaysReturn("Function")),
                 ErrorSection::Code(node_source)
             ].into())); }
@@ -303,13 +315,10 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::Return { value } => {
-            let typed_value = type_check_node!(match value {
-                Some(value) => *value,
-                None => AstNode::new(AstNodeVariant::UnitLiteral, node_source)
-            }, &return_types.clone()).0;
+            let typed_value = type_check_node!(*value, &return_types.clone()).0;
             limit!(return_types, typed_value.get_types());
             Ok((TypedAstNode::new(AstNodeVariant::Return {
-                value: Some(Box::new(typed_value))
+                value: Box::new(typed_value)
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (true, true)))
         }
         AstNodeVariant::Call { called, mut arguments } => {

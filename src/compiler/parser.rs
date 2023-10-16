@@ -5,7 +5,7 @@ use crate::util::{
     source::{HasSource, SourceRange}
 };
 use crate::compiler::{
-    lexer::Lexer, 
+    lexer::Lexer,
     ast::{AstNode, AstNodeVariant, HasAstNodeVariant},
     tokens::{TokenType, Token},
     modules::NamespacePath
@@ -16,6 +16,7 @@ const PREFIX_MINUS_PRECEDENCE: Option<usize> = Some(0);
 
 fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
     match token_type {
+        TokenType::ParenOpen |
         TokenType::ExclamationMark => Some(0),
         TokenType::Asterisk |
         TokenType::Slash |
@@ -68,23 +69,10 @@ impl Parser {
 
     pub fn parse_block(&mut self, strings: &mut StringMap, lexer: &mut Lexer) -> Result<Vec<AstNode>, Error> {
         let mut nodes = Vec::new();
-        while self.current.token_type == TokenType::Newline && match self.next(strings, lexer) {
-            Ok(did) => did,
-            Err(error) => return Err(error) 
-        } {}
-        loop {
-            match self.parse_expression(strings, lexer, &mut vec![&[TokenType::BraceClose, TokenType::Newline]], None) {
+        while !self.reached_end {
+            match self.parse_expression(strings, lexer, &mut vec![&[TokenType::BraceClose]], None) {
                 Ok(None) => break,
-                Ok(Some(node)) => {
-                    nodes.push(node);
-                    match self.current.token_type {
-                        TokenType::Newline => while match self.next(strings, lexer) {
-                            Ok(did) => did,
-                            Err(error) => return Err(error)
-                        } && self.current.token_type == TokenType::Newline {},
-                        _ => break
-                    }
-                },
+                Ok(Some(node)) => nodes.push(node),
                 Err(error) => return Err(error)
             }
         }
@@ -172,6 +160,7 @@ impl Parser {
             };
         }
         loop {
+            if self.reached_end { return Ok(previous); }
             for end_at in &*end_at_types {
                 if end_at.contains(&self.current.token_type) { return Ok(previous) }
             }
@@ -181,7 +170,7 @@ impl Parser {
                 }
             }
             match self.current.token_type {
-                TokenType::Hashtag => {
+                TokenType::Dot => {
                     let accessed = enforce_previous!("the thing to access");
                     enforce_next!("the name or index of the part to access");
                     enforce_current_type!(&[TokenType::Identifier, TokenType::BracketOpen], "the name or brackets (for index) of the part to access");
@@ -207,7 +196,7 @@ impl Parser {
                     if !next!() { return Ok(previous); }
                     continue;
                 }
-                TokenType::Pipe => {
+                TokenType::FunctionPipe => {
                     let piped = enforce_previous!("the thing to pipe");
                     let piped_source = piped.source();
                     enforce_next!("the call to pipe into");
@@ -295,9 +284,29 @@ impl Parser {
                     parse_infix_operator!(Or, get_operator_precedence(TokenType::DoublePipe), "the first operand", "the second operand");
                     continue;
                 }
-                _ => {}
+                TokenType::ParenOpen => if previous.is_some() {
+                    let called = enforce_previous!("the thing to call");
+                    enforce_next!("a call parameter or a closing parenthesis (')')");
+                    let mut args = Vec::new();
+                    while self.current.token_type != TokenType::ParenClose {
+                        args.push(enforce_expression!(&[TokenType::Comma, TokenType::ParenClose], None, "a call parameter"));
+                        enforce_current_type!(&[TokenType::Comma, TokenType::ParenClose], "a comma (',') or a closing parenthesis (')')");
+                        if self.current.token_type == TokenType::Comma {
+                            enforce_next!("a call parameter or a closing parenthesis (')')");
+                        }
+                    }
+                    let called_source = called.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Call { called: Box::new(called), arguments: args },
+                        (&called_source..&self.current.source).into()
+                    ));
+                    next!();
+                    continue;
+                }
+                _ => if previous.is_some() {
+                    return Ok(previous);
+                }
             }
-            let new;
             match self.current.token_type {
                 TokenType::Identifier => {
                     let start = self.current.clone();
@@ -311,36 +320,36 @@ impl Parser {
                             end_source = self.current.source;
                             if !next!() { break; }
                         }
-                        new = AstNode::new(
+                        previous = Some(AstNode::new(
                             AstNodeVariant::ModuleAccess { path: NamespacePath::new(path_segments) },
                             (&start.source..&end_source).into()
-                        );
+                        ));
                     } else {
-                        new = AstNode::new(
+                        previous = Some(AstNode::new(
                             AstNodeVariant::VariableAccess { name: start.token_content },
                             start.source
-                        );
+                        ));
                     }
                 }
                 TokenType::String => {
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::StringLiteral { value: self.current.token_content },
                         self.current.source
-                    );
+                    ));
                     next!();
                 }
                 TokenType::Integer => {
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::IntegerLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
                         self.current.source
-                    );
+                    ));
                     next!();
                 }
                 TokenType::Fraction => {
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::FloatLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
                         self.current.source
-                    );
+                    ));
                     next!();
                 }
                 TokenType::Minus => {
@@ -348,24 +357,24 @@ impl Parser {
                     enforce_next!("the thing to mathematically negate");
                     let x = enforce_expression!(&[], PREFIX_MINUS_PRECEDENCE, "the thing to mathematically negate");
                     let x_source = x.source();
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Negate { x: Box::new(x) },
                         (&source_start..&x_source).into()
-                    );
+                    ));
                 }
                 TokenType::ExclamationMark => {
                     let source_start = self.current.source;
                     enforce_next!("the thing to logically negate");
                     let x = enforce_expression!(&[], get_operator_precedence(TokenType::ExclamationMark), "the thing to logically negate");
                     let x_source = x.source();
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Not { x: Box::new(x) },
                         (&source_start..&x_source).into()
-                    );
+                    ));
                 }
                 TokenType::ParenOpen => {
                     enforce_next!("the contained expression");
-                    new = enforce_expression!(&[TokenType::ParenClose], None, "the contained expression");
+                    previous = Some(enforce_expression!(&[TokenType::ParenClose], None, "the contained expression"));
                     enforce_current_type!(&[TokenType::ParenClose], "a closing parenthesis (')')");
                     next!();
                 }
@@ -373,65 +382,126 @@ impl Parser {
                     let mut values = Vec::new();
                     let source_start = self.current.source;
                     enforce_next!("the name of an object member or a closing brace ('}')");
-                    while self.current.token_type == TokenType::Newline && next!() {}
                     while self.current.token_type != TokenType::BraceClose {
                         enforce_current_type!(&[TokenType::Identifier], "the name of an object member");
                         let member = self.current.token_content;
                         enforce_next!("an equals sign ('=')");
                         enforce_current_type!(&[TokenType::Equals], "an equals sign ('=')");
                         enforce_next!("the member value");
-                        let value = enforce_expression!(&[TokenType::Comma, TokenType::BraceClose, TokenType::Newline], None, "the member value");
+                        let value = enforce_expression!(&[TokenType::Comma, TokenType::BraceClose], None, "the member value");
                         values.push((member, value));
-                        enforce_current_type!(&[TokenType::Comma, TokenType::BraceClose, TokenType::Newline], "a comma (',') or a closing brace ('}')");
+                        enforce_current_type!(&[TokenType::Comma, TokenType::BraceClose], "a comma (',') or a closing brace ('}')");
                         if self.current.token_type == TokenType::Comma {
                             enforce_next!("the name of an object member or a closing brace ('}')");
                         }
-                        while self.current.token_type == TokenType::Newline && next!() {}
                     }
                     // enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                    new = AstNode::new(
-                        if values.len() == 0 { AstNodeVariant::UnitLiteral } else { AstNodeVariant::Object { values } },
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Object { values },
                         (&source_start..&self.current.source).into()
-                    );
+                    ));
                     next!();
                 }
                 TokenType::BracketOpen => {
                     let mut values = Vec::new();
                     let source_start = self.current.source;
                     enforce_next!("an array value or a closing brace (']')");
-                    while self.current.token_type == TokenType::Newline && next!() {}
                     while self.current.token_type != TokenType::BracketClose {
-                        values.push(enforce_expression!(&[TokenType::Comma, TokenType::BracketClose, TokenType::Newline], None, "an array value"));
-                        enforce_current_type!(&[TokenType::Comma, TokenType::BracketClose, TokenType::Newline], "a comma (',') or a closing bracket (']')");
+                        values.push(enforce_expression!(&[TokenType::Comma, TokenType::BracketClose], None, "an array value"));
+                        enforce_current_type!(&[TokenType::Comma, TokenType::BracketClose], "a comma (',') or a closing bracket (']')");
                         if self.current.token_type == TokenType::Comma {
                             enforce_next!("an array value or a closing brace (']')");
                         }
-                        while self.current.token_type == TokenType::Newline && next!() {}
                     }
                     // enforce_current_type!(&[TokenType::BracketClose], "a closing bracket (']')");
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Array { values },
                         (&source_start..&self.current.source).into()
-                    );
+                    ));
                     next!();
+                }
+                TokenType::KeywordUnit => {
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::UnitLiteral {},
+                        self.current.source
+                    ));
+                    next!();
+                }
+                TokenType::Pipe => {
+                    let source_start = self.current.source;
+                    enforce_next!("a function parameter's name or a pipe ('|')");
+                    let mut arguments = Vec::new();
+                    loop {
+                        enforce_current_type!(&[TokenType::Identifier, TokenType::Pipe], "a function parameter's name or a pipe ('|')");
+                        match self.current.token_type {
+                            TokenType::Identifier => arguments.push(self.current.token_content),
+                            TokenType::Pipe => break,
+                            _ => panic!("unreachable")
+                        }
+                        enforce_next!("a comma (',') or a pipe ('|')");
+                        enforce_current_type!(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')");
+                        match self.current.token_type {
+                            TokenType::Comma => enforce_next!("a function parameter's name or a pipe ('|')"),
+                            TokenType::Pipe => break,
+                            _ => panic!("unreachable")
+                        }
+                    }
+                    enforce_current_type!(&[TokenType::Pipe], "a pipe ('|')");
+                    enforce_next!("the function's body");
+                    if self.current.token_type == TokenType::BraceOpen {
+                        enforce_next!("the function's body");
+                        let body = match self.parse_block(strings, lexer) {
+                            Ok(body) => body,
+                            Err(error) => return Err(error)
+                        };
+                        enforce_not_reached_end!("a closing brace ('}')");
+                        enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                        previous = Some(AstNode::new(
+                            AstNodeVariant::Function { arguments, body },
+                            (&source_start..&self.current.source).into()
+                        ));
+                        next!();
+                    } else {
+                        let return_value: AstNode = enforce_expression!(&[], None, "the function's result value");
+                        let return_value_source = return_value.source();
+                        previous = Some(AstNode::new(
+                            AstNodeVariant::Function {
+                                arguments,
+                                body: vec![AstNode::new(
+                                    AstNodeVariant::Return { value: Box::new(return_value) },
+                                    return_value_source
+                                )] },
+                            (&source_start..&self.current.source).into()
+                        ));
+                    }
                 }
                 TokenType::KeywordProcedure => {
                     let source_start = self.current.source;
                     enforce_next!("the procedure's name");
                     enforce_current_type!(&[TokenType::Identifier], "the procedure's name");
                     let name = self.current.token_content;
+                    enforce_next!("an opening parenthesis ('(')");
+                    enforce_current_type!(&[TokenType::ParenOpen], "an opening parenthesis ('(')");
+                    enforce_next!("a procedure parameter's name or a closing parenthesis (')')");
                     let mut arguments = Vec::new();
-                    enforce_next!("a procedure parameter's name");
-                    enforce_current_type!(&[TokenType::Identifier], "a procedure parameter's name");
                     loop {
-                        enforce_current_type!(&[TokenType::Identifier, TokenType::BraceOpen], "a procedure parameter's name or an opening brace ('{')");
+                        enforce_current_type!(&[TokenType::Identifier, TokenType::ParenClose], "a procedure parameter's name or a closing parenthesis (')')");
                         match self.current.token_type {
                             TokenType::Identifier => arguments.push(self.current.token_content),
-                            TokenType::BraceOpen => break,
+                            TokenType::ParenClose => break,
                             _ => panic!("unreachable")
                         }
-                        enforce_next!("a procedure parameter's name or an opening brace ('{')");
+                        enforce_next!("a comma or an closing parenthesis (')')");
+                        enforce_current_type!(&[TokenType::Comma, TokenType::ParenClose], "a comma (',') or a closing parenthesis (')')");
+                        match self.current.token_type {
+                            TokenType::Comma => enforce_next!("a procedure parameter's name or a closing parenthesis (')')"),
+                            TokenType::ParenClose => break,
+                            _ => panic!("unreachable")
+                        }
                     }
+                    enforce_current_type!(&[TokenType::ParenClose], "a closing parenthesis (')')");
+                    enforce_next!("an opening brace ('{')");
+                    enforce_current_type!(&[TokenType::BraceOpen], "an opening brace ('{')");
                     enforce_next!("the procedure's body");
                     let body = match self.parse_block(strings, lexer) {
                         Ok(body) => body,
@@ -439,37 +509,10 @@ impl Parser {
                     };
                     enforce_not_reached_end!("a closing brace ('}')");
                     enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Procedure { public: false, name, arguments, body },
                         (&source_start..&self.current.source).into()
-                    );
-                    next!();
-                }
-                TokenType::KeywordFunction => {
-                    let source_start = self.current.source;
-                    let mut arguments = Vec::new();
-                    enforce_next!("a function parameter's name");
-                    enforce_current_type!(&[TokenType::Identifier], "a function parameter's name");
-                    loop {
-                        enforce_current_type!(&[TokenType::Identifier, TokenType::BraceOpen], "a function parameter's name or an opening brace ('{')");
-                        match self.current.token_type {
-                            TokenType::Identifier => arguments.push(self.current.token_content),
-                            TokenType::BraceOpen => break,
-                            _ => panic!("unreachable")
-                        }
-                        enforce_next!("a function parameter's name or an opening brace ('{')");
-                    }
-                    enforce_next!("the function's body");
-                    let body = match self.parse_block(strings, lexer) {
-                        Ok(body) => body,
-                        Err(error) => return Err(error)
-                    };
-                    enforce_not_reached_end!("a closing brace ('}')");
-                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                    new = AstNode::new(
-                        AstNodeVariant::Function { arguments, body },
-                        (&source_start..&self.current.source).into()
-                    );
+                    ));
                     next!();
                 }
                 TokenType::KeywordVariable |
@@ -488,10 +531,10 @@ impl Parser {
                     enforce_next!("the variable's value");
                     let value = enforce_expression!(&[], None, "the variable's value");
                     let value_source = value.source();
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Variable { public: false, mutable, name, value: Box::new(value) },
                         (&source_start..&value_source).into()
-                    )
+                    ));
                 }
                 TokenType::KeywordCase => {
                     let source_start = self.current.source;
@@ -538,15 +581,14 @@ impl Parser {
                                     vec![body]
                                 }
                             } else { Vec::new() };
-                            new = AstNode::new(
+                            previous = Some(AstNode::new(
                                 AstNodeVariant::CaseConditon { condition: Box::new(value), body, else_body },
                                 (&source_start..&source_end).into()
-                            )
+                            ));
                         }
                         TokenType::BraceOpen => {
                             let mut branches = Vec::new();
                             enforce_next!("a branch value");
-                            while self.current.token_type == TokenType::Newline && next!() {}
                             while self.current.token_type != TokenType::BraceClose {
                                 match self.parse_expression(strings, lexer, &mut vec![&[TokenType::Arrow]], None) {
                                     Ok(None) => break,
@@ -565,10 +607,9 @@ impl Parser {
                                             enforce_next!("the value for the branch or a closing brace ('}')");
                                             body
                                         } else {
-                                            vec![enforce_expression!(&[TokenType::Newline, TokenType::BraceClose], None, "the body of the conditional branch")]
+                                            vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
                                         };
                                         branches.push((value, body));
-                                        while self.current.token_type == TokenType::Newline && next!() {}
                                         if self.current.token_type == TokenType::BraceClose { break }
                                     },
                                     Err(error) => return Err(error)
@@ -596,31 +637,23 @@ impl Parser {
                                     vec![body]
                                 }
                             } else { Vec::new() };
-                            new = AstNode::new(
+                            previous = Some(AstNode::new(
                                 AstNodeVariant::CaseBranches { value: Box::new(value), branches, else_body },
                                 (&source_start..&source_end).into()
-                            );
+                            ));
                         }
                         _ => panic!("unreachable")
                     }
                 }
                 TokenType::KeywordReturn => {
                     let start_source = self.current.source;
-                    let value = if next!() {
-                        match self.parse_expression(strings, lexer, end_at_types, None) {
-                            Ok(None) => None,
-                            Ok(Some(node)) => Some(Box::new(node)),
-                            Err(error) => return Err(error)
-                        }
-                    } else { None };
-                    let result_source = match &value {
-                        Some(node) => (&start_source..&node.source()).into(),
-                        None => start_source,
-                    };
-                    new = AstNode::new(
-                        AstNodeVariant::Return { value },
-                        result_source
-                    );
+                    enforce_next!("the thing to return");
+                    let value = enforce_expression!(&[], None, "the thing to return");
+                    let value_source = value.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Return { value: Box::new(value) },
+                        (&start_source..&value_source).into()
+                    ));
                 }
                 TokenType::KeywordModule => {
                     let start_source: crate::util::source::SourceRange = self.current.source;
@@ -638,10 +671,10 @@ impl Parser {
                             if !next!() { break; }
                         }
                     }
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Module { path: NamespacePath::new(path_segments) },
                         (&start_source..&end_source).into()
-                    );
+                    ));
                 }
                 TokenType::KeywordPublic => {
                     let start_source: crate::util::source::SourceRange = self.current.source;
@@ -652,7 +685,7 @@ impl Parser {
                         AstNodeVariant::Variable { public, mutable: _, name: _, value: _ } => if !*public {
                             *public = true;
                             thing.replace_source((&start_source..&thing.source()).into());
-                            new = thing;
+                            previous = Some(thing);
                         } else {
                             return Err(Error::new([
                                 ErrorSection::Error(ErrorType::MayNotBePublic),
@@ -733,7 +766,7 @@ impl Parser {
                         }
                         Ok(vec![NamespacePath::new(path_segments)])
                     }
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::Use {
                             paths: match parse_usage_paths(self, strings, lexer, &mut end_source) {
                                 Ok(p) => p,
@@ -741,20 +774,20 @@ impl Parser {
                             }
                         },
                         (&start_source..&end_source).into()
-                    );
+                    ));
                 }
                 TokenType::KeywordTrue => {
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::BooleanLiteral { value: true },
                         self.current.source
-                    );
+                    ));
                     next!();
                 }
                 TokenType::KeywordFalse => {
-                    new = AstNode::new(
+                    previous = Some(AstNode::new(
                         AstNodeVariant::BooleanLiteral { value: false },
                         self.current.source
-                    );
+                    ));
                     next!();
                 }
                 _ => return Err(Error::new([
@@ -762,25 +795,6 @@ impl Parser {
                     ErrorSection::Code(self.current.source)
                 ].into()))
             }
-            if let Some(prev) = previous {
-                let prev_source = prev.source();
-                let new_source = new.source();
-                if let AstNodeVariant::Call { called, mut arguments } = prev.node_variant().clone() {
-                    arguments.push(new);
-                    previous = Some(AstNode::new(
-                        AstNodeVariant::Call { called, arguments },
-                        (&prev_source..&new_source).into()
-                    ));
-                } else {
-                    previous = Some(AstNode::new(
-                        AstNodeVariant::Call { called: Box::new(prev), arguments: vec![new] },
-                        (&prev_source..&new_source).into()
-                    ));
-                }
-            } else {
-                previous = Some(new);
-            }
-            if self.reached_end { return Ok(previous); }
         }
     }
 }

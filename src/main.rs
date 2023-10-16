@@ -98,6 +98,9 @@ fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMa
             Err(error) => return Err(vec![error])
         }
     } else { Vec::new() };
+    for node in &nodes {
+        println!("{}", node.to_string(strings));
+    }
     // check for grammar errors
     let mut grammar_errors = Vec::new();
     check_grammar(&nodes, ScopeType::GlobalStatement, &mut grammar_errors);

@@ -3,14 +3,13 @@ use crate::util::{strings::StringIdx, source::SourceRange};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
-    Newline,
     Identifier,
     Integer,
     Fraction,
     String,
     Pipe,
     Equals,
-    Hashtag,
+    Dot,
     Plus,
     Minus,
     Asterisk,
@@ -23,6 +22,7 @@ pub enum TokenType {
     DoubleEquals,
     NotEquals,
     DoublePipe,
+    FunctionPipe,
     DoubleAmpersand,
     ExclamationMark,
     Comma,
@@ -35,7 +35,6 @@ pub enum TokenType {
     BraceOpen,
     BraceClose,
     KeywordProcedure,
-    KeywordFunction,
     KeywordCase,
     KeywordVariable,
     KeywordMutable,
@@ -45,7 +44,8 @@ pub enum TokenType {
     KeywordUse,
     KeywordTrue,
     KeywordFalse,
-    KeywordElse
+    KeywordElse,
+    KeywordUnit
 }
 
 #[derive(Debug, Clone)]

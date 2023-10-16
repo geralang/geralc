@@ -105,11 +105,9 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             check_grammar_singular(&*value, ScopeType::Expression, errors);
         },
         AstNodeVariant::Return { value } => {
-            enforce_min_scope!("'ret'", ScopeType::Statement);
-            enforce_max_scope!("'ret'", ScopeType::Statement, ScopeType::Statement);
-            if let Some(value) = value {
-                check_grammar_singular(&*value, ScopeType::Expression, errors);
-            }
+            enforce_min_scope!("'return'", ScopeType::Statement);
+            enforce_max_scope!("'return'", ScopeType::Statement, ScopeType::Statement);
+            check_grammar_singular(&*value, ScopeType::Expression, errors);
         },
         AstNodeVariant::Call { called, arguments } => {
             enforce_min_scope!("Calls", ScopeType::Expression);

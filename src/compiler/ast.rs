@@ -77,7 +77,7 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
     Assignment { variable: Box<T>, value: Box<T> },
-    Return { value: Option<Box<T>> },
+    Return { value: Box<T> },
     Call { called: Box<T>, arguments: Vec<T> },
     Object { values: Vec<(StringIdx, T)> },
     Array { values: Vec<T> },
@@ -157,7 +157,7 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                 ),
             AstNodeVariant::Return { value } =>
                 format!("Return\n  value = \n    {}",
-                    indent(value.as_ref().map(|v| v.to_string(strings)).unwrap_or(String::from("<none>")), 4)
+                    indent(value.to_string(strings), 4)
                 ),
             AstNodeVariant::Call { called, arguments } =>
                 format!("Call\n  called = \n    {}\n  arguments = \n    {}",

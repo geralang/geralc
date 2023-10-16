@@ -38,28 +38,16 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self, string_map: &mut StringMap) -> Option<Result<Token, Error>> {
-        loop {
-            if !self.has() { return None; }
+        while self.has() {
             match self.current() {
-                '\n' | '\r' => {
-                    let c = self.current();
-                    let p = self.position;
-                    self.next();
-                    while self.has() && self.current().is_whitespace() && self.current() != '\n' && self.current() != '\r' {
-                        self.next();
-                    }
-                    if self.has() && self.current() == '|' { continue }
-                    return Some(Ok(Token {
-                        token_type: TokenType::Newline,
-                        token_content: string_map.insert(c.encode_utf8(&mut [0; 4])),
-                        source: SourceRange::new(self.file_name, self.file_content, p, p + 1)
-                    }))
-                }
                 '|' => {
                     self.next();
                     return Some(Ok(if self.has() && self.current() == '|' {
                         self.next();
                         self.make_token("||", TokenType::DoublePipe, string_map)
+                    } else if self.has() && self.current() == '>' {
+                        self.next();
+                        self.make_token("|>", TokenType::FunctionPipe, string_map)
                     } else {
                         self.make_token("|", TokenType::Pipe, string_map)
                     }))
@@ -73,7 +61,7 @@ impl Lexer {
                         self.make_token("=", TokenType::Equals, string_map)
                     }))
                 }
-                '#' => { self.next(); return Some(Ok(self.make_token("#", TokenType::Hashtag, string_map))) },
+                '.' => { self.next(); return Some(Ok(self.make_token(".", TokenType::Dot, string_map))) },
                 '+' => { self.next(); return Some(Ok(self.make_token("+", TokenType::Plus, string_map))) },
                 '-' => {
                     self.next();
@@ -89,10 +77,11 @@ impl Lexer {
                     self.next();
                     if self.has() && self.current() == '/' {
                         while self.has() {
-                            match self.current() {
-                                '\n' | '\r' => break,
-                                _ => self.next()
+                            if self.current() == '\n' || self.current() == '\r' {
+                                self.next();
+                                break;
                             }
+                            self.next();
                         }
                         continue;
                     } else {
@@ -176,10 +165,7 @@ impl Lexer {
             }
             if self.current().is_whitespace() {
                 while self.has() && self.current().is_whitespace() {
-                    match self.current() {
-                        '\n' | '\r' => break,
-                        _ => self.next()
-                    }
+                    self.next();
                 }
                 continue;
             } else if '0' <= self.current() && self.current() <= '9' {
@@ -216,17 +202,17 @@ impl Lexer {
             }
             match &identifier[..] {
                 "proc" => return Some(Ok(self.make_token("proc", TokenType::KeywordProcedure, string_map))),
-                "func" => return Some(Ok(self.make_token("func", TokenType::KeywordFunction, string_map))),
                 "case" => return Some(Ok(self.make_token("case", TokenType::KeywordCase, string_map))),
                 "var" => return Some(Ok(self.make_token("var", TokenType::KeywordVariable, string_map))),
                 "mut" => return Some(Ok(self.make_token("mut", TokenType::KeywordMutable, string_map))),
-                "ret" => return Some(Ok(self.make_token("ret", TokenType::KeywordReturn, string_map))),
+                "return" => return Some(Ok(self.make_token("return", TokenType::KeywordReturn, string_map))),
                 "mod" => return Some(Ok(self.make_token("mod", TokenType::KeywordModule, string_map))),
                 "pub" => return Some(Ok(self.make_token("pub", TokenType::KeywordPublic, string_map))),
                 "use" => return Some(Ok(self.make_token("use", TokenType::KeywordUse, string_map))),
                 "true" => return Some(Ok(self.make_token("true", TokenType::KeywordTrue, string_map))),
                 "false" => return Some(Ok(self.make_token("false", TokenType::KeywordFalse, string_map))),
                 "else" => return Some(Ok(self.make_token("else", TokenType::KeywordElse, string_map))),
+                "unit" => return Some(Ok(self.make_token("unit", TokenType::KeywordUnit, string_map))),
                 _ => return Some(Ok(Token {
                     token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),
@@ -234,5 +220,6 @@ impl Lexer {
                 }))
             }
         }
+        None
     }
 }
