@@ -44,7 +44,8 @@ pub enum ErrorType {
     VariableDoesNotExist(StringIdx),
     ImmutableAssignmant(StringIdx),
     RecursiveConstant(String),
-    InvalidParameterCount(String, usize, usize)
+    InvalidParameterCount(String, usize, usize),
+    DoesNotAlwaysReturn(&'static str)
 
 }
 
@@ -143,6 +144,10 @@ impl ErrorType {
                 if *expected == 1 { "" } else { "s" },
                 got
             ),
+            ErrorType::DoesNotAlwaysReturn(thing) => format!(
+                "{} only sometimes returns a value",
+                thing
+            )
         }
     }
 }

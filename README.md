@@ -1,6 +1,6 @@
 # Gera
 
-*The compiler for Gera, a statically typed and garbage collected programming language.* Currently WIP (Work in progress).
+*The compiler for Gera, a satically typed and garbage collected programming language.* Currently WIP (Work in progress).
 
 # Progress
 
@@ -11,6 +11,7 @@
 - [x] Pretty errors
 - [x] Grammar checking
 - [x] Modules
-- [ ] Type checking
-- [ ] Interpreter
+- [x] Type checking
+- [ ] Macros (interpreter)
+- [ ] Conversion of AST into (SSA?) IR
 - [ ] Emitter
