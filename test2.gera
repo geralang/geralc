@@ -1,8 +1,0 @@
-
-mod std::io
-
-pub proc println x {
-    // todo lmfao
-}
-
-
