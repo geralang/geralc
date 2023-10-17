@@ -171,7 +171,9 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_nodes!(body);
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
-                visit_node!(&mut **value);
+                if let Some(value) = value {
+                    visit_node!(&mut **value);
+                }
                 variables.insert(*name);
             }
             AstNodeVariant::CaseBranches { value, branches, else_body } => {

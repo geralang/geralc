@@ -45,7 +45,8 @@ pub enum ErrorType {
     ImmutableAssignmant(StringIdx),
     RecursiveConstant(String),
     InvalidParameterCount(String, usize, usize),
-    DoesNotAlwaysReturn(&'static str)
+    DoesNotAlwaysReturn(&'static str),
+    VariableWithoutValue(StringIdx)
 
 }
 
@@ -147,6 +148,10 @@ impl ErrorType {
             ErrorType::DoesNotAlwaysReturn(thing) => format!(
                 "{} only sometimes returns a value",
                 thing
+            ),
+            ErrorType::VariableWithoutValue(name) => format!(
+                concat!("There is a variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope, but it is not guaranteed to have a value at this point"),
+                strings.get(*name)
             )
         }
     }

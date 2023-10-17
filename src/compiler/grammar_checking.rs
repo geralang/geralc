@@ -79,7 +79,10 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             }, ScopeType::Statement);
             if *public { enforce_min_scope!("'pub var'", ScopeType::GlobalStatement); }
             if *mutable { enforce_max_scope!("'mut var'", ScopeType::Statement, ScopeType::Statement); }
-            check_grammar_singular(&*value, ScopeType::Expression, errors);
+            if value.is_none() { enforce_max_scope!("'var' without a value", ScopeType::Statement, ScopeType::Statement); }
+            if let Some(value) = value {
+                check_grammar_singular(&*value, ScopeType::Expression, errors);
+            }
         },
         AstNodeVariant::CaseBranches { value, branches, else_body } => {
             enforce_min_scope!("'case'", ScopeType::Statement);

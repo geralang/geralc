@@ -73,7 +73,7 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
     Function { arguments: Vec<StringIdx>, body: Vec<T> },
-    Variable { public: bool, mutable: bool, name: StringIdx, value: Box<T> },
+    Variable { public: bool, mutable: bool, name: StringIdx, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
     Assignment { variable: Box<T>, value: Box<T> },
@@ -133,7 +133,7 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                     public,
                     mutable,
                     strings.get(*name),
-                    indent(value.to_string(strings), 4)
+                    indent(value.as_ref().map(|n| n.to_string(strings)).unwrap_or(String::from("<none>")), 4)
                 ),
             AstNodeVariant::CaseBranches { value, branches, else_body } =>
                 format!("CaseBranches\n  value = \n    {}\n  branches = \n    {}\n  else_body = \n    {}",

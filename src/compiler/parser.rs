@@ -526,15 +526,21 @@ impl Parser {
                     enforce_next!("the variable's name");
                     enforce_current_type!(&[TokenType::Identifier], "the variable's name");
                     let name = self.current.token_content;
-                    enforce_next!("an equals sign ('=')");
-                    enforce_current_type!(&[TokenType::Equals], "an equals sign ('=')");
-                    enforce_next!("the variable's value");
-                    let value = enforce_expression!(&[], None, "the variable's value");
-                    let value_source = value.source();
-                    previous = Some(AstNode::new(
-                        AstNodeVariant::Variable { public: false, mutable, name, value: Box::new(value) },
-                        (&source_start..&value_source).into()
-                    ));
+                    let name_source = self.current.source;
+                    previous = if next!() && self.current.token_type == TokenType::Equals {
+                        enforce_next!("the variable's value");
+                        let value = enforce_expression!(&[], None, "the variable's value");
+                        let value_source = value.source();
+                        Some(AstNode::new(
+                            AstNodeVariant::Variable { public: false, mutable, name, value: Some(Box::new(value)) },
+                            (&source_start..&value_source).into()
+                        ))
+                    } else {
+                        Some(AstNode::new(
+                            AstNodeVariant::Variable { public: false, mutable, name, value: None },
+                            (&source_start..&name_source).into()
+                        ))
+                    }
                 }
                 TokenType::KeywordCase => {
                     let source_start = self.current.source;
