@@ -189,6 +189,15 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_nodes!(body);
                 visit_nodes!(else_body);
             }
+            AstNodeVariant::CaseVariant { value, branches, else_body } => {
+                visit_node!(&mut **value);
+                for branch in branches {
+                    visit_nodes!(&mut branch.2);
+                }
+                if let Some(else_body) = else_body {
+                    visit_nodes!(else_body);
+                }
+            }
             AstNodeVariant::Assignment { variable, value } => {
                 visit_node!(&mut **variable);
                 visit_node!(&mut **value);
@@ -292,6 +301,9 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 }
             }
             AstNodeVariant::Use { paths: _ } => {}
+            AstNodeVariant::Variant { name: _, value } => {
+                visit_node!(&mut **value);
+            }
         }
         errors
     }

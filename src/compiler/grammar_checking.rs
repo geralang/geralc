@@ -101,6 +101,17 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             check_grammar(body, ScopeType::Statement, errors);
             check_grammar(else_body, ScopeType::Statement, errors);
         },
+        AstNodeVariant::CaseVariant { value, branches, else_body } => {
+            enforce_min_scope!("'case'", ScopeType::Statement);
+            enforce_max_scope!("'case'", ScopeType::Statement, ScopeType::Statement);
+            check_grammar_singular(&*value, ScopeType::Expression, errors);
+            for branch in branches {
+                check_grammar(&branch.2, ScopeType::Statement, errors);
+            }
+            if let Some(else_body) = else_body {
+                check_grammar(else_body, ScopeType::Statement, errors);
+            }
+        },
         AstNodeVariant::Assignment { variable, value } => {
             enforce_min_scope!("Assignments", ScopeType::Statement);
             enforce_max_scope!("Assignments", ScopeType::Statement, ScopeType::Statement);
@@ -212,6 +223,11 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
         }
         AstNodeVariant::Use { paths: _ } => {
             enforce_min_scope!("'mod'", ScopeType::GlobalStatement);
+        }
+        AstNodeVariant::Variant { name: _, value } => {
+            enforce_min_scope!("Variant creation", ScopeType::Expression);
+            enforce_max_scope!("Variant creation", ScopeType::Statement, ScopeType::Expression);
+            check_grammar_singular(&*value, ScopeType::Expression, errors);
         }
     }
 }

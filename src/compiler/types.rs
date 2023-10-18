@@ -31,7 +31,8 @@ pub enum Type {
     String,
     Array(PossibleTypes),
     Object(HashMap<StringIdx, PossibleTypes>, bool),
-    Closure(Vec<VarTypeIdx>, VarTypeIdx)
+    Closure(Vec<VarTypeIdx>, VarTypeIdx),
+    Variants(HashMap<StringIdx, PossibleTypes>, bool)
 }
 
 pub struct TypeScopeTranslation {
@@ -216,6 +217,34 @@ impl TypeScope {
                 ) { return None; }
                 Some(Type::Closure(n_param_groups, n_returned_group))
             }
+            (
+                Type::Variants(a_variant_types, a_fixed),
+                Type::Variants(b_variant_types, b_fixed)
+            ) => {
+                let mut new_variant_types: HashMap<StringIdx, PossibleTypes> = a_variant_types.clone();
+                if *a_fixed {
+                    for (variant_name, _) in b_variant_types {
+                        if !a_variant_types.contains_key(variant_name) { return None; }
+                    }
+                }
+                if *b_fixed {
+                    for (variant_name, _) in a_variant_types {
+                        if !b_variant_types.contains_key(variant_name) { return None; }
+                    }
+                }
+                for (variant_name, b_variant_type) in b_variant_types {
+                    if let Some(a_member_type) = a_variant_types.get(variant_name) {
+                        if let Some(new_variant_type) = self.limit_possible_types(a_member_type, b_variant_type) {
+                            new_variant_types.insert(*variant_name, new_variant_type);
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        new_variant_types.insert(*variant_name, b_variant_type.clone());
+                    }
+                }
+                Some(Type::Variants(new_variant_types, *a_fixed || *b_fixed))
+            }
             _ => if std::mem::discriminant(a) == std::mem::discriminant(b) { Some(a.clone()) } else { None }
         }
     }
@@ -255,6 +284,12 @@ impl TypeScopeTranslation {
                     *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
                 }).collect(),
                 *self.mappings.get(&self.var_type_groups[old_return_group.0]).expect("mapping should exist")
+            ),
+            Type::Variants(variant_types, fixed) => Type::Variants(
+                variant_types.iter().map(|(variant_name, variant_types)| {
+                    (*variant_name, self.translate(variant_types))
+                }).collect(),
+                *fixed
             )
         }
     }

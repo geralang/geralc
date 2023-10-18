@@ -25,6 +25,7 @@ pub enum TokenType {
     FunctionPipe,
     DoubleAmpersand,
     ExclamationMark,
+    Hashtag,
     Comma,
     Arrow,
     NamespaceSeparator,

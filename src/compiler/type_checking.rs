@@ -393,6 +393,48 @@ fn type_check_node(
                 else_body: typed_else_body
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (body_returns.0 || else_returns.0, body_returns.1 && else_returns.1)))
         }
+        AstNodeVariant::CaseVariant { value, branches, else_body } => {
+            let typed_value = type_check_node!(*value, &PossibleTypes::Any).0;
+            let mut typed_branches = Vec::new();
+            let mut branches_return = (false, branches.len() != 0);
+            let mut branches_variables = Vec::new();
+            let mut branches_uninitialized_variables = Vec::new();
+            let mut variant_types = HashMap::new();
+            for (branch_variant_name, branch_variant_variable, branch_body) in branches {
+                let mut branch_variables = variables.clone();
+                let branch_variant_variable_types = type_scope!().register_variable();
+                branch_variables.insert(branch_variant_variable, (PossibleTypes::OfGroup(branch_variant_variable_types), false));
+                let mut branch_uninitialized_variables = uninitialized_variables.clone();
+                let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_uninitialized_variables);
+                if branch_returns.0 { branches_return.0 = true; }
+                if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
+                typed_branches.push((branch_variant_name, branch_variant_variable, branch_body));
+                branches_variables.push(branch_variables);
+                branches_uninitialized_variables.push(branch_uninitialized_variables);
+                variant_types.insert(branch_variant_name, type_scope!().get_group_types(&branch_variant_variable_types).clone());
+            }
+            limit_typed_node!(&typed_value, &PossibleTypes::OneOf(vec![Type::Variants(variant_types, else_body.is_none())]));
+            let typed_else_body = if let Some(else_body) = else_body {
+                let mut else_body_variables = variables.clone();
+                let mut else_body_uninitialized_variables = uninitialized_variables.clone();
+                let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut else_body_uninitialized_variables);
+                branches_variables.push(else_body_variables);
+                branches_uninitialized_variables.push(else_body_uninitialized_variables);
+                if else_returns.0 { branches_return.0 = true; }
+                if branches_return.1 && !else_returns.1 { branches_return.1 = false; }
+                Some(typed_else_body)
+            } else { None };
+            if let Some(error) = initalize_variables(
+                strings, type_scope!(), node_source, variables, uninitialized_variables,
+                &branches_variables,
+                &branches_uninitialized_variables
+            ) { return Err(error); }
+            Ok((TypedAstNode::new(AstNodeVariant::CaseVariant {
+                value: Box::new(typed_value),
+                branches: typed_branches,
+                else_body: typed_else_body
+            }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), branches_return))
+        }
         AstNodeVariant::Assignment { variable, value } => {
             let typed_value = type_check_node!(*value, &PossibleTypes::Any).0;
             let typed_variable = type_check_node!(*variable, typed_value.get_types(), true).0;
@@ -794,6 +836,15 @@ fn type_check_node(
                 paths
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (false, false)))
         }
+        AstNodeVariant::Variant { name, value } => {
+            let value_typed = type_check_node!(*value, &PossibleTypes::Any).0;
+            let result_type = PossibleTypes::OneOf(vec![Type::Variants([(name, value_typed.get_types().clone())].into(), false)]);
+            limit!(&result_type, limited_to);
+            Ok((TypedAstNode::new(AstNodeVariant::Variant {
+                name,
+                value: Box::new(value_typed),
+            }, result_type, node_source), (false, false)))
+        }
     }
 }
 
@@ -823,21 +874,19 @@ fn limit_typed_node(
         AstNodeVariant::Variable { public: _, mutable: _, name: _, value: _ } |
         AstNodeVariant::CaseBranches { value: _, branches: _, else_body: _ } |
         AstNodeVariant::CaseConditon { condition: _, body: _, else_body: _ } |
+        AstNodeVariant::CaseVariant { value: _, branches: _, else_body: _ } |
         AstNodeVariant::Assignment { variable: _, value: _ } |
         AstNodeVariant::Return { value: _ } => {
             // result of these operations is 'unit', or there is nothing to infer (function)
         }
         AstNodeVariant::Call { called: _, arguments: _ } => {
-            //todo!("type check calls")
-            // this might not be needed
+            // seems not to be needed
         }
         AstNodeVariant::Object { values: _ } => {
-            //todo!("type check object literals")
-            // this might not be needed
+            // seems not to be needed
         }
         AstNodeVariant::Array { values: _ } => {
-            //todo!("type check array literals")
-            // this might not be needed
+            // seems not to be needed
         }
         AstNodeVariant::ObjectAccess { object, member } => {
             limit_typed_node!(&**object, &PossibleTypes::OneOf(vec![Type::Object([(*member, limited_to.clone())].into(), false)]));
@@ -891,6 +940,9 @@ fn limit_typed_node(
         }
         AstNodeVariant::Use { paths: _ } => {
             // result of this operation is 'unit'
+        }
+        AstNodeVariant::Variant { name: _, value: _ } => {
+            // seems not to be needed
         }
     }
     None
@@ -962,7 +1014,16 @@ fn display_types(
                 result.push_str(&display_types(strings, type_scope, type_scope.get_group_types_from_internal_index(used_internal_group_indices[used_internal_group_indices.len() - 1])));
                 result.push_str(")");
                 result
-            }
+            },
+            Type::Variants(variant_types, fixed) => format!(
+                "variants ({}{})",
+                variant_types.iter().map(|(variant_name, variant_type)| { format!(
+                    "{} = {}",
+                    strings.get(*variant_name),
+                    display_types(strings, type_scope, variant_type)
+                ) }).collect::<Vec<String>>().join(", "),
+                if *fixed { "" } else { ", ..." }
+            ),
         }
     }
     match types {

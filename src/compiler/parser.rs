@@ -13,6 +13,7 @@ use crate::compiler::{
 
 
 const PREFIX_MINUS_PRECEDENCE: Option<usize> = Some(0);
+const HASHTAG_PRECEDENCE: Option<usize> = Some(7);
 
 fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
     match token_type {
@@ -31,7 +32,7 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::NotEquals => Some(4),
         TokenType::DoubleAmpersand => Some(5),
         TokenType::DoublePipe => Some(6),
-        TokenType::Pipe => Some(7),
+        TokenType::FunctionPipe => Some(7),
         _ => None
     }
 }
@@ -171,30 +172,31 @@ impl Parser {
             }
             match self.current.token_type {
                 TokenType::Dot => {
-                    let accessed = enforce_previous!("the thing to access");
-                    enforce_next!("the name or index of the part to access");
-                    enforce_current_type!(&[TokenType::Identifier, TokenType::BracketOpen], "the name or brackets (for index) of the part to access");
+                    let accessed = enforce_previous!("the object to access a member of");
+                    enforce_next!("the name of the member to access");
+                    enforce_current_type!(&[TokenType::Identifier], "the name of the member to access");
                     let accessed_source = accessed.source();
-                    match self.current.token_type {
-                        TokenType::Identifier => {
-                            previous = Some(AstNode::new(
-                                AstNodeVariant::ObjectAccess { object: Box::new(accessed), member: self.current.token_content },
-                                (&accessed_source..&self.current.source).into()
-                            ));
-                        }
-                        TokenType::BracketOpen => {
-                            enforce_next!("the index to access");
-                            let index = enforce_expression!(&[TokenType::BracketClose], None, "the index to access");
-                            enforce_current_type!(&[TokenType::BracketClose], "the matching closing bracket");
-                            previous = Some(AstNode::new(
-                                AstNodeVariant::ArrayAccess { array: Box::new(accessed), index: Box::new(index) },
-                                (&accessed_source..&self.current.source).into()
-                            ));
-                        }
-                        _ => panic!("unreachable")
-                    }
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::ObjectAccess { object: Box::new(accessed), member: self.current.token_content },
+                        (&accessed_source..&self.current.source).into()
+                    ));
                     if !next!() { return Ok(previous); }
                     continue;
+                }
+                TokenType::BracketOpen => {
+                    if previous.is_some() {
+                        let accessed = enforce_previous!("the array to access an element of");
+                        let accessed_source = accessed.source();
+                        enforce_next!("the index to access");
+                        let index = enforce_expression!(&[TokenType::BracketClose], None, "the index to access");
+                        enforce_current_type!(&[TokenType::BracketClose], "a closing bracket (']')");
+                        previous = Some(AstNode::new(
+                            AstNodeVariant::ArrayAccess { array: Box::new(accessed), index: Box::new(index) },
+                            (&accessed_source..&self.current.source).into()
+                        ));
+                        if !next!() { return Ok(previous); }
+                        continue;
+                    }
                 }
                 TokenType::FunctionPipe => {
                     let piped = enforce_previous!("the thing to pipe");
@@ -245,8 +247,10 @@ impl Parser {
                     continue;
                 }
                 TokenType::Slash => {
-                    parse_infix_operator!(Divide, get_operator_precedence(TokenType::Slash), "the thing to divide", "the divisor");
-                    continue;
+                    if previous.is_some() {
+                        parse_infix_operator!(Divide, get_operator_precedence(TokenType::Slash), "the thing to divide", "the divisor");
+                        continue;
+                    }
                 }
                 TokenType::Percent => {
                     parse_infix_operator!(Modulo, get_operator_precedence(TokenType::Percent), "the thing to divide", "the divisor");
@@ -281,8 +285,10 @@ impl Parser {
                     continue;
                 }
                 TokenType::DoublePipe => {
-                    parse_infix_operator!(Or, get_operator_precedence(TokenType::DoublePipe), "the first operand", "the second operand");
-                    continue;
+                    if previous.is_some() {
+                        parse_infix_operator!(Or, get_operator_precedence(TokenType::DoublePipe), "the first operand", "the second operand");
+                        continue;
+                    }
                 }
                 TokenType::ParenOpen => if previous.is_some() {
                     let called = enforce_previous!("the thing to call");
@@ -310,25 +316,26 @@ impl Parser {
             match self.current.token_type {
                 TokenType::Identifier => {
                     let start = self.current.clone();
-                    if next!() && self.current.token_type == TokenType::NamespaceSeparator {
-                        let mut path_segments = vec![start.token_content];
-                        let mut end_source = start.source;
-                        while self.current.token_type == TokenType::NamespaceSeparator {
-                            enforce_next!("the path to access");
-                            enforce_current_type!(&[TokenType::Identifier], "the path to access");
-                            path_segments.push(self.current.token_content);
-                            end_source = self.current.source;
-                            if !next!() { break; }
+                    match (next!(), self.current.token_type) {
+                        (true, TokenType::NamespaceSeparator) => {
+                            let mut path_segments = vec![start.token_content];
+                            let mut end_source = start.source;
+                            while self.current.token_type == TokenType::NamespaceSeparator {
+                                enforce_next!("the path to access");
+                                enforce_current_type!(&[TokenType::Identifier], "the path to access");
+                                path_segments.push(self.current.token_content);
+                                end_source = self.current.source;
+                                if !next!() { break; }
+                            }
+                            previous = Some(AstNode::new(
+                                AstNodeVariant::ModuleAccess { path: NamespacePath::new(path_segments) },
+                                (&start.source..&end_source).into()
+                            ));
                         }
-                        previous = Some(AstNode::new(
-                            AstNodeVariant::ModuleAccess { path: NamespacePath::new(path_segments) },
-                            (&start.source..&end_source).into()
-                        ));
-                    } else {
-                        previous = Some(AstNode::new(
+                        (_, _) => previous = Some(AstNode::new(
                             AstNodeVariant::VariableAccess { name: start.token_content },
                             start.source
-                        ));
+                        )),
                     }
                 }
                 TokenType::String => {
@@ -593,60 +600,116 @@ impl Parser {
                             ));
                         }
                         TokenType::BraceOpen => {
-                            let mut branches = Vec::new();
                             enforce_next!("a branch value");
-                            while self.current.token_type != TokenType::BraceClose {
-                                match self.parse_expression(strings, lexer, &mut vec![&[TokenType::Arrow]], None) {
-                                    Ok(None) => break,
-                                    Ok(Some(value)) => {
-                                        enforce_not_reached_end!("an arrow ('->')");
-                                        enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
-                                        enforce_next!("the body of the branch");
-                                        let body = if self.current.token_type == TokenType::BraceOpen {
-                                            enforce_next!("the body of the conditional branch");
-                                            let body = match self.parse_block(strings, lexer) {
-                                                Ok(body) => body,
-                                                Err(error) => return Err(error)
-                                            };
-                                            enforce_not_reached_end!("a closing brace ('}')");
-                                            enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                                            enforce_next!("the value for the branch or a closing brace ('}')");
-                                            body
-                                        } else {
-                                            vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
+                            if self.current.token_type == TokenType::Hashtag {
+                                let mut branches = Vec::new();
+                                while self.current.token_type != TokenType::BraceClose {
+                                    enforce_current_type!(&[TokenType::Hashtag], "a hashtag ('#')");
+                                    enforce_next!("the variant's name");
+                                    enforce_current_type!(&[TokenType::Identifier], "the variant's name");
+                                    let branch_variant_name = self.current.token_content;
+                                    enforce_next!("the value's variable's name");
+                                    enforce_current_type!(&[TokenType::Identifier], "the value's variable's name");
+                                    let branch_variable_name = self.current.token_content;
+                                    enforce_next!("an arrow ('->')");
+                                    enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
+                                    enforce_next!("the body of the branch");
+                                    let body = if self.current.token_type == TokenType::BraceOpen {
+                                        enforce_next!("the body of the conditional branch");
+                                        let body = match self.parse_block(strings, lexer) {
+                                            Ok(body) => body,
+                                            Err(error) => return Err(error)
                                         };
-                                        branches.push((value, body));
-                                        if self.current.token_type == TokenType::BraceClose { break }
-                                    },
-                                    Err(error) => return Err(error)
-                                }
-                            }
-                            enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                            let mut source_end = self.current.source;
-                            next!();
-                            let else_body = if !self.reached_end && self.current.token_type == TokenType::KeywordElse {
-                                enforce_next!("the body of the 'else'-branch");
-                                if self.current.token_type == TokenType::BraceOpen {
-                                    enforce_next!("the body of the 'else'-branch");
-                                    let body = match self.parse_block(strings, lexer) {
-                                        Ok(body) => body,
-                                        Err(error) => return Err(error)
+                                        enforce_not_reached_end!("a closing brace ('}')");
+                                        enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                        enforce_next!("the value for the branch or a closing brace ('}')");
+                                        body
+                                    } else {
+                                        vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
                                     };
-                                    enforce_not_reached_end!("a closing brace ('}')");
-                                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
-                                    source_end = self.current.source;
-                                    next!();
-                                    body
-                                } else {
-                                    let body = enforce_expression!(&[], None, "the body of the 'else'-branch");
-                                    source_end = body.source();
-                                    vec![body]
+                                    branches.push((branch_variant_name, branch_variable_name, body));
                                 }
-                            } else { Vec::new() };
-                            previous = Some(AstNode::new(
-                                AstNodeVariant::CaseBranches { value: Box::new(value), branches, else_body },
-                                (&source_start..&source_end).into()
-                            ));
+                                enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                let mut source_end = self.current.source;
+                                next!();
+                                let else_body = if !self.reached_end && self.current.token_type == TokenType::KeywordElse {
+                                    enforce_next!("the body of the 'else'-branch");
+                                    if self.current.token_type == TokenType::BraceOpen {
+                                        enforce_next!("the body of the 'else'-branch");
+                                        let body = match self.parse_block(strings, lexer) {
+                                            Ok(body) => body,
+                                            Err(error) => return Err(error)
+                                        };
+                                        enforce_not_reached_end!("a closing brace ('}')");
+                                        enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                        source_end = self.current.source;
+                                        next!();
+                                        Some(body)
+                                    } else {
+                                        let body = enforce_expression!(&[], None, "the body of the 'else'-branch");
+                                        source_end = body.source();
+                                        Some(vec![body])
+                                    }
+                                } else { None };
+                                previous = Some(AstNode::new(
+                                    AstNodeVariant::CaseVariant { value: Box::new(value), branches, else_body },
+                                    (&source_start..&source_end).into()
+                                ));
+                            } else {
+                                let mut branches = Vec::new();
+                                while self.current.token_type != TokenType::BraceClose {
+                                    match self.parse_expression(strings, lexer, &mut vec![&[TokenType::Arrow]], None) {
+                                        Ok(None) => break,
+                                        Ok(Some(value)) => {
+                                            enforce_not_reached_end!("an arrow ('->')");
+                                            enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
+                                            enforce_next!("the body of the branch");
+                                            let body = if self.current.token_type == TokenType::BraceOpen {
+                                                enforce_next!("the body of the conditional branch");
+                                                let body = match self.parse_block(strings, lexer) {
+                                                    Ok(body) => body,
+                                                    Err(error) => return Err(error)
+                                                };
+                                                enforce_not_reached_end!("a closing brace ('}')");
+                                                enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                                enforce_next!("the value for the branch or a closing brace ('}')");
+                                                body
+                                            } else {
+                                                vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
+                                            };
+                                            branches.push((value, body));
+                                            if self.current.token_type == TokenType::BraceClose { break }
+                                        },
+                                        Err(error) => return Err(error)
+                                    }
+                                }
+                                enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                let mut source_end = self.current.source;
+                                next!();
+                                let else_body = if !self.reached_end && self.current.token_type == TokenType::KeywordElse {
+                                    enforce_next!("the body of the 'else'-branch");
+                                    if self.current.token_type == TokenType::BraceOpen {
+                                        enforce_next!("the body of the 'else'-branch");
+                                        let body = match self.parse_block(strings, lexer) {
+                                            Ok(body) => body,
+                                            Err(error) => return Err(error)
+                                        };
+                                        enforce_not_reached_end!("a closing brace ('}')");
+                                        enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                                        source_end = self.current.source;
+                                        next!();
+                                        body
+                                    } else {
+                                        let body = enforce_expression!(&[], None, "the body of the 'else'-branch");
+                                        source_end = body.source();
+                                        vec![body]
+                                    }
+                                } else { Vec::new() };
+                                previous = Some(AstNode::new(
+                                    AstNodeVariant::CaseBranches { value: Box::new(value), branches, else_body },
+                                    (&source_start..&source_end).into()
+                                ));
+                            }
                         }
                         _ => panic!("unreachable")
                     }
@@ -662,20 +725,17 @@ impl Parser {
                     ));
                 }
                 TokenType::KeywordModule => {
-                    let start_source: crate::util::source::SourceRange = self.current.source;
+                    let start_source = self.current.source;
                     enforce_next!("the name of the module");
                     let mut path_segments = Vec::new();
                     enforce_current_type!(&[TokenType::Identifier], "the name of the module");
                     path_segments.push(self.current.token_content);
                     let mut end_source = self.current.source;
-                    if next!() && self.current.token_type == TokenType::NamespaceSeparator {
-                        while self.current.token_type == TokenType::NamespaceSeparator {
-                            enforce_next!("the name of the module");
-                            enforce_current_type!(&[TokenType::Identifier], "the name of the module");
-                            path_segments.push(self.current.token_content);
-                            end_source = self.current.source;
-                            if !next!() { break; }
-                        }
+                    while next!() && self.current.token_type == TokenType::NamespaceSeparator {
+                        enforce_next!("the name of the module");
+                        enforce_current_type!(&[TokenType::Identifier], "the name of the module");
+                        path_segments.push(self.current.token_content);
+                        end_source = self.current.source;
                     }
                     previous = Some(AstNode::new(
                         AstNodeVariant::Module { path: NamespacePath::new(path_segments) },
@@ -795,6 +855,22 @@ impl Parser {
                         self.current.source
                     ));
                     next!();
+                }
+                TokenType::Hashtag => {
+                    let start_source = self.current.source;
+                    enforce_next!("the variant's name");
+                    enforce_current_type!(&[TokenType::Identifier], "the variant's name");
+                    let name = self.current.token_content;
+                    enforce_next!("the variant's value");
+                    let value = enforce_expression!(&[], HASHTAG_PRECEDENCE, "the variant's value");
+                    let value_source = value.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Variant {
+                            name,
+                            value: Box::new(value)
+                        },
+                        (&start_source..&value_source).into()
+                    ));
                 }
                 _ => return Err(Error::new([
                     ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),

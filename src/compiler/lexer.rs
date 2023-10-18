@@ -124,8 +124,9 @@ impl Lexer {
                 ':' => if self.has_next() && self.peek() == ':' {
                     self.next();
                     self.next();
-                    return Some(Ok(self.make_token("::", TokenType::NamespaceSeparator, string_map)))
+                    return Some(Ok(self.make_token("::", TokenType::NamespaceSeparator, string_map)));
                 }
+                '#' => { self.next(); return Some(Ok(self.make_token("#", TokenType::Hashtag, string_map))) }
                 ',' => { self.next(); return Some(Ok(self.make_token(",", TokenType::Comma, string_map))) }
                 '(' => { self.next(); return Some(Ok(self.make_token("(", TokenType::ParenOpen, string_map))) }
                 ')' => { self.next(); return Some(Ok(self.make_token(")", TokenType::ParenClose, string_map))) }
