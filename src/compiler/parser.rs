@@ -202,7 +202,7 @@ impl Parser {
                     let piped = enforce_previous!("the thing to pipe");
                     let piped_source = piped.source();
                     enforce_next!("the call to pipe into");
-                    let into = enforce_expression!(&[TokenType::Pipe], get_operator_precedence(TokenType::Pipe), "the call to pipe into");
+                    let into = enforce_expression!(&[], get_operator_precedence(TokenType::FunctionPipe), "the call to pipe into");
                     let into_source = into.source();
                     if let AstNodeVariant::Call { called, mut arguments } = into.node_variant().clone() {
                         arguments.insert(0, piped);
@@ -478,7 +478,7 @@ impl Parser {
                                     AstNodeVariant::Return { value: Box::new(return_value) },
                                     return_value_source
                                 )] },
-                            (&source_start..&self.current.source).into()
+                            (&source_start..&return_value_source).into()
                         ));
                     }
                 }

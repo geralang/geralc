@@ -411,7 +411,7 @@ fn type_check_node(
                 typed_branches.push((branch_variant_name, branch_variant_variable, branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
-                variant_types.insert(branch_variant_name, type_scope!().get_group_types(&branch_variant_variable_types).clone());
+                variant_types.insert(branch_variant_name, PossibleTypes::OfGroup(branch_variant_variable_types));
             }
             limit_typed_node!(&typed_value, &PossibleTypes::OneOf(vec![Type::Variants(variant_types, else_body.is_none())]));
             let typed_else_body = if let Some(else_body) = else_body {
