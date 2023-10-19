@@ -122,7 +122,7 @@ impl ErrorType {
                 path
             ),
             ErrorType::NoPossibleTypes(limited, to_only) => format!(
-                concat!("The type of this expression is ", style_red!(), "{}", style_dark_red!(), ", but also ", style_red!(), "{}", style_dark_red!(), ", which is not possible"),
+                concat!("The expression is expected to have incompatible types:\n1) ", style_red!(), "{}", style_dark_red!(), "\n2) ", style_red!(), "{}", style_dark_red!()),
                 limited,
                 to_only
             ),
