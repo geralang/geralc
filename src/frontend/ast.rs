@@ -1,6 +1,6 @@
 
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
-use crate::compiler::{modules::NamespacePath, types::PossibleTypes};
+use crate::frontend::{modules::NamespacePath, types::PossibleTypes};
 
 #[derive(Debug, Clone)]
 pub struct AstNode {

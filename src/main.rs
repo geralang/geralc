@@ -2,16 +2,21 @@
 #![allow(dead_code)]
 
 mod util;
-mod compiler;
+mod frontend;
 mod cli;
 
 use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
-use compiler::{lexer::Lexer, parser::Parser, ast::{HasAstNodeVariant, AstNode, AstNodeVariant}, grammar_checking::{check_grammar, ScopeType}, modules::{Module, NamespacePath}};
+use frontend::{
+    lexer::Lexer,
+    parser::Parser,
+    ast::{HasAstNodeVariant, AstNode, AstNodeVariant},
+    grammar_checking::{check_grammar, ScopeType},
+    modules::{Module, NamespacePath},
+    type_checking::type_check_modules
+};
 use cli::{CliArgs, CliArg};
 
 use std::{fs, env, collections::HashMap};
-
-use crate::compiler::type_checking::type_check_modules;
 
 
 fn main() {

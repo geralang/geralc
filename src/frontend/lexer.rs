@@ -1,5 +1,5 @@
 
-use crate::compiler::tokens::{TokenType, Token};
+use crate::frontend::tokens::{TokenType, Token};
 use crate::util::{
     strings::{StringMap, StringIdx},
     source::SourceRange,

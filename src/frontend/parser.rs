@@ -4,7 +4,7 @@ use crate::util::{
     error::{Error, ErrorSection, ErrorType},
     source::{HasSource, SourceRange}
 };
-use crate::compiler::{
+use crate::frontend::{
     lexer::Lexer,
     ast::{AstNode, AstNodeVariant, HasAstNodeVariant},
     tokens::{TokenType, Token},

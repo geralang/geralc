@@ -7,7 +7,7 @@ use crate::util::{
     source::{HasSource, SourceRange}
 };
 
-use crate::compiler::{
+use crate::frontend::{
     ast::{TypedAstNode, AstNode, HasAstNodeVariant, AstNodeVariant},
     types::{TypeScope, PossibleTypes, Type, VarTypeIdx},
     modules::{NamespacePath, Module}
@@ -189,7 +189,8 @@ fn error_from_type_limit(
 ) -> Error {
     Error::new([
         ErrorSection::Error(ErrorType::NoPossibleTypes(display_types(strings, type_scope, a), display_types(strings, type_scope, b))),
-        ErrorSection::Code(source)
+        ErrorSection::Code(source),
+        ErrorSection::Help(String::from("Based on context, the expression must be both of the above types at the same time, which is not possible as they are incompatible."))
     ].into())
 }
 

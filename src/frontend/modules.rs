@@ -6,7 +6,7 @@ use crate::util::{
     error::{Error, ErrorSection, ErrorType},
     source::HasSource
 };
-use crate::compiler::ast::{HasAstNodeVariant, AstNodeVariant};
+use crate::frontend::ast::{HasAstNodeVariant, AstNodeVariant};
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
