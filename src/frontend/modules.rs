@@ -39,7 +39,7 @@ impl NamespacePath {
 #[derive(Debug)]
 pub struct Module<T: Clone + HasAstNodeVariant<T> + HasSource> {
     path: NamespacePath,
-    file_name: StringIdx,
+    file_name: Option<StringIdx>,
     symbols: HashMap<StringIdx, T>,
     exported: HashMap<StringIdx, bool>,
     usages: Vec<NamespacePath>
@@ -49,13 +49,31 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
     pub fn new(path: NamespacePath, file_name: StringIdx, nodes: Vec<T>, strings: &StringMap) -> Result<Module<T>, Vec<Error>> {
         let mut new = Module {
             path,
-            file_name,
+            file_name: Some(file_name),
             symbols: HashMap::new(),
             exported: HashMap::new(),
             usages: Vec::new()
         };
         let load_errors = new.load(nodes, strings);
         if load_errors.len() > 0 { Err(load_errors) } else { Ok(new) }
+    }
+
+    pub fn is_raw(&self) -> bool { self.file_name.is_some() }
+
+    pub fn new_raw(path: NamespacePath) -> Module<T> {
+        Module {
+            path,
+            file_name: None,
+            symbols: HashMap::new(),
+            exported: HashMap::new(),
+            usages: Vec::new()
+        }
+    }
+
+    pub fn bake(&mut self, file_name: StringIdx, nodes: Vec<T>, strings: &StringMap) -> Result<(), Vec<Error>> {
+        self.file_name = Some(file_name);
+        let load_errors = self.load(nodes, strings);
+        if load_errors.len() > 0 { Err(load_errors) } else { Ok(()) }
     }
 
     fn load(&mut self, mut nodes: Vec<T>, strings: &StringMap) -> Vec<Error> {
@@ -69,13 +87,16 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     let mut new_path_segments = self.path.get_segments().clone();
                     new_path_segments.push(*name);
                     let new_path = NamespacePath::new(new_path_segments);
-                    if self.symbols.contains_key(name) {
-                        errors.push(Error::new([
+                    if self.exported.contains_key(name) {
+                        errors.push(Error::new(if let Some(previous) = self.symbols.get(name) { [
                             ErrorSection::Error(ErrorType::SymbolAlreadyExists(new_path.display(strings))),
                             ErrorSection::Code(node_source),
                             ErrorSection::Info(format!("'{}' was previously declared here", new_path.display(strings))),
-                            ErrorSection::Code(self.symbols.get(name).expect("checked above").source())
-                        ].into()));
+                            ErrorSection::Code(previous.source())
+                        ].into() } else { [
+                            ErrorSection::Error(ErrorType::SymbolAlreadyExists(new_path.display(strings))),
+                            ErrorSection::Code(node_source)
+                        ].into() }));
                     }
                     self.exported.insert(*name, *public);
                     self.symbols.insert(*name, node);
@@ -97,7 +118,11 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
         errors
     }
 
-    pub fn file_name(&self) -> StringIdx { self.file_name }
+    pub fn insert_public(&mut self, name: StringIdx) {
+        self.exported.insert(name, true);
+    }
+
+    pub fn file_name(&self) -> StringIdx { self.file_name.expect("file name should be set (module should not be raw)") }
     pub fn symbols(self) -> HashMap<StringIdx, T> { self.symbols }
 
     pub fn canonicalize(&mut self, modules: &HashMap<NamespacePath, Module<T>>, strings: &mut StringMap) -> Vec<Error> {
@@ -106,13 +131,8 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
         let symbol_names = self.symbols.keys().map(|s| *s).collect::<Vec<StringIdx>>();
         for symbol_name in symbol_names {
             let mut symbol = self.symbols.remove(&symbol_name).expect("key must be valid");
-            match symbol.node_variant() {
-                // catch 'use' here later
-                _ => {
-                    errors.append(&mut self.canonicalize_node(&mut symbol, modules, &mut HashSet::new(), strings));
-                    self.symbols.insert(symbol_name, symbol);
-                }
-            }
+            errors.append(&mut self.canonicalize_node(&mut symbol, modules, &mut HashSet::new(), strings));
+            self.symbols.insert(symbol_name, symbol);
         }
         errors
     }
@@ -290,14 +310,18 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     ].into())); None };
                 if let Some(module) = module {
                     if let Some(is_public) = module.exported.get(&accessed_name) {
-                        if !is_public && module.symbols.get(&accessed_name).map(|n| n.source().file_name() != node_source.file_name()).unwrap_or(false) { errors.push(Error::new([
-                            ErrorSection::Error(ErrorType::SymbolIsNotPublic(path.display(strings))),
+                        if !is_public && module.symbols.get(&accessed_name).map(|n| n.source().file_name() != node_source.file_name()).unwrap_or(false) {
+                            errors.push(Error::new([
+                                ErrorSection::Error(ErrorType::SymbolIsNotPublic(path.display(strings))),
+                                ErrorSection::Code(node_source)
+                            ].into()));
+                        }
+                    } else { 
+                        errors.push(Error::new([
+                            ErrorSection::Error(ErrorType::SymbolDoesNotExist(path.display(strings))),
                             ErrorSection::Code(node_source)
-                        ].into())); }
-                    } else { errors.push(Error::new([
-                        ErrorSection::Error(ErrorType::SymbolDoesNotExist(path.display(strings))),
-                        ErrorSection::Code(node_source)
-                    ].into())); }
+                        ].into()));
+                    }
                 }
             }
             AstNodeVariant::Use { paths: _ } => {}

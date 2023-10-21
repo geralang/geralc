@@ -40,8 +40,7 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
 
 pub struct Parser {
     current: Token,
-    reached_end: bool,
-    current_result: Result<Option<AstNode>, Error>
+    reached_end: bool
 }
 
 impl Parser {
@@ -49,8 +48,7 @@ impl Parser {
         lexer.next_token(strings)
             .map(|res| res.map(|token| Parser {
                 current: token,
-                reached_end: false,
-                current_result: Ok(None)
+                reached_end: false
             }))
     }
 

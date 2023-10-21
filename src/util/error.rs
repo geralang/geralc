@@ -17,9 +17,14 @@ pub enum ErrorType {
     ArgumentDoesNotExist(String),
     InvalidArgumentCount(String, usize, usize),
     FileSystemError(String),
+    InvalidFileExtension(String),
 
     // lexer errors
     InvalidCharacter(char),
+
+    // external mappings parser errors
+    TypeDoesNotExist(StringIdx),
+    NoDefinedModule(&'static str, StringIdx),
 
     // parser errors
     MissingLeftExpr(&'static str),
@@ -49,7 +54,8 @@ pub enum ErrorType {
     VariableWithoutValue(StringIdx),
     
     // interpreter errors
-    ArrayIndexOutOfBounds(usize, i64)
+    ArrayIndexOutOfBounds(usize, i64),
+    ConstantDependsOnExternal(String)
 
 }
 
@@ -71,10 +77,26 @@ impl ErrorType {
                 concat!("An error occured while interacting with the file system: ", style_red!(), "{}", style_dark_red!()),
                 error
             ),
+            ErrorType::InvalidFileExtension(file_path) => format!(
+                concat!("The file ", style_red!(), "{}", style_dark_red!(), " has an extension not recognized by the compiler"),
+                file_path
+            ),
+
             ErrorType::InvalidCharacter(got) => format!(
                 concat!("Encountered ", style_red!(), "{}", style_dark_red!(), ", which is an invalid character"),
                 got
             ),
+
+            ErrorType::TypeDoesNotExist(name) => format!(
+                concat!("No type with the name ", style_red!(), "{}", style_dark_red!(), " has been defined up to this point"),
+                strings.get(*name)
+            ),
+            ErrorType::NoDefinedModule(thing, name) => format!(
+                concat!("The {} ", style_red!(), "{}", style_dark_red!(), " is not defined to be in any module"),
+                thing,
+                strings.get(*name)
+            ),
+
             ErrorType::MissingLeftExpr(expected) => format!(
                 "Expected {} on the left, but got nothing instead",
                 expected
@@ -88,19 +110,21 @@ impl ErrorType {
                 expected,
                 strings.get(*got)
             ),
-            ErrorType::MayNotBePublic => format!(
-                "This syntax may not be marked as public"
-            ),
             ErrorType::TotallyUnexpectedToken(got) => format!(
                 concat!(style_red!(), "{}", style_dark_red!(), " is totally unexpected here"),
                 strings.get(*got)
             ),
+            ErrorType::MayNotBePublic => format!(
+                "This syntax may not be marked as public"
+            ),
+
             ErrorType::InvalidContext(thing, expected, got) => format!(
                 "{} may only be used as {}, but here one was used as {} instead",
                 thing,
                 expected,
                 got
             ),
+
             ErrorType::ModuleDeclarationNotAtTop => format!(
                 "The parent module must be declared at the top of the file"
             ),
@@ -124,6 +148,7 @@ impl ErrorType {
                 concat!("The module ", style_red!(), "{}", style_dark_red!(), " is already defined in another file"),
                 path
             ),
+
             ErrorType::NoPossibleTypes(limited, to_only) => format!(
                 concat!("The expression is expected to have incompatible types:\n1) ", style_red!(), "{}", style_dark_red!(), "\n2) ", style_red!(), "{}", style_dark_red!()),
                 limited,
@@ -156,10 +181,15 @@ impl ErrorType {
                 concat!("There is a variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope, but it is not guaranteed to have a value at this point"),
                 strings.get(*name)
             ),
+
             ErrorType::ArrayIndexOutOfBounds(length, accessed) => format!(
                 concat!("The index ", style_red!(), "{}", style_dark_red!(), " is out of bounds for an array of length ", style_red!(), "{}", style_dark_red!()),
                 accessed,
                 length
+            ),
+            ErrorType::ConstantDependsOnExternal(path) => format!(
+                concat!("The symbol ", style_red!(), "{}", style_dark_red!(), " is implemented externally, meaning it may not be used in constant values"),
+                path
             )
         }
     }

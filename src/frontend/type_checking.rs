@@ -16,13 +16,12 @@ use crate::frontend::{
 
 #[derive(Debug, Clone)]
 pub enum Symbol<T: Clone + HasSource + HasAstNodeVariant<T>> {
-    Constant { value: T },
-    Procedure { parameter_names: Vec<StringIdx>, scope: TypeScope, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Vec<T> }
+    Constant { value: Option<T>, value_types: PossibleTypes },
+    Procedure { parameter_names: Vec<StringIdx>, scope: TypeScope, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Option<Vec<T>> }
 }
 
-pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap) -> Result<HashMap<NamespacePath, Symbol<TypedAstNode>>, Vec<Error>> {
+pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap, typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>) -> Result<(), Vec<Error>> {
     let mut global_scope = TypeScope::new();
-    let mut symbols = HashMap::new();
     let mut errors = Vec::new();
     let mut old_symbols = HashMap::new();
     for (module_path, module) in modules {
@@ -38,12 +37,12 @@ pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, stri
             strings,
             &mut global_scope,
             &mut old_symbols,
-            &mut symbols,
+            typed_symbols,
             &symbol_path
         ) { errors.push(error); }
     }
     if errors.len() > 0 { Err(errors) }
-        else { Ok(symbols) }
+        else { Ok(()) }
 }
 
 fn type_check_symbol<'s>(
@@ -72,7 +71,7 @@ fn type_check_symbol<'s>(
                     scope: procedure_scope,
                     parameter_types: argument_vars,
                     returns: return_types,
-                    body: Vec::new()
+                    body: Some(Vec::new())
                 } );
                 let (typed_body, returns) = match type_check_nodes(
                     strings,
@@ -102,7 +101,7 @@ fn type_check_symbol<'s>(
                     if !returns.0 {
                         scope.limit_possible_types(&PossibleTypes::OfGroup(return_types), &PossibleTypes::OneOf(vec![Type::Unit]));
                     }
-                    *body = typed_body;
+                    *body = Some(typed_body);
                 } else { panic!("procedure was illegally modified!"); }
             }
             AstNodeVariant::Variable { public: _, mutable: _, name: _, value } => {
@@ -124,8 +123,10 @@ fn type_check_symbol<'s>(
                         Err(error) => return Err(error),
                     }
                 } else { panic!("grammar checker failed to see a constant without a value"); };
+                let value_types = value_typed.get_types().clone();
                 symbols.insert(name.clone(), Symbol::Constant {
-                    value: value_typed
+                    value: Some(value_typed),
+                    value_types
                 });
             }
             other => panic!("Unhandled symbol type checking for {:?}!", other)
@@ -820,10 +821,10 @@ fn type_check_node(
         }
         AstNodeVariant::ModuleAccess { path } => {
             match type_check_symbol(strings, global_scope, untyped_symbols, symbols, &path) {
-                Ok(Symbol::Constant { value }) => {
+                Ok(Symbol::Constant { value: _, value_types }) => {
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
                         path
-                    }, value.get_types().clone(), node_source), (false, false)))
+                    }, value_types.clone(), node_source), (false, false)))
                 }
                 Ok(Symbol::Procedure { parameter_names: _, scope: _, parameter_types: _, returns: _, body: _ }) => {
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
@@ -978,6 +979,14 @@ fn display_types(
                     display_types(strings, type_scope, member_type)
                 ) }).collect::<Vec<String>>().join(", "),
                 if *fixed { "" } else { ", ..." }
+            ),
+            Type::ConcreteObject(member_types) => format!(
+                "object ({}...)",
+                member_types.iter().map(|(member_name, member_type)| { format!(
+                    "{} = {}",
+                    strings.get(*member_name),
+                    display_types(strings, type_scope, &PossibleTypes::OneOf(vec![member_type.clone()]))
+                ) }).collect::<Vec<String>>().join(", ")
             ),
             Type::Closure(arg_groups, returned_group) => {
                 let mut result: String = String::from("function (takes ");

@@ -31,6 +31,7 @@ pub enum Type {
     String,
     Array(PossibleTypes),
     Object(HashMap<StringIdx, PossibleTypes>, bool),
+    ConcreteObject(Vec<(StringIdx, Type)>),
     Closure(Vec<VarTypeIdx>, VarTypeIdx),
     Variants(HashMap<StringIdx, PossibleTypes>, bool)
 }
@@ -152,6 +153,16 @@ impl TypeScope {
 
     fn types_limited(&mut self, a: &Type, b: &Type) -> Option<Type> {
         match (a, b) {
+            (Type::ConcreteObject(member_types), b) => {
+                self.types_limited(&Type::Object(member_types.iter().map(|(member_name, member_type)|
+                    (*member_name, PossibleTypes::OneOf(vec![member_type.clone()]))
+                ).collect(), false), b)
+            }
+            (a, Type::ConcreteObject(member_types)) => {
+                self.types_limited(a, &Type::Object(member_types.iter().map(|(member_name, member_type)|
+                    (*member_name, PossibleTypes::OneOf(vec![member_type.clone()]))
+                ).collect(), false))
+            }
             (
                 Type::Array(a_element_type),
                 Type::Array(b_element_type)
@@ -279,6 +290,7 @@ impl TypeScopeTranslation {
                 }).collect(),
                 *fixed
             ),
+            Type::ConcreteObject(member_types) => Type::ConcreteObject(member_types.clone()),
             Type::Closure(old_param_groups, old_return_group) => Type::Closure(
                 old_param_groups.iter().map(|old_group| {
                     *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")

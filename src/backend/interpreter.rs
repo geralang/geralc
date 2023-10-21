@@ -199,6 +199,14 @@ impl Interpreter {
                             );
                         }
                         self.stack.push(parameter_values);
+                        let body = if let Some(body) = body {
+                            body
+                        } else {
+                            return Err(Error::new([
+                                ErrorSection::Error(ErrorType::ConstantDependsOnExternal(path.display(strings))),
+                                ErrorSection::Code(node_source)
+                            ].into()));
+                        };
                         if let Some(error) = self.evaluate_nodes(body, symbols, strings) {
                             return Err(error);
                         }
@@ -436,10 +444,18 @@ impl Interpreter {
             }
             AstNodeVariant::ModuleAccess { path } => {
                 Ok(match symbols.get(path).expect("symbol should exist") {
-                    Symbol::Constant { value } => {
+                    Symbol::Constant { value, value_types: _ } => {
                         if let Some(value) = self.constants.get(path) {
                             value.clone()
                         } else {
+                            let value = if let Some(value) = value {
+                                value
+                            } else {
+                                return Err(Error::new([
+                                    ErrorSection::Error(ErrorType::ConstantDependsOnExternal(path.display(strings))),
+                                    ErrorSection::Code(node_source)
+                                ].into()));
+                            };
                             let value = self.evaluate_node(value, symbols, strings)?;
                             self.constants.insert(path.clone(), value.clone());
                             value
