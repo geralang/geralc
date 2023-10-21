@@ -2,8 +2,9 @@
 #![allow(dead_code)]
 
 mod util;
-mod frontend;
 mod cli;
+mod frontend;
+mod backend;
 
 use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
 use frontend::{
@@ -17,6 +18,8 @@ use frontend::{
 use cli::{CliArgs, CliArg};
 
 use std::{fs, env, collections::HashMap};
+
+use crate::{backend::interpreter::Interpreter, frontend::type_checking::Symbol};
 
 
 fn main() {
@@ -70,15 +73,29 @@ fn main() {
         }
     }
     // type check
-    let typed_ast = match type_check_modules(modules, &strings) {
+    let typed_symbols = match type_check_modules(modules, &strings) {
         Ok(typed_ast) => typed_ast,
         Err(errors) => {
             for error in errors { println!("{}", error.display(&strings)); }
             return;
         }
     };
-    // debug
-    println!("{:?}", typed_ast);
+    // evaluate constants
+    let mut interpreter = Interpreter::new();
+    for (symbol_path, symbol_value) in &typed_symbols {
+        if let Symbol::Constant { value } = symbol_value {
+            let value = if let Some(value) = interpreter.get_constant_value(symbol_path) {
+                value.clone()
+            } else { match interpreter.evaluate_node(value, &typed_symbols, &strings) {
+                Ok(value) => value,
+                Err(error) => {
+                    println!("{}", error.display(&strings));
+                    return;
+                }
+            } };
+            println!("{} = {:?}", symbol_path.display(&strings), value);
+        }
+    }
 }
 
 fn load_file(file_path: StringIdx, strings: &mut StringMap, modules: &mut HashMap<NamespacePath, Module<AstNode>>) -> Result<NamespacePath, Vec<Error>> {

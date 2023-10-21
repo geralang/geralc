@@ -4,7 +4,7 @@ use std::ops::Range;
 use crate::util::strings::StringIdx;
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SourceRange {
     file_name: StringIdx,
     file_content: StringIdx,

@@ -290,7 +290,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                     ].into())); None };
                 if let Some(module) = module {
                     if let Some(is_public) = module.exported.get(&accessed_name) {
-                        if !is_public && module.symbols.get(&accessed_name).expect("symbol should exist").source().file_name() != node_source.file_name() { errors.push(Error::new([
+                        if !is_public && module.symbols.get(&accessed_name).map(|n| n.source().file_name() != node_source.file_name()).unwrap_or(false) { errors.push(Error::new([
                             ErrorSection::Error(ErrorType::SymbolIsNotPublic(path.display(strings))),
                             ErrorSection::Code(node_source)
                         ].into())); }

@@ -15,14 +15,14 @@ pub struct TypeScope {
     type_groups: Vec<PossibleTypes>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PossibleTypes {
     Any,
     OneOf(Vec<Type>),
     OfGroup(VarTypeIdx)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Unit,
     Boolean,

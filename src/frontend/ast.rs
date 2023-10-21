@@ -2,7 +2,7 @@
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
 use crate::frontend::{modules::NamespacePath, types::PossibleTypes};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AstNode {
     variant: AstNodeVariant<AstNode>,
     source: SourceRange
@@ -30,7 +30,7 @@ impl HasSource for AstNode {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypedAstNode {
     variant: AstNodeVariant<TypedAstNode>,
     node_type: PossibleTypes,
@@ -69,7 +69,7 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     fn to_string(&self, strings: &StringMap) -> String { self.node_variant().to_string(strings) }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
     Function { arguments: Vec<StringIdx>, body: Vec<T> },
@@ -86,7 +86,7 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     ArrayAccess { array: Box<T>, index: Box<T> },
     VariableAccess { name: StringIdx },
     BooleanLiteral { value: bool },
-    IntegerLiteral { value: u64 },
+    IntegerLiteral { value: i64 },
     FloatLiteral { value: f64 },
     StringLiteral { value: StringIdx },
     UnitLiteral,

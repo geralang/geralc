@@ -46,7 +46,10 @@ pub enum ErrorType {
     RecursiveConstant(String),
     InvalidParameterCount(String, usize, usize),
     DoesNotAlwaysReturn(&'static str),
-    VariableWithoutValue(StringIdx)
+    VariableWithoutValue(StringIdx),
+    
+    // interpreter errors
+    ArrayIndexOutOfBounds(usize, i64)
 
 }
 
@@ -152,6 +155,11 @@ impl ErrorType {
             ErrorType::VariableWithoutValue(name) => format!(
                 concat!("There is a variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope, but it is not guaranteed to have a value at this point"),
                 strings.get(*name)
+            ),
+            ErrorType::ArrayIndexOutOfBounds(length, accessed) => format!(
+                concat!("The index ", style_red!(), "{}", style_dark_red!(), " is out of bounds for an array of length ", style_red!(), "{}", style_dark_red!()),
+                accessed,
+                length
             )
         }
     }

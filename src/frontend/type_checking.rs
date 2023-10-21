@@ -17,7 +17,7 @@ use crate::frontend::{
 #[derive(Debug, Clone)]
 pub enum Symbol<T: Clone + HasSource + HasAstNodeVariant<T>> {
     Constant { value: T },
-    Procedure { scope: TypeScope, parameters: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Vec<T> }
+    Procedure { parameter_names: Vec<StringIdx>, scope: TypeScope, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Vec<T> }
 }
 
 pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap) -> Result<HashMap<NamespacePath, Symbol<TypedAstNode>>, Vec<Error>> {
@@ -68,8 +68,9 @@ fn type_check_symbol<'s>(
                 }
                 let return_types = procedure_scope.register_variable();
                 symbols.insert(name.clone(), Symbol::Procedure {
+                    parameter_names: arguments,
                     scope: procedure_scope,
-                    parameters: argument_vars,
+                    parameter_types: argument_vars,
                     returns: return_types,
                     body: Vec::new()
                 } );
@@ -87,7 +88,7 @@ fn type_check_symbol<'s>(
                     Ok(typed_nodes) => typed_nodes,
                     Err(error) => return Err(error),
                 };
-                if let Some(Symbol::Procedure { scope, parameters: _, returns: _, body }) = symbols.get_mut(name) {
+                if let Some(Symbol::Procedure { parameter_names: _, scope, parameter_types: _, returns: _, body }) = symbols.get_mut(name) {
                     if match scope.get_group_types(&return_types) {
                         PossibleTypes::OneOf(types) => types.len() == 1 && match &types[0] {
                             Type::Unit => false,
@@ -250,7 +251,7 @@ fn type_check_node(
     let node_source = node.source();
     macro_rules! type_scope { () => {
         procedure_name.map(|procedure_name| {
-            if let Symbol::Procedure { scope, parameters: _, returns: _, body: _ } = symbols.get_mut(procedure_name).expect("procedure name should be valid") {
+            if let Symbol::Procedure { parameter_names: _, scope, parameter_types: _, returns: _, body: _ } = symbols.get_mut(procedure_name).expect("procedure name should be valid") {
                 scope
             } else { panic!("procedure name should be valid"); }
         }).unwrap_or(global_scope)
@@ -455,15 +456,15 @@ fn type_check_node(
         AstNodeVariant::Call { called, mut arguments } => {
             if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                 match type_check_symbol(strings, global_scope, untyped_symbols, symbols, &path).map(|s| s.clone()) {
-                    Ok(Symbol::Procedure { scope, parameters, returns, body: _ }) => {
-                        if arguments.len() != parameters.len() { return Err(Error::new([
-                            ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameters.len(), arguments.len())),
+                    Ok(Symbol::Procedure { parameter_names: _, scope, parameter_types, returns, body: _ }) => {
+                        if arguments.len() != parameter_types.len() { return Err(Error::new([
+                            ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
                         ].into())) }
                         let inserted_proc_scope = type_scope!().insert_type_scope(&scope);
                         let mut typed_arguments = Vec::new();
                         for argument_idx in 0..arguments.len() {
-                            let argument_type = inserted_proc_scope.translate(&PossibleTypes::OfGroup(parameters[argument_idx]));
+                            let argument_type = inserted_proc_scope.translate(&PossibleTypes::OfGroup(parameter_types[argument_idx]));
                             typed_arguments.push(type_check_node!(arguments.remove(0), &argument_type).0);
                         }
                         let return_types = inserted_proc_scope.translate(&PossibleTypes::OfGroup(returns));
@@ -824,7 +825,7 @@ fn type_check_node(
                         path
                     }, value.get_types().clone(), node_source), (false, false)))
                 }
-                Ok(Symbol::Procedure { scope: _, parameters: _, returns: _, body: _ }) => {
+                Ok(Symbol::Procedure { parameter_names: _, scope: _, parameter_types: _, returns: _, body: _ }) => {
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
                         path
                     }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (false, false)))
