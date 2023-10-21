@@ -13,7 +13,7 @@
 - [x] Modules
 - [x] Type checking
 - [x] Interpreter for constants
-- [ ] Headers for external procedures
+- [x] Headers for external procedures
 - [ ] Lowering of AST into SSA IR
 - [ ] Code generation from IR
     - [ ] Native target (C / assembly?)
