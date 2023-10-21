@@ -12,6 +12,10 @@
 - [x] Grammar checking
 - [x] Modules
 - [x] Type checking
-- [ ] Macros (interpreter)
-- [ ] Conversion of AST into (SSA?) IR
-- [ ] Emitter
+- [x] Interpreter for constants
+- [ ] Headers for external procedures
+- [ ] Lowering of AST into SSA IR
+- [ ] Code generation from IR
+    - [ ] Native target (C / assembly?)
+    - [ ] Browser-compatible target (Javascript / WASM?)
+    - [ ] Serialized IR (readable by compiler as dependency)?
