@@ -1,4 +1,6 @@
 
+use std::collections::HashMap;
+
 use crate::{frontend::{
     modules::NamespacePath,
     types::{TypeScope, VarTypeIdx, PossibleTypes}
@@ -17,8 +19,7 @@ pub enum IrSymbol {
     },
     Variable {
         path: NamespacePath,
-        value_type: PossibleTypes,
-        value: Vec<IrInstruction>
+        value: Value
     }
 }
 
@@ -36,7 +37,17 @@ pub enum IrInstruction {
     LoadInteger { value: i64, into: IrVariable },
     LoadFloat { value: f64, into: IrVariable },
     LoadString { value: StringIdx, into: IrVariable },
+    LoadObject { member_values: HashMap<StringIdx, IrVariable>, into: IrVariable },
+    LoadArray { element_values: Vec<IrVariable>, into: IrVariable },
     LoadGlobalVariable { path: NamespacePath, into: IrVariable },
+
+    GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
+    SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },
+
+    GetArrayElement { accessed: IrVariable, index: IrVariable, into: IrVariable },
+    SetArrayElement { value: IrVariable, accessed: IrVariable, index: IrVariable },
+
+    Move { x: IrVariable, into: IrVariable },
 
     Add { a: IrVariable, b: IrVariable, into: IrVariable },
     Subtract { a: IrVariable, b: IrVariable, into: IrVariable },
@@ -53,6 +64,11 @@ pub enum IrInstruction {
     NotEquals { a: IrVariable, b: IrVariable, into: IrVariable },
 
     BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)> },
-    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, StringIdx, Vec<IrInstruction>)> }
+    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)> },
+
+    CallProcedure { path: NamespacePath, arguments: Vec<IrVariable>, into: Option<IrVariable> },
+    CallClosure { called: IrVariable, arguments: Vec<IrVariable>, into: Option<IrVariable> },
+
+    Return { value: IrVariable }
 
 }
