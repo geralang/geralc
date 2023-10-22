@@ -7,6 +7,7 @@ mod frontend;
 mod backend;
 
 use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
+use cli::{CliArgs, CliArg};
 use frontend::{
     lexer::Lexer,
     parser::Parser,
@@ -15,8 +16,7 @@ use frontend::{
     modules::{Module, NamespacePath},
     type_checking::{type_check_modules, Symbol}, external::ExternalMappingParser
 };
-use cli::{CliArgs, CliArg};
-use backend::interpreter::Interpreter;
+use backend::lowering::lower_typed_ast;
 
 use std::{fs, env, collections::HashMap};
 
@@ -75,32 +75,23 @@ fn main() {
     }
     // type check
     match type_check_modules(modules, &strings, &mut typed_symbols) {
-        Ok(typed_ast) => typed_ast,
+        Ok(_) => {}
         Err(errors) => {
             for error in errors { println!("{}", error.display(&strings)); }
             return;
         }
     };
-    // evaluate constants
-    let mut interpreter = Interpreter::new();
-    for (symbol_path, symbol_value) in &typed_symbols {
-        if let Symbol::Constant { value, value_types: _ } = symbol_value {
-            let value = if let Some(value) = interpreter.get_constant_value(symbol_path) {
-                Some(value.clone())
-            } else if let Some(value) = value {
-                Some(match interpreter.evaluate_node(value, &typed_symbols, &strings) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        println!("{}", error.display(&strings));
-                        return;
-                    }
-                })
-            } else {
-                None
-            };
-            println!("{} = {:?}", symbol_path.display(&strings), value);
+    // lower typed AST
+    let (ir_symbols, ir_types) = match lower_typed_ast(&strings, &typed_symbols, &external_backings) {
+        Ok(ir) => ir,
+        Err(error) => {
+            println!("{}", error.display(&strings));
+            return;
         }
-    }
+    };
+    // debug
+    println!("ir types: {:?}", ir_types);
+    println!("ir symbols: {:?}", ir_symbols);
 }
 
 fn load_file(

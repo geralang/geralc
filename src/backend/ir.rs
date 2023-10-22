@@ -15,10 +15,20 @@ pub enum IrSymbol {
         variables: Vec<IrType>,
         body: Vec<IrInstruction>
     },
+    ExternalProcedure {
+        path: NamespacePath,
+        backing: StringIdx,
+        parameter_types: Vec<IrType>, return_type: IrType
+    },
     Variable {
         path: NamespacePath,
         value_type: IrType,
         value: Value
+    },
+    ExternalVariable {
+        path: NamespacePath,
+        backing: StringIdx,
+        value_type: IrType
     }
 }
 
@@ -106,9 +116,9 @@ pub enum IrType {
 
 #[derive(Debug, Clone, Copy)]
 pub struct IrVariable {
-    index: usize,
-    version: usize,
-    variable_type: IrType,
+    pub index: usize,
+    pub version: usize,
+    pub variable_type: IrType,
 } 
 
 #[derive(Debug, Clone)]
@@ -121,6 +131,7 @@ pub enum IrInstruction {
     LoadString { value: StringIdx, into: IrVariable },
     LoadObject { member_values: HashMap<StringIdx, IrVariable>, into: IrVariable },
     LoadArray { element_values: Vec<IrVariable>, into: IrVariable },
+    LoadVariant { name: StringIdx, v: IrVariable, into: IrVariable },
     LoadGlobalVariable { path: NamespacePath, into: IrVariable },
     LoadProcedurePtr { path: NamespacePath, into: IrVariable },
 
@@ -137,20 +148,23 @@ pub enum IrInstruction {
     Multiply { a: IrVariable, b: IrVariable, into: IrVariable },
     Divide { a: IrVariable, b: IrVariable, into: IrVariable },
     Modulo { a: IrVariable, b: IrVariable, into: IrVariable },
-    Negate { a: IrVariable, b: IrVariable, into: IrVariable },
+    Negate { x: IrVariable, into: IrVariable },
 
     LessThan { a: IrVariable, b: IrVariable, into: IrVariable },
     LessThanEquals { a: IrVariable, b: IrVariable, into: IrVariable },
     GreaterThan { a: IrVariable, b: IrVariable, into: IrVariable },
-    GreaterThanEqual { a: IrVariable, b: IrVariable, into: IrVariable },
+    GreaterThanEquals { a: IrVariable, b: IrVariable, into: IrVariable },
     Equals { a: IrVariable, b: IrVariable, into: IrVariable },
     NotEquals { a: IrVariable, b: IrVariable, into: IrVariable },
+    Not { x: IrVariable, into: IrVariable },
 
-    BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)> },
-    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)> },
+    BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
+    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
-    Call { path: NamespacePath, arguments: Vec<IrVariable>, into: Option<IrVariable> },
-    CallPtr { called: IrVariable, arguments: Vec<IrVariable>, into: Option<IrVariable> },
-    Return { value: IrVariable }
+    Call { path: NamespacePath, arguments: Vec<IrVariable>, into: IrVariable },
+    CallPtr { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },
+    Return { value: IrVariable },
+
+    Phi { options: Vec<IrVariable>, into: IrVariable }
 
 }
