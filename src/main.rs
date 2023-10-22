@@ -37,9 +37,9 @@ fn main() {
     }
     let mut strings = StringMap::new();
     // parse cli args
-    const CLI_ARG_OUTPUT: CliArg = CliArg::required("output", 1);
+    const CLI_ARG_MAIN_PROC: CliArg = CliArg::required("main", 1);
     let args = match CliArgs::parse(&[
-        //CLI_ARG_OUTPUT
+        CLI_ARG_MAIN_PROC
     ], &env::args().collect::<Vec<String>>()[1..]) {
         Ok(args) => args,
         Err(error) => {
@@ -81,8 +81,45 @@ fn main() {
             return;
         }
     };
+    // find main procedure
+    let main_procedure_path = NamespacePath::new(
+        args.values(CLI_ARG_MAIN_PROC)
+            .expect("is required")
+            .last()
+            .expect("is required to have one value")
+            .split("::")
+            .map(|e| strings.insert(e))
+            .collect::<Vec<StringIdx>>()
+    );
+    let main_procedure = if let Some(symbol)
+        = typed_symbols
+            .get(&main_procedure_path)
+            .map(|s| {
+                if let Symbol::Procedure { 
+                    parameter_names,
+                    parameter_types,
+                    body, ..
+                } = s {
+                    if parameter_names.len() == 0
+                    && parameter_types.len() == 0
+                    && body.is_some() { Some(s) }
+                    else { None }
+                } else { None }
+            })
+            .flatten() {
+        symbol
+    } else {
+        println!("{}", Error::new([
+            ErrorSection::Error(ErrorType::InvalidMainProcedure(main_procedure_path.display(&strings))),
+            ErrorSection::Help(String::from("The main procedure needs to be a procedure without any arguments."))
+        ].into()).display(&strings));
+        return;
+    };
     // lower typed AST
-    let (ir_symbols, ir_types) = match lower_typed_ast(&strings, &typed_symbols, &external_backings) {
+    let (ir_symbols, ir_types) = match lower_typed_ast(
+         &strings, &typed_symbols, &external_backings,
+         (&main_procedure_path, main_procedure)
+    ) {
         Ok(ir) => ir,
         Err(error) => {
             println!("{}", error.display(&strings));

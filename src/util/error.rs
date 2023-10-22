@@ -16,6 +16,7 @@ pub enum ErrorType {
     // cli errors
     ArgumentDoesNotExist(String),
     InvalidArgumentCount(String, usize, usize),
+    MissingArgument(&'static str),
     FileSystemError(String),
     InvalidFileExtension(String),
 
@@ -55,7 +56,10 @@ pub enum ErrorType {
     
     // interpreter errors
     ArrayIndexOutOfBounds(usize, i64),
-    ConstantDependsOnExternal(String)
+    ConstantDependsOnExternal(String),
+    
+    // ir lowering errors
+    InvalidMainProcedure(String)
 
 }
 
@@ -72,6 +76,10 @@ impl ErrorType {
                 expected,
                 if *expected == 1 { "" } else { "s" },
                 got
+            ),
+            ErrorType::MissingArgument(name) => format!(
+                concat!("The argument ", style_red!(), "{}", style_dark_red!(), " is required, but was not provided"),
+                name
             ),
             ErrorType::FileSystemError(error) => format!(
                 concat!("An error occured while interacting with the file system: ", style_red!(), "{}", style_dark_red!()),
@@ -189,6 +197,11 @@ impl ErrorType {
             ),
             ErrorType::ConstantDependsOnExternal(path) => format!(
                 concat!("The symbol ", style_red!(), "{}", style_dark_red!(), " is implemented externally, meaning it may not be used in constant values"),
+                path
+            ),
+
+            ErrorType::InvalidMainProcedure(path) => format!(
+                concat!(style_red!(), "{}", style_dark_red!(), " is not the name of a valid main procedure"),
                 path
             )
         }

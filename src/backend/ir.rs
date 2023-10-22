@@ -134,6 +134,7 @@ pub enum IrInstruction {
     LoadVariant { name: StringIdx, v: IrVariable, into: IrVariable },
     LoadGlobalVariable { path: NamespacePath, into: IrVariable },
     LoadProcedurePtr { path: NamespacePath, into: IrVariable },
+    LoadParameter { name: StringIdx, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },

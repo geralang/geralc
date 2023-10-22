@@ -68,6 +68,13 @@ impl CliArgs {
                 i += 1;
             }
         }
+        for arg in args {
+            if arg.required && !parsed.arg_values.contains_key(arg) {
+                return Err(Error::new([
+                    ErrorSection::Error(ErrorType::MissingArgument(arg.name)),
+                ].into()))
+            }
+        }
         Ok(parsed)
     }
 
