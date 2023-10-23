@@ -142,7 +142,7 @@ pub enum IrInstruction {
     GetArrayElement { accessed: IrVariable, index: IrVariable, into: IrVariable },
     SetArrayElement { value: IrVariable, accessed: IrVariable, index: IrVariable },
 
-    Move { x: IrVariable, into: IrVariable },
+    Move { from: IrVariable, into: IrVariable },
 
     Add { a: IrVariable, b: IrVariable, into: IrVariable },
     Subtract { a: IrVariable, b: IrVariable, into: IrVariable },

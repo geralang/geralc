@@ -262,6 +262,10 @@ impl TypeScope {
 }
 
 impl TypeScopeTranslation {
+    pub fn translate_group(&self, old_group: &VarTypeIdx) -> VarTypeIdx {
+        *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
+    }
+
     pub fn translate(&self, translated: &PossibleTypes) -> PossibleTypes {
         match translated {
             PossibleTypes::Any => PossibleTypes::Any,

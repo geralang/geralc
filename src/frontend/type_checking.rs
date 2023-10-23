@@ -469,8 +469,9 @@ fn type_check_node(
                             typed_arguments.push(type_check_node!(arguments.remove(0), &argument_type).0);
                         }
                         let return_types = inserted_proc_scope.translate(&PossibleTypes::OfGroup(returns));
+                        let called = type_check_node!(*called, &PossibleTypes::Any).0;
                         return Ok((TypedAstNode::new(AstNodeVariant::Call {
-                            called: Box::new(type_check_node!(*called, &PossibleTypes::Any).0),
+                            called: Box::new(called),
                             arguments: typed_arguments
                         }, return_types, node_source), (false, false)));
                     }
