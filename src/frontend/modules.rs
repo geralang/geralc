@@ -212,7 +212,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::CaseVariant { value, branches, else_body } => {
                 visit_node!(&mut **value);
                 for branch in branches {
-                    visit_nodes!(&mut branch.2);
+                    visit_nodes!(&mut branch.3);
                 }
                 if let Some(else_body) = else_body {
                     visit_nodes!(else_body);

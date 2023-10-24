@@ -25,7 +25,7 @@ fn possible_types_to_ir_type(
 ) -> IrType {
     match converted {
         PossibleTypes::Any => {
-            panic!("possible types should be concrete!");
+            IrType::Unit // If 'any' it reached this point, it's unused.
         }
         PossibleTypes::OfGroup(group_idx) => {
             possible_types_to_ir_type(type_scope, type_scope.get_group_types(group_idx), type_bank)
@@ -89,14 +89,14 @@ pub fn lower_typed_ast(
     let mut type_bank = IrTypeBank::new();
     let mut ir_symbols = Vec::new();
     if let Symbol::Procedure {
-        parameter_names, scope,
+        parameter_names: _, scope,
         parameter_types: _, returns,
         body
     } = main_procedure.1 {
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
-            scope, typed_symbols, strings, external_backings, parameter_names,
+            scope, typed_symbols, strings, external_backings, &HashMap::new(),
             &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
         ir_symbols.push(IrSymbol::Procedure {
@@ -153,7 +153,7 @@ struct IrGenerator {
     instructions: Vec<Vec<IrInstruction>>,
     variables: Vec<(usize, IrType)>,
     // reusable: Vec<usize>,
-    named_variables: HashMap<StringIdx, IrVariable>,
+    named_variables: HashMap<StringIdx, usize>,
 }
 
 impl IrGenerator {
@@ -173,7 +173,7 @@ impl IrGenerator {
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
-        parameter_names: &Vec<StringIdx>,
+        call_parameters: &HashMap<StringIdx, IrType>,
         interpreter: &mut Interpreter,
         type_bank: &mut IrTypeBank,
         ir_symbols: &mut Vec<IrSymbol>
@@ -181,7 +181,7 @@ impl IrGenerator {
         self.enter();
         for node in nodes {
             self.lower_node(
-                node, None, type_scope, symbols, strings, external_backings, parameter_names,
+                node, None, type_scope, symbols, strings, external_backings, call_parameters,
                 interpreter, type_bank, ir_symbols
             )?;
         }
@@ -228,6 +228,44 @@ impl IrGenerator {
     //     v
     // }
 
+    fn insert_phi(
+        &mut self,
+        branch_scopes: &[Vec<usize>]
+    ) {
+        let mut variants = Vec::new();
+        for branch_vars in branch_scopes {
+            for var_idx in 0..branch_vars.len() {
+                if var_idx >= variants.len() {
+                    variants.push(Vec::new());
+                }
+                let var_variants = &mut variants[var_idx];
+                let new_variant = &branch_vars[var_idx];
+                if !var_variants.contains(new_variant) {
+                    var_variants.push(*new_variant);
+                }
+            }
+        }
+        for var_idx in 0..variants.len() {
+            let var_variants = &variants[var_idx];
+            if var_variants.len() == 1 { continue; }
+            let var = &mut self.variables[var_idx];
+            var.0 += 1;
+            let options = var_variants.iter()
+                .map(|v| IrVariable {
+                    index: var_idx,
+                    version: *v,
+                    variable_type: var.1
+                })
+                .collect();
+            let into = IrVariable {
+                index: var_idx,
+                version: var.0,
+                variable_type: var.1
+            };
+            self.add(IrInstruction::Phi { options, into });
+        }
+    }
+
     fn lower_node(
         &mut self,
         node: &TypedAstNode,
@@ -236,14 +274,14 @@ impl IrGenerator {
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
-        parameter_names: &Vec<StringIdx>,
+        call_parameters: &HashMap<StringIdx, IrType>,
         interpreter: &mut Interpreter,
         type_bank: &mut IrTypeBank,
         ir_symbols: &mut Vec<IrSymbol>
     ) -> Result<Option<IrVariable>, Error> {
         macro_rules! lower_node { ($node: expr, $into: expr) => {
             self.lower_node(
-                $node, $into, type_scope, symbols, strings, external_backings, parameter_names,
+                $node, $into, type_scope, symbols, strings, external_backings, call_parameters,
                 interpreter, type_bank, ir_symbols
             )?.expect("should result in a value")
         } }
@@ -261,20 +299,93 @@ impl IrGenerator {
                 if let Some(value) = value {
                     let var = self.allocate(possible_types_to_ir_type(type_scope, value.get_types(), type_bank));
                     lower_node!(&*value, Some(var));
-                    self.named_variables.insert(*name, var);
+                    self.named_variables.insert(*name, var.index);
                     Ok(Some(var))
                 } else {
                     Ok(None)
                 }
             }
-            AstNodeVariant::CaseBranches { value, branches, else_body } => {
-                todo!("generate IR for branching 'case'")
+            AstNodeVariant::CaseBranches { value, branches: branch_nodes, else_body } => {
+                let value = lower_node!(value, None);
+                let mut branches = Vec::new();
+                let mut branch_scopes = Vec::new();
+                for branch in branch_nodes {
+                    let branch_value = interpreter.evaluate_node(&branch.0, symbols, strings)?;
+                    let branch_body = self.lower_nodes(
+                        &branch.1, type_scope, symbols, strings, external_backings,
+                        call_parameters, interpreter, type_bank, ir_symbols
+                    )?;
+                    branches.push((branch_value, branch_body));
+                    branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                }
+                let else_branch = self.lower_nodes(
+                    &else_body, type_scope, symbols, strings, external_backings,
+                    call_parameters, interpreter, type_bank, ir_symbols
+                )?;
+                branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                self.add(IrInstruction::BranchOnValue {
+                    value,
+                    branches,
+                    else_branch
+                });
+                self.insert_phi(&branch_scopes);
+                Ok(None)
             }
             AstNodeVariant::CaseConditon { condition, body, else_body } => {
-                todo!("generate IR for conditional 'case'");
+                let value = lower_node!(condition, None);
+                let mut branch_scopes = Vec::new();
+                let branches = vec![
+                    (Value::Boolean(true), self.lower_nodes(
+                        &body, type_scope, symbols, strings, external_backings,
+                        call_parameters, interpreter, type_bank, ir_symbols
+                    )?)
+                ];
+                branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                let else_branch = self.lower_nodes(
+                    &else_body, type_scope, symbols, strings, external_backings,
+                    call_parameters, interpreter, type_bank, ir_symbols
+                )?;
+                branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                self.add(IrInstruction::BranchOnValue {
+                    value,
+                    branches,
+                    else_branch
+                });
+                self.insert_phi(&branch_scopes);
+                Ok(None)
             }
-            AstNodeVariant::CaseVariant { value, branches, else_body } => {
-                todo!("generate IR for variant 'case'");
+            AstNodeVariant::CaseVariant { value, branches: branch_nodes, else_body } => {
+                let value = lower_node!(value, None);
+                let mut branches = Vec::new();
+                let mut branch_scopes = Vec::new();
+                for branch in branch_nodes {
+                    let branch_body = self.lower_nodes(
+                        &branch.3, type_scope, symbols, strings, external_backings,
+                        call_parameters, interpreter, type_bank, ir_symbols
+                    )?;
+                    let variant_val_type = possible_types_to_ir_type(
+                        type_scope,
+                        branch.2.as_ref().expect("should have type"),
+                        type_bank
+                    );
+                    let variant_var = self.allocate(variant_val_type);
+                    branches.push((branch.0, variant_var, branch_body));
+                    branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                }
+                let else_branch = if let Some(else_body) = else_body {
+                    self.lower_nodes(
+                        &else_body, type_scope, symbols, strings, external_backings,
+                        call_parameters, interpreter, type_bank, ir_symbols
+                    )?
+                } else { Vec::new() };
+                branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
+                self.add(IrInstruction::BranchOnVariant {
+                    value,
+                    branches,
+                    else_branch
+                });
+                self.insert_phi(&branch_scopes);
+                Ok(None)
             }
             AstNodeVariant::Assignment { variable, value } => {
                 match variable.node_variant() {
@@ -290,10 +401,15 @@ impl IrGenerator {
                         self.add(IrInstruction::SetArrayElement { value, accessed, index });
                     }
                     AstNodeVariant::VariableAccess { name } => {
-                        let var = self.named_variables.get_mut(name).expect("variable should be registered");
-                        var.version += 1;
+                        let var_idx = *self.named_variables.get(name).expect("variable should be registered");
+                        let var = &mut self.variables[var_idx];
+                        var.0 += 1;
                         let var = *var;
-                        lower_node!(&*value, Some(var));
+                        lower_node!(&*value, Some(IrVariable {
+                            index: var_idx,
+                            version: var.0,
+                            variable_type: var.1
+                        }));
                     }
                     _ => panic!("assignment to invalid node type")
                 }
@@ -354,10 +470,17 @@ impl IrGenerator {
                         }
                         if !exists {
                             let mut generator = IrGenerator::new();
+                            let mut call_parameters = HashMap::new();
+                            for arg_idx in 0..parameter_names.len() {
+                                call_parameters.insert(
+                                    parameter_names[arg_idx],
+                                    parameter_ir_types[arg_idx]
+                                );
+                            }
                             let body = generator.lower_nodes(
                                 body.as_ref().expect("should not be external"),
-                                &call_type_scope, symbols, strings, external_backings, parameter_names,
-                                interpreter, type_bank, ir_symbols
+                                &call_type_scope, symbols, strings, external_backings,
+                                &call_parameters, interpreter, type_bank, ir_symbols
                             )?;
                             ir_symbols.push(IrSymbol::Procedure {
                                 path: path.clone(),
@@ -415,17 +538,29 @@ impl IrGenerator {
                 Ok(Some(into))
             }
             AstNodeVariant::VariableAccess { name } => {
-                if parameter_names.contains(name) {
-                    let into = into_given_or_alloc!(node_type!());
+                if let Some(parameter_type) = call_parameters.get(name) {
+                    let into = into_given_or_alloc!(*parameter_type);
                     self.add(IrInstruction::LoadParameter { name: *name, into });
                     Ok(Some(into))
                 } else {
-                    let var = *self.named_variables.get(name).expect("variable should be registered");
+                    let var_idx = *self.named_variables.get(name).expect("variable should be registered");
+                    let var = &self.variables[var_idx];
                     if let Some(into) = into {
-                        self.add(IrInstruction::Move { from: var, into });
+                        self.add(IrInstruction::Move { 
+                            from: IrVariable { 
+                                index: var_idx,
+                                version: var.0,
+                                variable_type: var.1
+                            },
+                            into 
+                        });
                         Ok(Some(into))
                     } else {
-                        Ok(Some(var))
+                        Ok(Some(IrVariable { 
+                            index: var_idx,
+                            version: var.0,
+                            variable_type: var.1
+                        }))
                     }
                 }
             }
@@ -556,7 +691,7 @@ impl IrGenerator {
             }
             AstNodeVariant::Variant { name, value } => {
                 let v = lower_node!(&*value, None);
-                let into = into_given_or_alloc!(v.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::LoadVariant { name: *name, v, into });
                 Ok(Some(into))
             }

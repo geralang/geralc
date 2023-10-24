@@ -550,7 +550,7 @@ impl Parser {
                 TokenType::KeywordCase => {
                     let source_start = self.current.source;
                     enforce_next!("the condition value");
-                    let value = enforce_expression!(&[TokenType::Arrow, TokenType::BraceOpen], None, "the condition value");
+                    let value = enforce_expression!(&[], None, "the condition value");
                     enforce_not_reached_end!("an arrow ('->') (conditonal case) or an opening brace ('{') (branching case)");
                     enforce_current_type!(&[TokenType::Arrow, TokenType::BraceOpen], "an arrow ('->') (conditonal case) or an opening brace ('{') (branching case)");
                     match self.current.token_type {
@@ -625,7 +625,7 @@ impl Parser {
                                     } else {
                                         vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
                                     };
-                                    branches.push((branch_variant_name, branch_variable_name, body));
+                                    branches.push((branch_variant_name, branch_variable_name, None, body));
                                 }
                                 enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                                 let mut source_end = self.current.source;

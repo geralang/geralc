@@ -159,7 +159,7 @@ impl Interpreter {
                 for branch in branches {
                     if variant_name != branch.0 { continue; }
                     self.stack.push([(branch.1, *variant_value)].into());
-                    if let Some(error) = self.evaluate_nodes(&branch.2, symbols, strings) {
+                    if let Some(error) = self.evaluate_nodes(&branch.3, symbols, strings) {
                         return Err(error);
                     };
                     self.stack.pop();

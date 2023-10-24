@@ -403,7 +403,7 @@ fn type_check_node(
             let mut branches_variables = Vec::new();
             let mut branches_uninitialized_variables = Vec::new();
             let mut variant_types = HashMap::new();
-            for (branch_variant_name, branch_variant_variable, branch_body) in branches {
+            for (branch_variant_name, branch_variant_variable, _, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let branch_variant_variable_types = type_scope!().register_variable();
                 branch_variables.insert(branch_variant_variable, (PossibleTypes::OfGroup(branch_variant_variable_types), false));
@@ -411,7 +411,7 @@ fn type_check_node(
                 let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
                 if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
-                typed_branches.push((branch_variant_name, branch_variant_variable, branch_body));
+                typed_branches.push((branch_variant_name, branch_variant_variable, Some(PossibleTypes::OfGroup(branch_variant_variable_types)), branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
                 variant_types.insert(branch_variant_name, PossibleTypes::OfGroup(branch_variant_variable_types));
