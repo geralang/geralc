@@ -38,7 +38,8 @@ pub struct IrTypeBank {
     arrays: Vec<IrType>,
     objects: Vec<HashMap<StringIdx, IrType>>,
     concrete_objects: Vec<Vec<(StringIdx, IrType)>>,
-    variants: Vec<HashMap<StringIdx, IrType>>
+    variants: Vec<HashMap<StringIdx, IrType>>,
+    procedure_ptrs: Vec<(Vec<IrType>, IrType)>,
 }
 
 impl IrTypeBank {
@@ -47,7 +48,8 @@ impl IrTypeBank {
             arrays: Vec::new(),
             objects: Vec::new(),
             concrete_objects: Vec::new(),
-            variants: Vec::new()
+            variants: Vec::new(),
+            procedure_ptrs: Vec::new()
         }
     }
 
@@ -86,6 +88,15 @@ impl IrTypeBank {
         return IrVariantTypeIdx(self.variants.len() - 1);
     }
     pub fn get_variants(&self, idx: IrVariantTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
+
+    pub fn insert_procedure_ptr(&mut self, signature: (Vec<IrType>, IrType)) -> IrProcedurePtrTypeIdx {
+        for i in 0..self.procedure_ptrs.len() {
+            if self.procedure_ptrs[i] == signature { return IrProcedurePtrTypeIdx(i); }
+        }
+        self.procedure_ptrs.push(signature);
+        return IrProcedurePtrTypeIdx(self.procedure_ptrs.len() - 1);
+    }
+    pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -100,6 +111,9 @@ pub struct IrConcreteObjectTypeIdx(usize);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrVariantTypeIdx(usize);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct IrProcedurePtrTypeIdx(usize);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IrType {
     Unit,
@@ -110,7 +124,8 @@ pub enum IrType {
     Array(IrArrayTypeIdx),
     Object(IrObjectTypeIdx),
     ConcreteObject(IrConcreteObjectTypeIdx),
-    Variants(IrVariantTypeIdx)
+    Variants(IrVariantTypeIdx),
+    ProcedurePtr(IrProcedurePtrTypeIdx)
 }
 
 

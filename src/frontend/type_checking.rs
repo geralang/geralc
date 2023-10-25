@@ -60,10 +60,12 @@ fn type_check_symbol<'s>(
                 let mut procedure_scope = TypeScope::new();
                 let mut argument_vars = Vec::new();
                 let mut procedure_variables = HashMap::new();
+                let mut procedure_scope_variables = HashSet::new();
                 for argument_idx in 0..arguments.len() {
                     let var_type_idx = procedure_scope.register_variable();
                     argument_vars.push(var_type_idx);
                     procedure_variables.insert(arguments[argument_idx], (PossibleTypes::OfGroup(var_type_idx), false));
+                    procedure_scope_variables.insert(arguments[argument_idx]);
                 }
                 let return_types = procedure_scope.register_variable();
                 symbols.insert(name.clone(), Symbol::Procedure {
@@ -73,11 +75,12 @@ fn type_check_symbol<'s>(
                     returns: return_types,
                     body: Some(Vec::new())
                 } );
-                let (typed_body, returns) = match type_check_nodes(
+                let (typed_body, returns, _) = match type_check_nodes(
                     strings,
                     global_scope,
                     Some(name),
                     &mut procedure_variables,
+                    &mut procedure_scope_variables,
                     &mut HashMap::new(),
                     untyped_symbols,
                     symbols,
@@ -111,7 +114,9 @@ fn type_check_symbol<'s>(
                         global_scope,
                         None,
                         &mut HashMap::new(),
+                        &mut HashSet::new(),
                         &mut HashMap::new(),
+                        &mut HashSet::new(),
                         untyped_symbols,
                         symbols,
                         *value,
@@ -149,21 +154,25 @@ fn type_check_nodes(
     global_scope: &mut TypeScope,
     procedure_name: Option<&NamespacePath>,
     variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    scope_variables: &mut HashSet<StringIdx>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     mut nodes: Vec<AstNode>,
     return_types: &PossibleTypes
-) -> Result<(Vec<TypedAstNode>, (SometimesReturns, AlwaysReturns)), Error> {
+) -> Result<(Vec<TypedAstNode>, (SometimesReturns, AlwaysReturns), HashSet<StringIdx>), Error> {
     let mut typed_nodes = Vec::new();
     let mut returns = (false, false);
+    let mut captured = HashSet::new();
     while nodes.len() > 0 {
         match type_check_node(
             strings,
             global_scope,
             procedure_name,
             variables,
+            scope_variables,
             uninitialized_variables,
+            &mut captured,
             untyped_symbols,
             symbols,
             nodes.remove(0),
@@ -179,7 +188,7 @@ fn type_check_nodes(
             Err(error) => return Err(error)
         }
     }
-    Ok((typed_nodes, returns))
+    Ok((typed_nodes, returns, captured))
 }
 
 fn error_from_type_limit(
@@ -241,7 +250,9 @@ fn type_check_node(
     global_scope: &mut TypeScope,
     procedure_name: Option<&NamespacePath>,
     variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    scope_variables: &mut HashSet<StringIdx>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
+    captured_variables: &mut HashSet<StringIdx>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     node: AstNode,
@@ -258,18 +269,18 @@ fn type_check_node(
         }).unwrap_or(global_scope)
     }}
     macro_rules! type_check_node { ($node: expr, $limited_to: expr) => {
-        match type_check_node(strings, global_scope, procedure_name, variables, uninitialized_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
+        match type_check_node(strings, global_scope, procedure_name, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     }; ($node: expr, $limited_to: expr, $assignment: expr) => {
-        match type_check_node(strings, global_scope, procedure_name, variables, uninitialized_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
+        match type_check_node(strings, global_scope, procedure_name, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     } }
-    macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $uninitialized_variables: expr) => {
-        match type_check_nodes(strings, global_scope, procedure_name, $variables, $uninitialized_variables, untyped_symbols, symbols, $nodes, return_types) {
+    macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $scope_variables: expr, $uninitialized_variables: expr) => {
+        match type_check_nodes(strings, global_scope, procedure_name, $variables, $scope_variables,  $uninitialized_variables, untyped_symbols, symbols, $nodes, return_types) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
@@ -289,18 +300,21 @@ fn type_check_node(
         AstNodeVariant::Procedure { public: _, name: _, arguments: _, body: _ } => panic!("The grammar checker failed to see a procedure inside another!"),
         AstNodeVariant::Function { arguments, body } => {
             let mut closure_variables = variables.clone();
+            let mut closure_scope_variables = HashSet::new();
             let mut closure_args = Vec::new();
             for argument in &arguments {
                 let var_idx = type_scope!().register_variable();
                 closure_args.push(var_idx);
                 closure_variables.insert(*argument, (PossibleTypes::OfGroup(var_idx), false));
+                closure_scope_variables.insert(*argument);
             }
             let return_types = type_scope!().register_variable();
-            let (typed_body, returns) = match type_check_nodes(
+            let (typed_body, returns, captured) = match type_check_nodes(
                 strings,
                 global_scope,
                 procedure_name,
                 &mut closure_variables,
+                &mut closure_scope_variables,
                 &mut uninitialized_variables.clone(),
                 untyped_symbols,
                 symbols,
@@ -323,7 +337,14 @@ fn type_check_node(
             if !returns.0 {
                 type_scope!().limit_possible_types(&PossibleTypes::OfGroup(return_types), &PossibleTypes::OneOf(vec![Type::Unit]));
             }
-            let closure_type = PossibleTypes::OneOf(vec![Type::Closure(closure_args, return_types)]);
+            let closure_type = PossibleTypes::OneOf(vec![Type::Closure(
+                closure_args,
+                return_types,
+                Some(captured.into_iter().map(|captured_name| (
+                    captured_name,
+                    variables.get(&captured_name).expect("variable should exist").0.clone()
+                )).collect())
+            )]);
             Ok((TypedAstNode::new(AstNodeVariant::Function {
                 arguments,
                 body: typed_body
@@ -338,6 +359,7 @@ fn type_check_node(
                 uninitialized_variables.insert(name, mutable);
                 None
             };
+            scope_variables.insert(name);
             Ok((TypedAstNode::new(AstNodeVariant::Variable {
                 public,
                 mutable,
@@ -354,7 +376,7 @@ fn type_check_node(
             for (branch_value, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
-                let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_uninitialized_variables);
+                let (branch_body, branch_returns, _) = type_check_nodes!(branch_body, &mut branch_variables, &mut HashSet::new(), &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
                 if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
                 typed_branches.push((type_check_node!(branch_value, typed_value.get_types()).0, branch_body));
@@ -363,7 +385,7 @@ fn type_check_node(
             }
             let mut else_body_variables = variables.clone();
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut else_body_uninitialized_variables);
+            let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
             branches_variables.push(else_body_variables);
             branches_uninitialized_variables.push(else_body_uninitialized_variables);
             if let Some(error) = initalize_variables(
@@ -381,10 +403,10 @@ fn type_check_node(
             let typed_condition = type_check_node!(*condition, &PossibleTypes::OneOf(vec![Type::Boolean])).0;
             let mut body_variables = variables.clone();
             let mut body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_body, body_returns) = type_check_nodes!(body, &mut body_variables, &mut body_uninitialized_variables);
+            let (typed_body, body_returns, _) = type_check_nodes!(body, &mut body_variables, &mut HashSet::new(), &mut body_uninitialized_variables);
             let mut else_body_variables = variables.clone();
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut else_body_uninitialized_variables);
+            let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
             if let Some(error) = initalize_variables(
                 strings, type_scope!(), node_source, variables, uninitialized_variables,
                 &[body_variables, else_body_variables],
@@ -408,7 +430,7 @@ fn type_check_node(
                 let branch_variant_variable_types = type_scope!().register_variable();
                 branch_variables.insert(branch_variant_variable, (PossibleTypes::OfGroup(branch_variant_variable_types), false));
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
-                let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_uninitialized_variables);
+                let (branch_body, branch_returns, _) = type_check_nodes!(branch_body, &mut branch_variables, &mut HashSet::new(), &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
                 if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
                 typed_branches.push((branch_variant_name, branch_variant_variable, Some(PossibleTypes::OfGroup(branch_variant_variable_types)), branch_body));
@@ -420,7 +442,7 @@ fn type_check_node(
             let typed_else_body = if let Some(else_body) = else_body {
                 let mut else_body_variables = variables.clone();
                 let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-                let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut else_body_uninitialized_variables);
+                let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
                 branches_variables.push(else_body_variables);
                 branches_uninitialized_variables.push(else_body_uninitialized_variables);
                 if else_returns.0 { branches_return.0 = true; }
@@ -494,7 +516,7 @@ fn type_check_node(
             }
             let passed_return_type = type_scope!().register_variable();
             limit!(limited_to, &PossibleTypes::OfGroup(passed_return_type));
-            let typed_called = type_check_node!(*called, &PossibleTypes::OneOf(vec![Type::Closure(passed_arg_vars, passed_return_type)])).0;
+            let typed_called = type_check_node!(*called, &PossibleTypes::OneOf(vec![Type::Closure(passed_arg_vars, passed_return_type, None)])).0;
             let mut closure_types = typed_called.get_types().clone();
             while let PossibleTypes::OfGroup(group_idx) = closure_types {
                 closure_types = type_scope!().get_group_types(&group_idx).clone();
@@ -502,7 +524,7 @@ fn type_check_node(
             let mut result_type: PossibleTypes = PossibleTypes::Any;
             if let PossibleTypes::OneOf(possible_types) = closure_types {
                 for possible_type in possible_types {
-                    if let Type::Closure(_, return_types) = possible_type {
+                    if let Type::Closure(_, return_types, _) = possible_type {
                         result_type = limit!(&result_type, &PossibleTypes::OfGroup(return_types));
                     } else {
                         panic!("We called something that's not a closure! Shouln't the first call to 'type_check_node!' have already enforced this?");
@@ -587,6 +609,9 @@ fn type_check_node(
             }, result_type, node_source), (false, false)))
         }
         AstNodeVariant::VariableAccess { name } => {
+            if !scope_variables.contains(&name) {
+                captured_variables.insert(name);
+            }
             if let Some((variable_types, variable_mutable)) = variables.get_mut(&name) {
                 let variable_types_cloned = variable_types.clone();
                 if assignment && !*variable_mutable {
@@ -989,7 +1014,7 @@ fn display_types(
                     display_types(strings, type_scope, &PossibleTypes::OneOf(vec![member_type.clone()]))
                 ) }).collect::<Vec<String>>().join(", ")
             ),
-            Type::Closure(arg_groups, returned_group) => {
+            Type::Closure(arg_groups, returned_group, _) => {
                 let mut result: String = String::from("function (takes ");
                 let mut used_internal_group_indices = HashSet::new();
                 for a in 0..arg_groups.len().max(1) - 1 {

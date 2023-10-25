@@ -32,7 +32,7 @@ pub enum Type {
     Array(PossibleTypes),
     Object(HashMap<StringIdx, PossibleTypes>, bool),
     ConcreteObject(Vec<(StringIdx, Type)>),
-    Closure(Vec<VarTypeIdx>, VarTypeIdx),
+    Closure(Vec<VarTypeIdx>, VarTypeIdx, Option<HashMap<StringIdx, PossibleTypes>>),
     Variants(HashMap<StringIdx, PossibleTypes>, bool)
 }
 
@@ -200,8 +200,8 @@ impl TypeScope {
                 Some(Type::Object(new_member_types, *a_fixed && *b_fixed))
             }
             (
-                Type::Closure(a_param_groups, a_returned_group),
-                Type::Closure(b_param_groups, b_returned_group)
+                Type::Closure(a_param_groups, a_returned_group, a_captures),
+                Type::Closure(b_param_groups, b_returned_group, b_captures)
             ) => {
                 if a_param_groups.len() != b_param_groups.len() { return None; }
                 let mut n_param_groups = Vec::new();
@@ -226,7 +226,11 @@ impl TypeScope {
                     &PossibleTypes::OfGroup(n_returned_group),
                     &PossibleTypes::OfGroup(*b_returned_group)
                 ) { return None; }
-                Some(Type::Closure(n_param_groups, n_returned_group))
+                Some(Type::Closure(
+                    n_param_groups,
+                    n_returned_group,
+                    a_captures.as_ref().map(|c| Some(c.clone())).unwrap_or(b_captures.clone())
+                ))
             }
             (
                 Type::Variants(a_variant_types, a_fixed),
@@ -295,11 +299,14 @@ impl TypeScopeTranslation {
                 *fixed
             ),
             Type::ConcreteObject(member_types) => Type::ConcreteObject(member_types.clone()),
-            Type::Closure(old_param_groups, old_return_group) => Type::Closure(
+            Type::Closure(old_param_groups, old_return_group, old_captures) => Type::Closure(
                 old_param_groups.iter().map(|old_group| {
                     *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
                 }).collect(),
-                *self.mappings.get(&self.var_type_groups[old_return_group.0]).expect("mapping should exist")
+                *self.mappings.get(&self.var_type_groups[old_return_group.0]).expect("mapping should exist"),
+                old_captures.as_ref().map(|captures| captures.iter().map(|(capture_name, capture_type)| {
+                    (*capture_name, self.translate(capture_type))
+                }).collect())
             ),
             Type::Variants(variant_types, fixed) => Type::Variants(
                 variant_types.iter().map(|(variant_name, variant_types)| {

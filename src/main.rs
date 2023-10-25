@@ -117,7 +117,7 @@ fn main() {
     };
     // lower typed AST
     let (ir_symbols, ir_types) = match lower_typed_ast(
-         &strings, &typed_symbols, &external_backings,
+         &mut strings, &typed_symbols, &external_backings,
          (&main_procedure_path, main_procedure)
     ) {
         Ok(ir) => ir,
