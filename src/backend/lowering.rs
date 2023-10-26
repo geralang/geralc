@@ -128,6 +128,7 @@ pub fn lower_typed_ast(
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
+            (IrVariable { index: 0, version: 0 }, &HashMap::new()),
             scope, typed_symbols, strings, external_backings, &HashMap::new(),
             &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
@@ -193,7 +194,7 @@ struct IrGenerator {
 impl IrGenerator {
     fn new() -> IrGenerator {
         IrGenerator { 
-            instructions: vec![],
+            instructions: Vec::new(),
             variables: Vec::new(),
             // reusable: Vec::new(),
             named_variables: HashMap::new(),
@@ -204,6 +205,7 @@ impl IrGenerator {
     fn lower_nodes(
         &mut self,
         nodes: &[TypedAstNode],
+        captured: (IrVariable, &HashMap<StringIdx, IrType>),
         type_scope: &TypeScope,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -216,8 +218,8 @@ impl IrGenerator {
         self.enter();
         for node in nodes {
             self.lower_node(
-                node, None, type_scope, symbols, strings, external_backings, call_parameters,
-                interpreter, type_bank, ir_symbols
+                node, None, captured, type_scope, symbols, strings, external_backings,
+                call_parameters, interpreter, type_bank, ir_symbols
             )?;
         }
         Ok(self.exit())
@@ -252,8 +254,7 @@ impl IrGenerator {
         self.variables.push((0, variable_type));
         return IrVariable {
             index: variable_idx,
-            version: 0,
-            variable_type
+            version: 0
         }
     }
 
@@ -288,14 +289,12 @@ impl IrGenerator {
             let options = var_variants.iter()
                 .map(|v| IrVariable {
                     index: var_idx,
-                    version: *v,
-                    variable_type: var.1
+                    version: *v
                 })
                 .collect();
             let into = IrVariable {
                 index: var_idx,
-                version: var.0,
-                variable_type: var.1
+                version: var.0
             };
             self.add(IrInstruction::Phi { options, into });
         }
@@ -305,6 +304,7 @@ impl IrGenerator {
         &mut self,
         node: &TypedAstNode,
         into: Option<IrVariable>,
+        captured: (IrVariable, &HashMap<StringIdx, IrType>),
         type_scope: &TypeScope,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -316,8 +316,8 @@ impl IrGenerator {
     ) -> Result<Option<IrVariable>, Error> {
         macro_rules! lower_node { ($node: expr, $into: expr) => {
             self.lower_node(
-                $node, $into, type_scope, symbols, strings, external_backings, call_parameters,
-                interpreter, type_bank, ir_symbols
+                $node, $into, captured, type_scope, symbols, strings, external_backings,
+                call_parameters, interpreter, type_bank, ir_symbols
             )?.expect("should result in a value")
         } }
         macro_rules! node_type { () => {
@@ -328,7 +328,93 @@ impl IrGenerator {
         } }
         match node.node_variant() {
             AstNodeVariant::Function { arguments, body } => {
-                todo!("generate IR for closures")
+                let node_type = node_type!();
+                let (body_proc_ptr, captures_obj)
+                    = if let IrType::Object(closure_obj_idx) = node_type { (
+                    if let IrType::ProcedurePtr(proc_ptr_idx) = type_bank
+                        .get_object(closure_obj_idx)
+                        .get(&strings.insert("proc"))
+                        .expect("closure object should have 'proc'-property") {
+                        *proc_ptr_idx
+                    } else { panic!("lowered closure type should have a proc ptr"); },
+                    if let IrType::Object(captures_obj) = type_bank
+                        .get_object(closure_obj_idx)
+                        .get(&strings.insert("data"))
+                        .expect("closure object should have 'data'-property") {
+                        *captures_obj
+                    } else { panic!("lowered closure type should have a data obj"); }
+                ) } else { panic!("lowered closure type should be an object"); };
+                let body_proc_signature = type_bank.get_procedure_ptr(body_proc_ptr).clone();
+                let captures = type_bank.get_object(captures_obj).clone();
+                let body_proc_path = NamespacePath::new(vec![
+                    strings.insert(&ir_symbols.len().to_string())
+                ]);
+                let mut generator = IrGenerator::new();
+                let mut parameters = HashMap::new();
+                for param_idx in 0..body_proc_signature.0.len() {
+                    parameters.insert(
+                        if param_idx == 0 { strings.insert("") } else { arguments[param_idx - 1] },
+                        body_proc_signature.0[param_idx]
+                    );
+                }
+                let closure_obj = generator.allocate(body_proc_signature.0[0]);
+                let mut body_proc_body = generator.lower_nodes(
+                    body, (closure_obj, &captures),
+                    type_scope, symbols, strings, external_backings,
+                    &parameters, interpreter, type_bank, ir_symbols
+                )?;
+                body_proc_body.insert(0, IrInstruction::LoadParameter {
+                    name: strings.insert(""),
+                    into: closure_obj
+                });
+                ir_symbols.push(IrSymbol::Procedure {
+                    path: body_proc_path.clone(),
+                    variant: 0,
+                    parameter_types: body_proc_signature.0.clone(),
+                    return_type: body_proc_signature.1,
+                    variables: generator.variables.into_iter()
+                        .map(|v| v.1)
+                        .collect(),
+                    body: body_proc_body
+                });
+                let mut captured_values = HashMap::new();
+                for (captured_name, _) in &captures {
+                    let val_var;
+                    if let Some(parameter_type) = call_parameters.get(captured_name) {
+                        let into = into_given_or_alloc!(*parameter_type);
+                        self.add(IrInstruction::LoadParameter { name: *captured_name, into });
+                        val_var = into;
+                    } else if let Some(var_idx) = self.named_variables.get(captured_name) {
+                        val_var = IrVariable { 
+                            index: *var_idx,
+                            version: self.variables[*var_idx].0
+                        };
+                    } else {
+                        let into = into_given_or_alloc!(
+                            *captured.1.get(captured_name)
+                                .expect("variable should be captured")
+                        );
+                        self.add(IrInstruction::GetObjectMember {
+                            accessed: captured.0,
+                            member: *captured_name,
+                            into
+                        });
+                        val_var = into;
+                    }
+                    captured_values.insert(*captured_name, val_var);
+                }
+                let captured_data = self.allocate(IrType::Object(captures_obj));
+                self.add(IrInstruction::LoadObject {
+                    member_values: captured_values, into: captured_data
+                });
+                let proc_ptr = self.allocate(IrType::ProcedurePtr(body_proc_ptr));
+                self.add(IrInstruction::LoadProcedurePtr { path: body_proc_path, into: proc_ptr });
+                let into = into_given_or_alloc!(node_type);
+                self.add(IrInstruction::LoadObject { member_values: [
+                    (strings.insert("data"), captured_data),
+                    (strings.insert("proc"), proc_ptr)
+                ].into(), into });
+                Ok(Some(into))
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
                 if let Some(value) = value {
@@ -349,14 +435,14 @@ impl IrGenerator {
                 for branch in branch_nodes {
                     let branch_value = interpreter.evaluate_node(&branch.0, symbols, strings)?;
                     let branch_body = self.lower_nodes(
-                        &branch.1, type_scope, symbols, strings, external_backings,
+                        &branch.1, captured, type_scope, symbols, strings, external_backings,
                         call_parameters, interpreter, type_bank, ir_symbols
                     )?;
                     branches.push((branch_value, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = self.lower_nodes(
-                    &else_body, type_scope, symbols, strings, external_backings,
+                    &else_body, captured, type_scope, symbols, strings, external_backings,
                     call_parameters, interpreter, type_bank, ir_symbols
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
@@ -373,13 +459,13 @@ impl IrGenerator {
                 let mut branch_scopes = Vec::new();
                 let branches = vec![
                     (Value::Boolean(true), self.lower_nodes(
-                        &body, type_scope, symbols, strings, external_backings,
+                        &body, captured, type_scope, symbols, strings, external_backings,
                         call_parameters, interpreter, type_bank, ir_symbols
                     )?)
                 ];
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 let else_branch = self.lower_nodes(
-                    &else_body, type_scope, symbols, strings, external_backings,
+                    &else_body, captured, type_scope, symbols, strings, external_backings,
                     call_parameters, interpreter, type_bank, ir_symbols
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
@@ -397,7 +483,7 @@ impl IrGenerator {
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
                     let branch_body = self.lower_nodes(
-                        &branch.3, type_scope, symbols, strings, external_backings,
+                        &branch.3, captured, type_scope, symbols, strings, external_backings,
                         call_parameters, interpreter, type_bank, ir_symbols
                     )?;
                     let variant_val_type = possible_types_to_ir_type(
@@ -412,7 +498,7 @@ impl IrGenerator {
                 }
                 let else_branch = if let Some(else_body) = else_body {
                     self.lower_nodes(
-                        &else_body, type_scope, symbols, strings, external_backings,
+                        &else_body, captured, type_scope, symbols, strings, external_backings,
                         call_parameters, interpreter, type_bank, ir_symbols
                     )?
                 } else { Vec::new() };
@@ -439,15 +525,22 @@ impl IrGenerator {
                         self.add(IrInstruction::SetArrayElement { value, accessed, index });
                     }
                     AstNodeVariant::VariableAccess { name } => {
-                        let var_idx = *self.named_variables.get(name).expect("variable should be registered");
-                        let var = &mut self.variables[var_idx];
-                        var.0 += 1;
-                        let var = *var;
-                        lower_node!(&*value, Some(IrVariable {
-                            index: var_idx,
-                            version: var.0,
-                            variable_type: var.1
-                        }));
+                        if let Some(var_idx) = self.named_variables.get(name) {
+                            let var = &mut self.variables[*var_idx];
+                            var.0 += 1;
+                            let var = *var;
+                            lower_node!(&*value, Some(IrVariable {
+                                index: *var_idx,
+                                version: var.0
+                            }));
+                        } else {
+                            let value = lower_node!(&*value, None);
+                            self.add(IrInstruction::SetObjectMember {
+                                value,
+                                accessed: captured.0,
+                                member: *name
+                            });
+                        }
                     }
                     _ => panic!("assignment to invalid node type")
                 }
@@ -518,7 +611,7 @@ impl IrGenerator {
                             }
                             if let Some(body) = body {
                                 let body = generator.lower_nodes(
-                                    body,
+                                    body, captured,
                                     &call_type_scope, symbols, strings, external_backings,
                                     &call_parameters, interpreter, type_bank, ir_symbols
                                 )?;
@@ -552,7 +645,43 @@ impl IrGenerator {
                         return Ok(Some(into));
                     }
                 }
-                todo!("generate IR for closure calls")
+                let (captured_data_obj, impl_closure_ptr) = if let IrType::Object(closure_obj)
+                    = possible_types_to_ir_type(
+                        type_scope, called.get_types(), type_bank, strings
+                    ) { (
+                    if let IrType::Object(captured_data_obj) = type_bank
+                        .get_object(closure_obj)
+                        .get(&strings.insert("data"))
+                        .expect("lowered closure type should be an object with a 'data'-property") {
+                        *captured_data_obj
+                    } else { panic!("closure data should be an object"); },
+                    if let IrType::ProcedurePtr(impl_closure_ptr) = type_bank
+                        .get_object(closure_obj)
+                        .get(&strings.insert("proc"))
+                        .expect("lowered closure type should be an object with a 'proc'-property") {
+                        *impl_closure_ptr
+                    } else { panic!("closure proc ptr should be an proc ptr"); }
+                ) } else { panic!("lowered closure type should be an object"); };
+                let closure = lower_node!(&*called, None);
+                let called = self.allocate(IrType::ProcedurePtr(impl_closure_ptr));
+                self.add(IrInstruction::GetObjectMember {
+                    accessed: closure,
+                    member: strings.insert("proc"),
+                    into: called
+                });
+                let captured_data = self.allocate(IrType::Object(captured_data_obj));
+                self.add(IrInstruction::GetObjectMember {
+                    accessed: closure,
+                    member: strings.insert("data"),
+                    into: captured_data
+                });
+                let mut parameters = vec![captured_data];
+                for argument in arguments {
+                    parameters.push(lower_node!(argument, None));
+                }
+                let into = into_given_or_alloc!(type_bank.get_procedure_ptr(impl_closure_ptr).1);
+                self.add(IrInstruction::CallPtr { called, arguments: parameters, into });
+                Ok(Some(into))
             }
             AstNodeVariant::Object { values } => {
                 let mut member_values = HashMap::new();
@@ -591,27 +720,36 @@ impl IrGenerator {
                 if let Some(parameter_type) = call_parameters.get(name) {
                     let into = into_given_or_alloc!(*parameter_type);
                     self.add(IrInstruction::LoadParameter { name: *name, into });
-                    Ok(Some(into))
-                } else {
-                    let var_idx = *self.named_variables.get(name).expect("variable should be registered");
-                    let var = &self.variables[var_idx];
+                    return Ok(Some(into));
+                }
+                if let Some(var_idx) = self.named_variables.get(name) {
+                    let var = &self.variables[*var_idx];
                     if let Some(into) = into {
                         self.add(IrInstruction::Move { 
                             from: IrVariable { 
-                                index: var_idx,
-                                version: var.0,
-                                variable_type: var.1
+                                index: *var_idx,
+                                version: var.0
                             },
                             into 
                         });
                         Ok(Some(into))
                     } else {
                         Ok(Some(IrVariable { 
-                            index: var_idx,
-                            version: var.0,
-                            variable_type: var.1
+                            index: *var_idx,
+                            version: var.0
                         }))
                     }
+                } else {
+                    let into = into_given_or_alloc!(
+                        *captured.1.get(name)
+                            .expect("variable should be captured")
+                    );
+                    self.add(IrInstruction::GetObjectMember {
+                        accessed: captured.0,
+                        member: *name,
+                        into
+                    });
+                    Ok(Some(into))
                 }
             }
             AstNodeVariant::BooleanLiteral { value } => {
@@ -642,89 +780,89 @@ impl IrGenerator {
             AstNodeVariant::Add { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Add { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Subtract { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Subtract { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Multiply { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Multiply { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Divide { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Divide { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Modulo { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Modulo { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Negate { x } => {
                 let x = lower_node!(&*x, None);
-                let into = into_given_or_alloc!(x.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Negate { x, into });
                 Ok(Some(into))
             }
             AstNodeVariant::LessThan { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::LessThan { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::GreaterThan { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::GreaterThan { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::LessThanEqual { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::LessThanEquals { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::GreaterThanEqual { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::GreaterThanEquals { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Equals { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Equals { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::NotEquals { a, b } => {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
-                let into = into_given_or_alloc!(a.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::NotEquals { a, b, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Not { x } => {
                 let x = lower_node!(&*x, None);
-                let into = into_given_or_alloc!(x.variable_type);
+                let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::Not { x, into });
                 Ok(Some(into))
             }
@@ -732,14 +870,12 @@ impl IrGenerator {
                 let into = into_given_or_alloc!(node_type!());
                 let a_var = lower_node!(&*a, Some(IrVariable {
                     index: into.index,
-                    version: into.version,
-                    variable_type: into.variable_type
+                    version: into.version
                 }));
                 self.enter();
                 let b_var = lower_node!(&*b, Some(IrVariable {
                     index: into.index,
-                    version: into.version + 1,
-                    variable_type: into.variable_type
+                    version: into.version + 1
                 }));
                 let b_body = self.exit();
                 // no need to call 'insert_phi', as expressions passable to || can't mutate variables
@@ -752,8 +888,7 @@ impl IrGenerator {
                 });
                 let result = IrVariable {
                     index: into.index,
-                    version: into.version + 2,
-                    variable_type: into.variable_type
+                    version: into.version + 2
                 };
                 self.variables[result.index].0 = result.version;
                 self.add(IrInstruction::Phi {
@@ -766,14 +901,12 @@ impl IrGenerator {
                 let into = into_given_or_alloc!(node_type!());
                 let a_var = lower_node!(&*a, Some(IrVariable {
                     index: into.index,
-                    version: into.version,
-                    variable_type: into.variable_type
+                    version: into.version
                 }));
                 self.enter();
                 let b_var = lower_node!(&*b, Some(IrVariable {
                     index: into.index,
-                    version: into.version + 1,
-                    variable_type: into.variable_type
+                    version: into.version + 1
                 }));
                 let b_body = self.exit();
                 // no need to call 'insert_phi', as expressions passable to || can't mutate variables
@@ -786,8 +919,7 @@ impl IrGenerator {
                 });
                 let result = IrVariable {
                     index: into.index,
-                    version: into.version + 2,
-                    variable_type: into.variable_type
+                    version: into.version + 2
                 };
                 self.variables[result.index].0 = result.version;
                 self.add(IrInstruction::Phi {

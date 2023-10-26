@@ -229,7 +229,11 @@ impl TypeScope {
                 Some(Type::Closure(
                     n_param_groups,
                     n_returned_group,
-                    a_captures.as_ref().map(|c| Some(c.clone())).unwrap_or(b_captures.clone())
+                    if a_captures.is_some() && b_captures.is_some() {
+                        None
+                    } else {
+                        a_captures.as_ref().map(|c| Some(c.clone())).unwrap_or(b_captures.clone())
+                    }
                 ))
             }
             (

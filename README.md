@@ -14,8 +14,10 @@
 - [x] Type checking
 - [x] Interpreter for constants
 - [x] Headers for external procedures
-- [ ] Lowering of AST into SSA IR
+- [x] Lowering of AST into SSA IR
 - [ ] Code generation from IR
-    - [ ] Native target (C / assembly?)
-    - [ ] Browser-compatible target (Javascript / WASM?)
-    - [ ] Serialized IR (readable by compiler as dependency)?
+    - [ ] C
+    - [ ] WebAssembly
+    - [ ] JVM byte code?
+- [ ] Standard library
+- [ ] Optimizations on IR

@@ -96,7 +96,7 @@ impl IrTypeBank {
         self.procedure_ptrs.push(signature);
         return IrProcedurePtrTypeIdx(self.procedure_ptrs.len() - 1);
     }
-    pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
+    pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &(Vec<IrType>, IrType) { &self.procedure_ptrs[idx.0] }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -132,8 +132,7 @@ pub enum IrType {
 #[derive(Debug, Clone, Copy)]
 pub struct IrVariable {
     pub index: usize,
-    pub version: usize,
-    pub variable_type: IrType,
+    pub version: usize
 } 
 
 #[derive(Debug, Clone)]
