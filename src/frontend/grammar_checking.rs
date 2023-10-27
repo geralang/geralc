@@ -61,11 +61,31 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
         };
     }
     match node.node_variant() {
-        AstNodeVariant::Procedure { public: _, name: _, arguments: _, body } => {
+        AstNodeVariant::Procedure { public: _, name: _, arguments, body } => {
+            let mut args = Vec::new();
+            for arg in arguments {
+                if args.contains(arg) {
+                    errors.push(Error::new([
+                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(*arg)),
+                        ErrorSection::Code(node.source().clone())
+                    ].into()))
+                }
+                args.push(*arg);
+            }
             enforce_min_scope!("'proc'", ScopeType::GlobalStatement);
             check_grammar(body, ScopeType::Statement, errors);
         },
-        AstNodeVariant::Function { arguments: _, body } => {
+        AstNodeVariant::Function { arguments, body } => {
+            let mut args = Vec::new();
+            for arg in arguments {
+                if args.contains(arg) {
+                    errors.push(Error::new([
+                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(*arg)),
+                        ErrorSection::Code(node.source().clone())
+                    ].into()))
+                }
+                args.push(*arg);
+            }
             enforce_min_scope!("'func'", ScopeType::Expression);
             enforce_max_scope!("'func'", ScopeType::Statement, ScopeType::Expression);
             check_grammar(body, ScopeType::Statement, errors);

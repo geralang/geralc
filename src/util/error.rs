@@ -36,6 +36,7 @@ pub enum ErrorType {
 
     // grammar checking errors
     InvalidContext(&'static str, &'static str, &'static str),
+    DuplicateFunctionParameter(StringIdx),
 
     // module errors
     ModuleDeclarationNotAtTop,
@@ -131,6 +132,10 @@ impl ErrorType {
                 thing,
                 expected,
                 got
+            ),
+            ErrorType::DuplicateFunctionParameter(name) => format!(
+                concat!("the call parameter ", style_red!(), "{}", style_dark_red!(), " exists more than once in the same argument list"),
+                strings.get(*name)
             ),
 
             ErrorType::ModuleDeclarationNotAtTop => format!(
