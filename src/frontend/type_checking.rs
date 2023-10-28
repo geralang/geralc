@@ -64,7 +64,7 @@ fn type_check_symbol<'s>(
                 for argument_idx in 0..arguments.len() {
                     let var_type_idx = procedure_scope.register_variable();
                     argument_vars.push(var_type_idx);
-                    procedure_variables.insert(arguments[argument_idx], (PossibleTypes::OfGroup(var_type_idx), false));
+                    procedure_variables.insert(arguments[argument_idx], (var_type_idx, false));
                     procedure_scope_variables.insert(arguments[argument_idx]);
                 }
                 let return_types = procedure_scope.register_variable();
@@ -153,7 +153,7 @@ fn type_check_nodes(
     strings: &StringMap,
     global_scope: &mut TypeScope,
     procedure_name: Option<&NamespacePath>,
-    variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    variables: &mut HashMap<StringIdx, (VarTypeIdx, bool)>,
     scope_variables: &mut HashSet<StringIdx>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
@@ -199,7 +199,7 @@ fn error_from_type_limit(
     b: &PossibleTypes
 ) -> Error {
     Error::new([
-        ErrorSection::Error(ErrorType::NoPossibleTypes(display_types(strings, type_scope, a), display_types(strings, type_scope, b))),
+        ErrorSection::Error(ErrorType::NoPossibleTypes(display_types(strings, type_scope, a, &mut Vec::new()), display_types(strings, type_scope, b, &mut Vec::new()))),
         ErrorSection::Code(source),
         ErrorSection::Help(String::from("Based on context, the expression must be both of the above types at the same time, which is not possible as they are incompatible."))
     ].into())
@@ -209,14 +209,14 @@ fn initalize_variables(
     strings: &StringMap,
     type_scope: &mut TypeScope,
     source: SourceRange,
-    variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    variables: &mut HashMap<StringIdx, (VarTypeIdx, bool)>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
-    scopes_variables: &[HashMap<StringIdx, (PossibleTypes, bool)>],
+    scopes_variables: &[HashMap<StringIdx, (VarTypeIdx, bool)>],
     scopes_uninitialized_variables: &[HashMap<StringIdx, bool>]
 ) -> Option<Error> {
     for variable_name in uninitialized_variables.keys().map(|s| *s).collect::<Vec<StringIdx>>() {
         let mut always_has_value = true;
-        let mut variable_types = PossibleTypes::Any;
+        let variable_types = type_scope.register_variable();
         for scope_i in 0..scopes_uninitialized_variables.len() {
             if let Some(_) = scopes_uninitialized_variables[scope_i].get(&variable_name) {
                 always_has_value = false;
@@ -224,12 +224,12 @@ fn initalize_variables(
             }
             if let Some((scope_variable_types, _)) = scopes_variables[scope_i].get(&variable_name) {
                 match type_scope.limit_possible_types(
-                    scope_variable_types, 
-                    &variable_types
+                    &PossibleTypes::OfGroup(*scope_variable_types), 
+                    &PossibleTypes::OfGroup(variable_types)
                 ) {
-                    Some(new_type) => variable_types = new_type,
+                    Some(_) => {},
                     None => return Some(Error::new([
-                        ErrorSection::Error(ErrorType::NoPossibleTypes(display_types(strings, type_scope, scope_variable_types), display_types(strings, type_scope, &variable_types))),
+                        ErrorSection::Error(ErrorType::NoPossibleTypes(display_types(strings, type_scope, &PossibleTypes::OfGroup(*scope_variable_types), &mut Vec::new()), display_types(strings, type_scope, &PossibleTypes::OfGroup(variable_types), &mut Vec::new()))),
                         ErrorSection::Code(source),
                         ErrorSection::Info(format!("While computing the type of the variable '{}'", strings.get(variable_name)))
                     ].into()))
@@ -249,7 +249,7 @@ fn type_check_node(
     strings: &StringMap,
     global_scope: &mut TypeScope,
     procedure_name: Option<&NamespacePath>,
-    variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    variables: &mut HashMap<StringIdx, (VarTypeIdx, bool)>,
     scope_variables: &mut HashSet<StringIdx>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
     captured_variables: &mut HashSet<StringIdx>,
@@ -305,7 +305,7 @@ fn type_check_node(
             for argument in &arguments {
                 let var_idx = type_scope!().register_variable();
                 closure_args.push(var_idx);
-                closure_variables.insert(*argument, (PossibleTypes::OfGroup(var_idx), false));
+                closure_variables.insert(*argument, (var_idx, false));
                 closure_scope_variables.insert(*argument);
             }
             let return_types = type_scope!().register_variable();
@@ -353,7 +353,9 @@ fn type_check_node(
         AstNodeVariant::Variable { public, mutable, name, value } => {
             let typed_value = if let Some(value) = value {
                 let typed_value = type_check_node!(*value, &PossibleTypes::Any).0;
-                variables.insert(name, (typed_value.get_types().clone(), mutable));
+                let variable_group = type_scope!().register_variable();
+                *type_scope!().get_group_types_mut(&variable_group) = typed_value.get_types().clone();
+                variables.insert(name, (variable_group, mutable));
                 Some(Box::new(typed_value))
             } else {
                 uninitialized_variables.insert(name, mutable);
@@ -428,7 +430,7 @@ fn type_check_node(
             for (branch_variant_name, branch_variant_variable, _, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let branch_variant_variable_types = type_scope!().register_variable();
-                branch_variables.insert(branch_variant_variable, (PossibleTypes::OfGroup(branch_variant_variable_types), false));
+                branch_variables.insert(branch_variant_variable, (branch_variant_variable_types, false));
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
                 let (branch_body, branch_returns, _) = type_check_nodes!(branch_body, &mut branch_variables, &mut HashSet::new(), &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
@@ -613,17 +615,17 @@ fn type_check_node(
                 captured_variables.insert(name);
             }
             if let Some((variable_types, variable_mutable)) = variables.get_mut(&name) {
-                let variable_types_cloned = variable_types.clone();
+                let variable_types = *variable_types;
                 if assignment && !*variable_mutable {
                     Err(Error::new([
                         ErrorSection::Error(ErrorType::ImmutableAssignmant(name)),
                         ErrorSection::Code(node_source)
                     ].into()))
                 } else {
-                    *variable_types = limit!(&variable_types_cloned, limited_to);
+                    limit!(&PossibleTypes::OfGroup(variable_types), limited_to);
                     Ok((TypedAstNode::new(
                         AstNodeVariant::VariableAccess { name },
-                        variable_types.clone(),
+                        PossibleTypes::OfGroup(variable_types),
                         node_source
                     ), (false, false)))
                 }
@@ -631,7 +633,8 @@ fn type_check_node(
                 if assignment {
                     let variable_mutable = *variable_mutable;
                     uninitialized_variables.remove(&name);
-                    variables.insert(name, (PossibleTypes::Any, variable_mutable));
+                    let variable_type_group = type_scope!().register_variable();
+                    variables.insert(name, (variable_type_group, variable_mutable));
                     Ok((TypedAstNode::new(
                         AstNodeVariant::VariableAccess { name },
                         PossibleTypes::Any,
@@ -880,7 +883,7 @@ fn type_check_node(
 fn limit_typed_node(
     strings: &StringMap,
     type_scope: &mut TypeScope,
-    variables: &mut HashMap<StringIdx, (PossibleTypes, bool)>,
+    variables: &mut HashMap<StringIdx, (VarTypeIdx, bool)>,
     source: SourceRange,
     node: &TypedAstNode,
     limited_to: &PossibleTypes
@@ -925,10 +928,10 @@ fn limit_typed_node(
         }
         AstNodeVariant::VariableAccess { name } => {
             if let Some((variable_types, _)) = variables.get_mut(&name) {
-                let variable_types_cloned = variable_types.clone();
-                match type_scope.limit_possible_types(variable_types, limited_to) {
-                    None => return Some(error_from_type_limit(strings, type_scope, source, &variable_types_cloned, limited_to)),
-                    Some(new_type) => *variable_types = new_type
+                let variable_types = *variable_types;
+                match type_scope.limit_possible_types(&PossibleTypes::OfGroup(variable_types), limited_to) {
+                    None => return Some(error_from_type_limit(strings, type_scope, source, &PossibleTypes::OfGroup(variable_types), limited_to)),
+                    Some(_) => {}
                 }
             }
         }
@@ -980,12 +983,14 @@ fn limit_typed_node(
 fn display_types(
     strings: &StringMap,
     type_scope: &TypeScope,
-    types: &PossibleTypes
+    types: &PossibleTypes,
+    encountered: &mut Vec<(usize, bool)>
 ) -> String {
     fn display_type(
         strings: &StringMap,
         type_scope: &TypeScope,
-        displayed_type: &Type
+        displayed_type: &Type,
+        encountered: &mut Vec<(usize, bool)>
     ) -> String {
         match displayed_type {
             Type::Unit => String::from("unit"),
@@ -994,72 +999,61 @@ fn display_types(
             Type::Float => String::from("float"),
             Type::String => String::from("string"),
             Type::Array(element_type) => format!(
-                "array ({})",
-                display_types(strings, type_scope, element_type)
+                "[{}]",
+                display_types(strings, type_scope, element_type, encountered)
             ),
             Type::Object(member_types, fixed) => format!(
-                "object ({}{})",
+                "{{ {}{} }}",
                 member_types.iter().map(|(member_name, member_type)| { format!(
                     "{} = {}",
                     strings.get(*member_name),
-                    display_types(strings, type_scope, member_type)
+                    display_types(strings, type_scope, member_type, encountered)
                 ) }).collect::<Vec<String>>().join(", "),
                 if *fixed { "" } else { ", ..." }
             ),
             Type::ConcreteObject(member_types) => format!(
-                "object ({}...)",
+                "{{ {}, ... }}",
                 member_types.iter().map(|(member_name, member_type)| { format!(
                     "{} = {}",
                     strings.get(*member_name),
-                    display_types(strings, type_scope, &PossibleTypes::OneOf(vec![member_type.clone()]))
+                    display_types(strings, type_scope, &PossibleTypes::OneOf(vec![member_type.clone()]), encountered)
                 ) }).collect::<Vec<String>>().join(", ")
             ),
             Type::Closure(arg_groups, returned_group, _) => {
-                let mut result: String = String::from("function (takes ");
+                let mut result: String = String::from("(");
                 let mut used_internal_group_indices = HashSet::new();
-                for a in 0..arg_groups.len().max(1) - 1 {
+                for a in 0..arg_groups.len() {
                     if a > 0 { result.push_str(", "); }
-                    result.push_str("<");
+                    result.push_str("%");
                     let internal_idx = type_scope.get_group_internal_index(&arg_groups[a]);
                     used_internal_group_indices.insert(internal_idx);
                     result.push_str(&internal_idx.to_string());
-                    result.push_str(">");
                 }
-                if arg_groups.len() > 1 { result.push_str(" and "); }
-                result.push_str("<");
-                let last_arg_internal_idx = type_scope.get_group_internal_index(&arg_groups[arg_groups.len() - 1]);
-                used_internal_group_indices.insert(last_arg_internal_idx);
-                result.push_str(&last_arg_internal_idx.to_string());
-                result.push_str("> and returns ");
+                result.push_str(") -> ");
                 let returned_internal_idx = type_scope.get_group_internal_index(returned_group);
                 used_internal_group_indices.insert(returned_internal_idx);
-                result.push_str("<");
+                result.push_str("%");
                 result.push_str(&returned_internal_idx.to_string());
-                result.push_str(">, where ");
+                result.push_str(" (");
                 let used_internal_group_indices = used_internal_group_indices.into_iter().collect::<Vec<usize>>();
-                for i in 0..used_internal_group_indices.len() - 1 {
+                for i in 0..used_internal_group_indices.len() {
                     if i > 0 { result.push_str(", "); }
-                    result.push_str("<");
+                    result.push_str("%");
                     result.push_str(&used_internal_group_indices[i].to_string());
-                    result.push_str("> = ");
-                    result.push_str(&display_types(strings, type_scope, type_scope.get_group_types_from_internal_index(used_internal_group_indices[i])));
+                    result.push_str(" = ");
+                    result.push_str(&display_types(strings, type_scope, type_scope.get_group_types_from_internal_index(used_internal_group_indices[i]), encountered));
                 }
-                if used_internal_group_indices.len() > 1 { result.push_str(" and "); }
-                result.push_str("<");
-                result.push_str(&used_internal_group_indices[used_internal_group_indices.len() - 1].to_string());
-                result.push_str("> = ");
-                result.push_str(&display_types(strings, type_scope, type_scope.get_group_types_from_internal_index(used_internal_group_indices[used_internal_group_indices.len() - 1])));
                 result.push_str(")");
                 result
             },
             Type::Variants(variant_types, fixed) => format!(
-                "variants ({}{})",
+                "{}{}",
                 variant_types.iter().map(|(variant_name, variant_type)| { format!(
-                    "{} = {}",
+                    "#{} {}",
                     strings.get(*variant_name),
-                    display_types(strings, type_scope, variant_type)
-                ) }).collect::<Vec<String>>().join(", "),
-                if *fixed { "" } else { ", ..." }
+                    display_types(strings, type_scope, variant_type, encountered)
+                ) }).collect::<Vec<String>>().join(" | "),
+                if *fixed { "" } else { " | ..." }
             ),
         }
     }
@@ -1067,16 +1061,30 @@ fn display_types(
         PossibleTypes::Any => String::from("any"),
         PossibleTypes::OneOf(possible_types) => {
             let mut result = String::new();
-            for i in 0..possible_types.len() - 1 {
-                if i > 0 { result.push_str(", "); }
-                result.push_str(&display_type(strings, type_scope, &possible_types[i]));
+            for i in 0..possible_types.len() {
+                if i > 0 { result.push_str(" | "); }
+                result.push_str(&display_type(strings, type_scope, &possible_types[i], encountered));
             }
-            if possible_types.len() > 1 { result.push_str(" or "); }
-            result.push_str(&display_type(strings, type_scope, &possible_types[possible_types.len() - 1]));
             result
         }
         PossibleTypes::OfGroup(group_idx) => {
-            display_types(strings, type_scope, type_scope.get_group_types(group_idx))
+            let group_internal_idx = type_scope.get_group_internal_index(group_idx);
+            for encounter_idx in 0..encountered.len() {
+                let encounter = &mut encountered[encounter_idx];
+                if encounter.0 != group_internal_idx { continue; }
+                encounter.1 = true;
+                return format!(">{}<", encounter_idx);
+            }
+            let encountered_idx = encountered.len();
+            encountered.push((group_internal_idx, false));
+            let mut result = display_types(strings, type_scope, type_scope.get_group_types(group_idx), encountered);
+            if encountered[encountered_idx].1 {
+                result.push_str(" = >");
+                result.push_str(&encountered_idx.to_string());
+                result.push_str("<");
+            }
+            encountered[encountered_idx].0 = usize::MAX; // dirty hack >:)
+            result
         }
     }
 }

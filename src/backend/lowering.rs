@@ -13,7 +13,7 @@ use crate::frontend::{
     modules::NamespacePath
 };
 use crate::backend::{
-    ir::{IrInstruction, IrVariable, IrType, IrTypeBank, IrSymbol},
+    ir::{IrInstruction, IrVariable, IrType, IrTypeBank, IrSymbol, IrIndirectTypeIdx},
     interpreter::{Interpreter, Value}
 };
 
@@ -22,22 +22,38 @@ fn possible_types_to_ir_type(
     type_scope: &TypeScope,
     converted: &PossibleTypes,
     type_bank: &mut IrTypeBank,
-    strings: &mut StringMap
+    strings: &mut StringMap,
+    encountered: &mut HashMap<usize, Option<IrIndirectTypeIdx>>
 ) -> IrType {
     match converted {
         PossibleTypes::Any => {
             IrType::Unit // If 'any' it reached this point, it's unused.
         }
         PossibleTypes::OfGroup(group_idx) => {
-            possible_types_to_ir_type(
-                type_scope, type_scope.get_group_types(group_idx), type_bank, strings
-            )
+            let group_internal_idx = type_scope.get_group_internal_index(group_idx);
+            if let Some(indirect_idx) = encountered.get_mut(&group_internal_idx) {
+                if indirect_idx.is_none() {
+                    *indirect_idx = Some(type_bank.insert_indirect(IrType::Unit));
+                }
+                return IrType::Indirect(indirect_idx.expect("should be inside, inserted above"));
+            }
+            encountered.insert(group_internal_idx, None);
+            let ir_type = possible_types_to_ir_type(
+                type_scope, type_scope.get_group_types(group_idx), type_bank, strings, encountered
+            );
+            let indirect_idx = encountered.get(&group_internal_idx).expect("should still be inside");
+            return if let Some(indirect_idx) = indirect_idx {
+                type_bank.overwrite_indirect(*indirect_idx, ir_type);
+                IrType::Indirect(*indirect_idx)
+            } else {
+                ir_type
+            };
         }
         PossibleTypes::OneOf(possible_types) => {
             if possible_types.len() != 1 {
                 panic!("possible types should be concrete!");
             }
-            type_to_ir_type(type_scope, &possible_types[0], type_bank, strings)
+            type_to_ir_type(type_scope, &possible_types[0], type_bank, strings, encountered)
         }
     }
 }
@@ -46,7 +62,8 @@ fn type_to_ir_type(
     type_scope: &TypeScope,
     converted: &Type,
     type_bank: &mut IrTypeBank,
-    strings: &mut StringMap
+    strings: &mut StringMap,
+    encountered: &mut HashMap<usize, Option<IrIndirectTypeIdx>>
 ) -> IrType {
     match converted {
         Type::Unit => IrType::Unit,
@@ -56,21 +73,23 @@ fn type_to_ir_type(
         Type::String => IrType::String,
         Type::Array(element_types) => {
             let element_type = possible_types_to_ir_type(
-                type_scope, element_types, type_bank, strings
+                type_scope, element_types, type_bank, strings, encountered
             );
             IrType::Array(type_bank.insert_array(element_type))
         }
         Type::Object(member_types, _) => {
             let member_types = member_types.iter().map(|(member_name, member_types)| {
                 (*member_name, possible_types_to_ir_type(
-                    type_scope, member_types, type_bank, strings
+                    type_scope, member_types, type_bank, strings, encountered
                 ))
             }).collect();
             IrType::Object(type_bank.insert_object(member_types))
         }
         Type::ConcreteObject(members) => {
             let members = members.iter().map(|(member_name, member_type)| {
-                (*member_name, type_to_ir_type(type_scope, member_type, type_bank, strings))
+                (*member_name, type_to_ir_type(
+                    type_scope, member_type, type_bank, strings, encountered
+                ))
             }).collect();
             IrType::ConcreteObject(type_bank.insert_concrete_object(members))
         }
@@ -78,17 +97,18 @@ fn type_to_ir_type(
             let captured = captured.as_ref().map(|captured| {
                 captured.iter().map(|(capture_name, capture_type)| {
                     (*capture_name, possible_types_to_ir_type(
-                        type_scope, capture_type, type_bank, strings
+                        type_scope, &PossibleTypes::OfGroup(*capture_type),
+                        type_bank, strings, encountered
                     ))
                 }).collect()
             }).unwrap_or(HashMap::new());
             let capture_obj = type_bank.insert_object(captured);
             let mut procedure_signature = (
                 arguments.iter().map(|arg| possible_types_to_ir_type(
-                    type_scope, &PossibleTypes::OfGroup(*arg), type_bank, strings
+                    type_scope, &PossibleTypes::OfGroup(*arg), type_bank, strings, encountered
                 )).collect::<Vec<IrType>>(),
                 possible_types_to_ir_type(
-                    type_scope, &PossibleTypes::OfGroup(*returns), type_bank, strings
+                    type_scope, &PossibleTypes::OfGroup(*returns), type_bank, strings, encountered
                 )
             );
             procedure_signature.0.insert(0, IrType::Object(capture_obj));
@@ -102,7 +122,7 @@ fn type_to_ir_type(
         Type::Variants(variant_types, _) => {
             let variant_types = variant_types.iter().map(|(variant_name, variant_types)| {
                 (*variant_name, possible_types_to_ir_type(
-                    type_scope, variant_types, type_bank, strings
+                    type_scope, variant_types, type_bank, strings, encountered
                 ))
             }).collect();
             IrType::Variants(type_bank.insert_variants(variant_types))
@@ -129,7 +149,7 @@ pub fn lower_typed_ast(
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
             (IrVariable { index: 0, version: 0 }, &HashMap::new()),
-            scope, typed_symbols, strings, external_backings, &HashMap::new(),
+            scope, HashMap::new(), typed_symbols, strings, external_backings, &HashMap::new(),
             &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
         ir_symbols.push(IrSymbol::Procedure {
@@ -140,7 +160,8 @@ pub fn lower_typed_ast(
                 scope,
                 &PossibleTypes::OfGroup(*returns),
                 &mut type_bank,
-                strings
+                strings,
+                &mut HashMap::new()
             ),
             variables: generator.variables.into_iter()
                 .map(|v| v.1)
@@ -160,7 +181,8 @@ pub fn lower_typed_ast(
                     ir_symbols.push(IrSymbol::Variable {
                         path: symbol_path.clone(),
                         value_type: possible_types_to_ir_type(
-                            &TypeScope::new(), value_types, &mut type_bank, strings
+                            &TypeScope::new(), value_types, &mut type_bank, strings,
+                            &mut HashMap::new()
                         ),
                         value: v
                     });
@@ -169,7 +191,8 @@ pub fn lower_typed_ast(
                         path: symbol_path.clone(),
                         backing: *external_backings.get(symbol_path).expect("should have backing"),
                         value_type: possible_types_to_ir_type(
-                            &TypeScope::new(), value_types, &mut type_bank, strings
+                            &TypeScope::new(), value_types, &mut type_bank, strings,
+                            &mut HashMap::new()
                         )
                     });
                 }
@@ -187,7 +210,6 @@ struct IrGenerator {
     instructions: Vec<Vec<IrInstruction>>,
     variables: Vec<(usize, IrType)>,
     // reusable: Vec<usize>,
-    named_variables: HashMap<StringIdx, usize>,
     closure_captured: Vec<StringIdx>
 }
 
@@ -197,7 +219,6 @@ impl IrGenerator {
             instructions: Vec::new(),
             variables: Vec::new(),
             // reusable: Vec::new(),
-            named_variables: HashMap::new(),
             closure_captured: Vec::new()
         }
     }
@@ -207,6 +228,7 @@ impl IrGenerator {
         nodes: &[TypedAstNode],
         captured: (IrVariable, &HashMap<StringIdx, IrType>),
         type_scope: &TypeScope,
+        mut named_variables: HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
@@ -218,8 +240,8 @@ impl IrGenerator {
         self.enter();
         for node in nodes {
             self.lower_node(
-                node, None, captured, type_scope, symbols, strings, external_backings,
-                call_parameters, interpreter, type_bank, ir_symbols
+                node, None, captured, type_scope, &mut named_variables, symbols, strings,
+                external_backings, call_parameters, interpreter, type_bank, ir_symbols
             )?;
         }
         Ok(self.exit())
@@ -306,6 +328,7 @@ impl IrGenerator {
         into: Option<IrVariable>,
         captured: (IrVariable, &HashMap<StringIdx, IrType>),
         type_scope: &TypeScope,
+        named_variables: &mut HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
@@ -316,12 +339,14 @@ impl IrGenerator {
     ) -> Result<Option<IrVariable>, Error> {
         macro_rules! lower_node { ($node: expr, $into: expr) => {
             self.lower_node(
-                $node, $into, captured, type_scope, symbols, strings, external_backings,
-                call_parameters, interpreter, type_bank, ir_symbols
+                $node, $into, captured, type_scope, named_variables, symbols, strings,
+                external_backings, call_parameters, interpreter, type_bank, ir_symbols
             )?.expect("should result in a value")
         } }
         macro_rules! node_type { () => {
-            possible_types_to_ir_type(type_scope, node.get_types(), type_bank, strings)
+            possible_types_to_ir_type(
+                type_scope, node.get_types(), type_bank, strings, &mut HashMap::new()
+            )
         } }
         macro_rules! into_given_or_alloc { ($temp_type: expr) => {
             into.unwrap_or_else(|| self.allocate($temp_type))
@@ -330,18 +355,20 @@ impl IrGenerator {
             AstNodeVariant::Function { arguments, body } => {
                 let node_type = node_type!();
                 let (body_proc_ptr, captures_obj)
-                    = if let IrType::Object(closure_obj_idx) = node_type { (
+                    = if let IrType::Object(closure_obj_idx) = node_type.direct(type_bank) { (
                     if let IrType::ProcedurePtr(proc_ptr_idx) = type_bank
                         .get_object(closure_obj_idx)
                         .get(&strings.insert("proc"))
-                        .expect("closure object should have 'proc'-property") {
-                        *proc_ptr_idx
+                        .expect("closure object should have 'proc'-property")
+                        .direct(type_bank) {
+                        proc_ptr_idx
                     } else { panic!("lowered closure type should have a proc ptr"); },
                     if let IrType::Object(captures_obj) = type_bank
                         .get_object(closure_obj_idx)
                         .get(&strings.insert("data"))
-                        .expect("closure object should have 'data'-property") {
-                        *captures_obj
+                        .expect("closure object should have 'data'-property")
+                        .direct(type_bank) {
+                        captures_obj
                     } else { panic!("lowered closure type should have a data obj"); }
                 ) } else { panic!("lowered closure type should be an object"); };
                 let body_proc_signature = type_bank.get_procedure_ptr(body_proc_ptr).clone();
@@ -360,7 +387,7 @@ impl IrGenerator {
                 let closure_obj = generator.allocate(body_proc_signature.0[0]);
                 let mut body_proc_body = generator.lower_nodes(
                     body, (closure_obj, &captures),
-                    type_scope, symbols, strings, external_backings,
+                    type_scope, HashMap::new(), symbols, strings, external_backings,
                     &parameters, interpreter, type_bank, ir_symbols
                 )?;
                 body_proc_body.insert(0, IrInstruction::LoadParameter {
@@ -384,7 +411,7 @@ impl IrGenerator {
                         let into = into_given_or_alloc!(*parameter_type);
                         self.add(IrInstruction::LoadParameter { name: *captured_name, into });
                         val_var = into;
-                    } else if let Some(var_idx) = self.named_variables.get(captured_name) {
+                    } else if let Some(var_idx) = named_variables.get(captured_name) {
                         val_var = IrVariable { 
                             index: *var_idx,
                             version: self.variables[*var_idx].0
@@ -419,10 +446,10 @@ impl IrGenerator {
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
                 if let Some(value) = value {
                     let var = self.allocate(possible_types_to_ir_type(
-                        type_scope, value.get_types(), type_bank, strings
+                        type_scope, value.get_types(), type_bank, strings, &mut HashMap::new()
                     ));
                     lower_node!(&*value, Some(var));
-                    self.named_variables.insert(*name, var.index);
+                    named_variables.insert(*name, var.index);
                     Ok(Some(var))
                 } else {
                     Ok(None)
@@ -435,15 +462,15 @@ impl IrGenerator {
                 for branch in branch_nodes {
                     let branch_value = interpreter.evaluate_node(&branch.0, symbols, strings)?;
                     let branch_body = self.lower_nodes(
-                        &branch.1, captured, type_scope, symbols, strings, external_backings,
-                        call_parameters, interpreter, type_bank, ir_symbols
+                        &branch.1, captured, type_scope, named_variables.clone(), symbols, strings,
+                        external_backings, call_parameters, interpreter, type_bank, ir_symbols
                     )?;
                     branches.push((branch_value, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = self.lower_nodes(
-                    &else_body, captured, type_scope, symbols, strings, external_backings,
-                    call_parameters, interpreter, type_bank, ir_symbols
+                    &else_body, captured, type_scope, named_variables.clone(), symbols, strings,
+                    external_backings, call_parameters, interpreter, type_bank, ir_symbols
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 self.add(IrInstruction::BranchOnValue {
@@ -459,14 +486,14 @@ impl IrGenerator {
                 let mut branch_scopes = Vec::new();
                 let branches = vec![
                     (Value::Boolean(true), self.lower_nodes(
-                        &body, captured, type_scope, symbols, strings, external_backings,
-                        call_parameters, interpreter, type_bank, ir_symbols
+                        &body, captured, type_scope, named_variables.clone(), symbols, strings,
+                        external_backings, call_parameters, interpreter, type_bank, ir_symbols
                     )?)
                 ];
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 let else_branch = self.lower_nodes(
-                    &else_body, captured, type_scope, symbols, strings, external_backings,
-                    call_parameters, interpreter, type_bank, ir_symbols
+                    &else_body, captured, type_scope, named_variables.clone(), symbols, strings,
+                    external_backings, call_parameters, interpreter, type_bank, ir_symbols
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 self.add(IrInstruction::BranchOnValue {
@@ -482,24 +509,24 @@ impl IrGenerator {
                 let mut branches = Vec::new();
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
-                    let branch_body = self.lower_nodes(
-                        &branch.3, captured, type_scope, symbols, strings, external_backings,
-                        call_parameters, interpreter, type_bank, ir_symbols
-                    )?;
                     let variant_val_type = possible_types_to_ir_type(
-                        type_scope,
-                        branch.2.as_ref().expect("should have type"),
-                        type_bank,
-                        strings
+                        type_scope, branch.2.as_ref().expect("should have type"), type_bank,
+                        strings, &mut HashMap::new()
                     );
                     let variant_var = self.allocate(variant_val_type);
+                    let mut branch_variables = named_variables.clone();
+                    branch_variables.insert(branch.1, variant_var.index);
+                    let branch_body = self.lower_nodes(
+                        &branch.3, captured, type_scope, branch_variables, symbols, strings,
+                        external_backings, call_parameters, interpreter, type_bank, ir_symbols
+                    )?;
                     branches.push((branch.0, variant_var, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = if let Some(else_body) = else_body {
                     self.lower_nodes(
-                        &else_body, captured, type_scope, symbols, strings, external_backings,
-                        call_parameters, interpreter, type_bank, ir_symbols
+                        &else_body, captured, type_scope, named_variables.clone(), symbols, strings,
+                        external_backings, call_parameters, interpreter, type_bank, ir_symbols
                     )?
                 } else { Vec::new() };
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
@@ -525,7 +552,7 @@ impl IrGenerator {
                         self.add(IrInstruction::SetArrayElement { value, accessed, index });
                     }
                     AstNodeVariant::VariableAccess { name } => {
-                        if let Some(var_idx) = self.named_variables.get(name) {
+                        if let Some(var_idx) = named_variables.get(name) {
                             let var = &mut self.variables[*var_idx];
                             var.0 += 1;
                             let var = *var;
@@ -562,13 +589,14 @@ impl IrGenerator {
                         let mut parameter_values = Vec::new();
                         for argument_idx in 0..arguments.len() {
                             let concrete_param_type = call_type_scope.limit_possible_types(
-                                &inserted_proc_scope.translate(
-                                    &PossibleTypes::OfGroup(parameter_types[argument_idx])
-                                ),
+                                &PossibleTypes::OfGroup(inserted_proc_scope.translate_group(
+                                    &parameter_types[argument_idx]
+                                )),
                                 arguments[argument_idx].get_types()
                             ).expect("should have a possible value");
                             let param_ir_type = possible_types_to_ir_type(
-                                &call_type_scope, &concrete_param_type, type_bank, strings
+                                &call_type_scope, &concrete_param_type, type_bank, strings,
+                                &mut HashMap::new()
                             );
                             parameter_ir_types.push(param_ir_type);
                             parameter_values.push(
@@ -578,8 +606,7 @@ impl IrGenerator {
                         let return_ir_type = possible_types_to_ir_type(
                             &call_type_scope,
                             &inserted_proc_scope.translate(&PossibleTypes::OfGroup(*returns)),
-                            type_bank,
-                            strings
+                            type_bank, strings, &mut HashMap::new()
                         );
                         let mut exists = false;
                         let mut proc_variant = 0;
@@ -610,21 +637,26 @@ impl IrGenerator {
                                 );
                             }
                             if let Some(body) = body {
-                                let body = generator.lower_nodes(
-                                    body, captured,
-                                    &call_type_scope, symbols, strings, external_backings,
-                                    &call_parameters, interpreter, type_bank, ir_symbols
-                                )?;
+                                let ir_symbol = ir_symbols.len();
                                 ir_symbols.push(IrSymbol::Procedure {
                                     path: path.clone(),
                                     variant: proc_variant,
                                     parameter_types: parameter_ir_types,
                                     return_type: return_ir_type,
-                                    variables: generator.variables.into_iter()
+                                    variables: generator.variables.iter()
                                         .map(|v| v.1)
                                         .collect(),
-                                    body
+                                    body: Vec::new()
                                 });
+                                let new_body = generator.lower_nodes(
+                                    body, captured,
+                                    &call_type_scope, HashMap::new(), symbols, strings,
+                                    external_backings, &call_parameters, interpreter, type_bank, 
+                                    ir_symbols
+                                )?;
+                                if let IrSymbol::Procedure { body, .. } = &mut ir_symbols[ir_symbol] {
+                                    *body = new_body;
+                                }
                             } else {
                                 ir_symbols.push(IrSymbol::ExternalProcedure {
                                     path: path.clone(),
@@ -647,19 +679,21 @@ impl IrGenerator {
                 }
                 let (captured_data_obj, impl_closure_ptr) = if let IrType::Object(closure_obj)
                     = possible_types_to_ir_type(
-                        type_scope, called.get_types(), type_bank, strings
-                    ) { (
+                        type_scope, called.get_types(), type_bank, strings, &mut HashMap::new()
+                    ).direct(type_bank) { (
                     if let IrType::Object(captured_data_obj) = type_bank
                         .get_object(closure_obj)
                         .get(&strings.insert("data"))
-                        .expect("lowered closure type should be an object with a 'data'-property") {
-                        *captured_data_obj
+                        .expect("lowered closure type should be an object with a 'data'-property")
+                        .direct(type_bank) {
+                        captured_data_obj
                     } else { panic!("closure data should be an object"); },
                     if let IrType::ProcedurePtr(impl_closure_ptr) = type_bank
                         .get_object(closure_obj)
                         .get(&strings.insert("proc"))
-                        .expect("lowered closure type should be an object with a 'proc'-property") {
-                        *impl_closure_ptr
+                        .expect("lowered closure type should be an object with a 'proc'-property")
+                        .direct(type_bank) {
+                        impl_closure_ptr
                     } else { panic!("closure proc ptr should be an proc ptr"); }
                 ) } else { panic!("lowered closure type should be an object"); };
                 let closure = lower_node!(&*called, None);
@@ -722,7 +756,7 @@ impl IrGenerator {
                     self.add(IrInstruction::LoadParameter { name: *name, into });
                     return Ok(Some(into));
                 }
-                if let Some(var_idx) = self.named_variables.get(name) {
+                if let Some(var_idx) = named_variables.get(name) {
                     let var = &self.variables[*var_idx];
                     if let Some(into) = into {
                         self.add(IrInstruction::Move { 

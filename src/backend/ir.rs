@@ -40,6 +40,7 @@ pub struct IrTypeBank {
     concrete_objects: Vec<Vec<(StringIdx, IrType)>>,
     variants: Vec<HashMap<StringIdx, IrType>>,
     procedure_ptrs: Vec<(Vec<IrType>, IrType)>,
+    indirect: Vec<IrType>
 }
 
 impl IrTypeBank {
@@ -49,7 +50,8 @@ impl IrTypeBank {
             objects: Vec::new(),
             concrete_objects: Vec::new(),
             variants: Vec::new(),
-            procedure_ptrs: Vec::new()
+            procedure_ptrs: Vec::new(),
+            indirect: Vec::new()
         }
     }
 
@@ -97,6 +99,18 @@ impl IrTypeBank {
         return IrProcedurePtrTypeIdx(self.procedure_ptrs.len() - 1);
     }
     pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &(Vec<IrType>, IrType) { &self.procedure_ptrs[idx.0] }
+
+    pub fn insert_indirect(&mut self, inserted: IrType) -> IrIndirectTypeIdx {
+        for i in 0..self.indirect.len() {
+            if self.indirect[i] == inserted { return IrIndirectTypeIdx(i); }
+        }
+        self.indirect.push(inserted);
+        return IrIndirectTypeIdx(self.indirect.len() - 1);
+    }
+    pub fn get_indirect(&self, idx: IrIndirectTypeIdx) -> &IrType { &self.indirect[idx.0] }
+    pub fn overwrite_indirect(&mut self, idx: IrIndirectTypeIdx, new_type: IrType) {
+        self.indirect[idx.0] = new_type;
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -114,6 +128,9 @@ pub struct IrVariantTypeIdx(usize);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrProcedurePtrTypeIdx(usize);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct IrIndirectTypeIdx(usize);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IrType {
     Unit,
@@ -125,7 +142,18 @@ pub enum IrType {
     Object(IrObjectTypeIdx),
     ConcreteObject(IrConcreteObjectTypeIdx),
     Variants(IrVariantTypeIdx),
-    ProcedurePtr(IrProcedurePtrTypeIdx)
+    ProcedurePtr(IrProcedurePtrTypeIdx),
+    Indirect(IrIndirectTypeIdx)
+}
+
+impl IrType {
+    pub fn direct(&self, type_bank: &IrTypeBank) -> IrType {
+        let mut v = *self;
+        while let IrType::Indirect(idx) = v {
+            v = *type_bank.get_indirect(idx); 
+        }
+        v
+    }
 }
 
 
