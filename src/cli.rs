@@ -7,16 +7,17 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CliArg {
     name: &'static str,
+    description: &'static str,
     required: bool,
     value_count: usize
 }
 
 impl CliArg {
-    pub const fn optional(name: &'static str, value_count: usize) -> CliArg {
-        CliArg { name, required: false, value_count }
+    pub const fn optional(name: &'static str, description: &'static str, value_count: usize) -> CliArg {
+        CliArg { name, description, required: false, value_count }
     }
-    pub const fn required(name: &'static str, value_count: usize) -> CliArg {
-        CliArg { name, required: true, value_count }
+    pub const fn required(name: &'static str, description: &'static str, value_count: usize) -> CliArg {
+        CliArg { name, description, required: true, value_count }
     }
 }
 
@@ -60,7 +61,7 @@ impl CliArgs {
                 } else {
                     return Err(Error::new([
                         ErrorSection::Error(ErrorType::ArgumentDoesNotExist(arg_name)),
-                        ErrorSection::Help(format!("List of available arguments: {}", args.iter().map(|a| format!("\n- {}", a.name)).collect::<Vec<String>>().join("\n")))
+                        ErrorSection::Help(format!("List of available arguments: {}", args.iter().map(|a| format!("\n'{}' - {}", a.name, a.description)).collect::<Vec<String>>().join("")))
                     ].into()));
                 }
             } else {

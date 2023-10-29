@@ -17,7 +17,12 @@ use frontend::{
     type_checking::{type_check_modules, Symbol}, external::ExternalMappingParser,
     types::TypeScope
 };
-use backend::lowering::lower_typed_ast;
+use backend::{
+    lowering::lower_typed_ast,
+    target::CompileTarget,
+    c::generate_c,
+    wasm::generate_wasm
+};
 
 use std::{fs, env, collections::HashMap};
 
@@ -37,9 +42,13 @@ fn main() {
     }
     let mut strings = StringMap::new();
     // parse cli args
-    const CLI_ARG_MAIN_PROC: CliArg = CliArg::required("main", 1);
+    const CLI_ARG_MAIN: CliArg = CliArg::required("m", "specifies the path of the main procedure", 1);
+    const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", 1);
+    const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", 1);
     let args = match CliArgs::parse(&[
-        CLI_ARG_MAIN_PROC
+        CLI_ARG_MAIN,
+        CLI_ARG_TARGET,
+        CLI_ARG_OUTPUT
     ], &env::args().collect::<Vec<String>>()[1..]) {
         Ok(args) => args,
         Err(error) => {
@@ -84,7 +93,7 @@ fn main() {
     };
     // find main procedure
     let main_procedure_path = NamespacePath::new(
-        args.values(CLI_ARG_MAIN_PROC)
+        args.values(CLI_ARG_MAIN)
             .expect("is required")
             .last()
             .expect("is required to have one value")
@@ -127,9 +136,37 @@ fn main() {
             return;
         }
     };
-    // debug
-    println!("ir types: {:?}", ir_types);
-    println!("ir symbols: {:?}", ir_symbols);
+    // generate file content based on format
+    let targets: HashMap<String, CompileTarget> = HashMap::from([
+        ("c".into(), CompileTarget(generate_c)),
+        ("wasm".into(), CompileTarget(generate_wasm))
+    ]);
+    let selected_target = args.values(CLI_ARG_TARGET)
+        .expect("is required")
+        .last()
+        .expect("is required to have one value");
+    let output = if let Some(target) = targets.get(selected_target) {
+        (target.0)(ir_symbols, ir_types, main_procedure_path, &mut strings)
+    } else {
+        println!("{}", Error::new([
+            ErrorSection::Error(ErrorType::InvalidCompileTarget(selected_target.clone())),
+            ErrorSection::Help(format!("List of available targets: {}", targets.iter().map(|t| format!("\n- {}", t.0)).collect::<Vec<String>>().join("")))
+        ].into()).display(&strings));
+        return;
+    };
+    // write to output file
+    let output_file_name = args.values(CLI_ARG_OUTPUT)
+        .expect("is required")
+        .last()
+        .expect("is required to have one value");
+    if let Err(error) = fs::write(output_file_name, output) {
+        println!("{}", Error::new([
+            ErrorSection::Error(ErrorType::FileSystemError(error.to_string())),
+            ErrorSection::Info(format!("While trying to write to '{}'", output_file_name))
+        ].into()).display(&strings));
+        return;
+    }
+    // done!
 }
 
 fn load_file(

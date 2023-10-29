@@ -150,8 +150,8 @@ pub fn lower_typed_ast(
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
             (IrVariable { index: 0, version: 0 }, &HashMap::new()),
-            type_scope, HashMap::new(), typed_symbols, strings, external_backings, &HashMap::new(),
-            &mut interpreter, &mut type_bank, &mut ir_symbols
+            type_scope, HashMap::new(), typed_symbols, strings, external_backings,
+            &(HashMap::new(), Vec::new()), &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
         ir_symbols.push(IrSymbol::Procedure {
             path: main_procedure.0.clone(),
@@ -233,7 +233,7 @@ impl IrGenerator {
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
-        call_parameters: &HashMap<StringIdx, IrType>,
+        call_parameters: &(HashMap<StringIdx, usize>, Vec<IrType>),
         interpreter: &mut Interpreter,
         type_bank: &mut IrTypeBank,
         ir_symbols: &mut Vec<IrSymbol>
@@ -333,7 +333,7 @@ impl IrGenerator {
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
-        call_parameters: &HashMap<StringIdx, IrType>,
+        call_parameters: &(HashMap<StringIdx, usize>, Vec<IrType>),
         interpreter: &mut Interpreter,
         type_bank: &mut IrTypeBank,
         ir_symbols: &mut Vec<IrSymbol>
@@ -378,12 +378,10 @@ impl IrGenerator {
                     strings.insert(&ir_symbols.len().to_string())
                 ]);
                 let mut generator = IrGenerator::new();
-                let mut parameters = HashMap::new();
+                let mut parameters = (HashMap::new(), Vec::new());
                 for param_idx in 0..body_proc_signature.0.len() {
-                    parameters.insert(
-                        if param_idx == 0 { strings.insert("") } else { arguments[param_idx - 1] },
-                        body_proc_signature.0[param_idx]
-                    );
+                    if param_idx >= 1 { parameters.0.insert(arguments[param_idx - 1], param_idx); }
+                    parameters.1.push(body_proc_signature.0[param_idx]);
                 }
                 let closure_obj = generator.allocate(body_proc_signature.0[0]);
                 let mut body_proc_body = generator.lower_nodes(
@@ -392,7 +390,7 @@ impl IrGenerator {
                     &parameters, interpreter, type_bank, ir_symbols
                 )?;
                 body_proc_body.insert(0, IrInstruction::LoadParameter {
-                    name: strings.insert(""),
+                    index: 0,
                     into: closure_obj
                 });
                 ir_symbols.push(IrSymbol::Procedure {
@@ -408,9 +406,9 @@ impl IrGenerator {
                 let mut captured_values = HashMap::new();
                 for (captured_name, _) in &captures {
                     let val_var;
-                    if let Some(parameter_type) = call_parameters.get(captured_name) {
-                        let into = into_given_or_alloc!(*parameter_type);
-                        self.add(IrInstruction::LoadParameter { name: *captured_name, into });
+                    if let Some(parameter_idx) = call_parameters.0.get(captured_name) {
+                        let into = into_given_or_alloc!(call_parameters.1[*parameter_idx]);
+                        self.add(IrInstruction::LoadParameter { index: *parameter_idx, into });
                         val_var = into;
                     } else if let Some(var_idx) = named_variables.get(captured_name) {
                         val_var = IrVariable { 
@@ -436,7 +434,7 @@ impl IrGenerator {
                     member_values: captured_values, into: captured_data
                 });
                 let proc_ptr = self.allocate(IrType::ProcedurePtr(body_proc_ptr));
-                self.add(IrInstruction::LoadProcedurePtr { path: body_proc_path, into: proc_ptr });
+                self.add(IrInstruction::LoadProcedurePtr { path: body_proc_path, variant: 0, into: proc_ptr });
                 let into = into_given_or_alloc!(node_type);
                 self.add(IrInstruction::LoadObject { member_values: [
                     (strings.insert("data"), captured_data),
@@ -625,6 +623,7 @@ impl IrGenerator {
                                 }
                                 if !params_eq { continue; }
                                 if !return_type.eq(&return_ir_type, type_bank) { continue; } 
+                                proc_variant = *variant;
                                 exists = true;
                                 break;
                             }
@@ -636,12 +635,10 @@ impl IrGenerator {
                         }
                         if !exists {
                             let mut generator = IrGenerator::new();
-                            let mut call_parameters = HashMap::new();
+                            let mut call_parameters = (HashMap::new(), Vec::new());
                             for arg_idx in 0..parameter_names.len() {
-                                call_parameters.insert(
-                                    parameter_names[arg_idx],
-                                    parameter_ir_types[arg_idx]
-                                );
+                                call_parameters.0.insert(parameter_names[arg_idx], call_parameters.1.len());
+                                call_parameters.1.push(parameter_ir_types[arg_idx]);
                             }
                             if let Some(body) = body {
                                 let ir_symbol = ir_symbols.len();
@@ -650,9 +647,7 @@ impl IrGenerator {
                                     variant: proc_variant,
                                     parameter_types: parameter_ir_types,
                                     return_type: return_ir_type,
-                                    variables: generator.variables.iter()
-                                        .map(|v| v.1)
-                                        .collect(),
+                                    variables: Vec::new(),
                                     body: Vec::new()
                                 });
                                 let new_body = generator.lower_nodes(
@@ -661,8 +656,12 @@ impl IrGenerator {
                                     external_backings, &call_parameters, interpreter, type_bank, 
                                     ir_symbols
                                 )?;
-                                if let IrSymbol::Procedure { body, .. } = &mut ir_symbols[ir_symbol] {
+                                if let IrSymbol::Procedure { body, variables, .. }
+                                    = &mut ir_symbols[ir_symbol] {
                                     *body = new_body;
+                                    *variables = generator.variables.iter()
+                                        .map(|v| v.1)
+                                        .collect();
                                 }
                             } else {
                                 ir_symbols.push(IrSymbol::ExternalProcedure {
@@ -678,6 +677,7 @@ impl IrGenerator {
                         let into = into_given_or_alloc!(node_type!());
                         self.add(IrInstruction::Call {
                             path: path.clone(),
+                            variant: proc_variant,
                             arguments: parameter_values,
                             into
                         });
@@ -758,9 +758,9 @@ impl IrGenerator {
                 Ok(Some(into))
             }
             AstNodeVariant::VariableAccess { name } => {
-                if let Some(parameter_type) = call_parameters.get(name) {
-                    let into = into_given_or_alloc!(*parameter_type);
-                    self.add(IrInstruction::LoadParameter { name: *name, into });
+                if let Some(parameter_index) = call_parameters.0.get(name) {
+                    let into = into_given_or_alloc!(call_parameters.1[*parameter_index]);
+                    self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
                     return Ok(Some(into));
                 }
                 if let Some(var_idx) = named_variables.get(name) {

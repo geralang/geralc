@@ -114,22 +114,22 @@ impl IrTypeBank {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrArrayTypeIdx(usize);
+pub struct IrArrayTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrObjectTypeIdx(usize);
+pub struct IrObjectTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrConcreteObjectTypeIdx(usize);
+pub struct IrConcreteObjectTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrVariantTypeIdx(usize);
+pub struct IrVariantTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrProcedurePtrTypeIdx(usize);
+pub struct IrProcedurePtrTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrIndirectTypeIdx(usize);
+pub struct IrIndirectTypeIdx(pub usize);
 
 #[derive(Debug, Clone, Copy)]
 pub enum IrType {
@@ -247,8 +247,8 @@ pub enum IrInstruction {
     LoadArray { element_values: Vec<IrVariable>, into: IrVariable },
     LoadVariant { name: StringIdx, v: IrVariable, into: IrVariable },
     LoadGlobalVariable { path: NamespacePath, into: IrVariable },
-    LoadProcedurePtr { path: NamespacePath, into: IrVariable },
-    LoadParameter { name: StringIdx, into: IrVariable },
+    LoadProcedurePtr { path: NamespacePath, variant: usize, into: IrVariable },
+    LoadParameter { index: usize, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },
@@ -276,7 +276,7 @@ pub enum IrInstruction {
     BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
     BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
-    Call { path: NamespacePath, arguments: Vec<IrVariable>, into: IrVariable },
+    Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable },
     CallPtr { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },
     Return { value: IrVariable },
 

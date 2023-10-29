@@ -60,7 +60,10 @@ pub enum ErrorType {
     ConstantDependsOnExternal(String),
     
     // ir lowering errors
-    InvalidMainProcedure(String)
+    InvalidMainProcedure(String),
+
+    // code generation
+    InvalidCompileTarget(String)
 
 }
 
@@ -208,6 +211,11 @@ impl ErrorType {
             ErrorType::InvalidMainProcedure(path) => format!(
                 concat!(style_red!(), "{}", style_dark_red!(), " is not the name of a valid main procedure"),
                 path
+            ),
+
+            ErrorType::InvalidCompileTarget(target) => format!(
+                concat!(style_red!(), "{}", style_dark_red!(), " is not a valid compilation target"),
+                target
             )
         }
     }
