@@ -14,12 +14,12 @@ use frontend::{
     ast::{HasAstNodeVariant, AstNode, AstNodeVariant, TypedAstNode},
     grammar_checking::{check_grammar, ScopeType},
     modules::{Module, NamespacePath},
-    type_checking::{type_check_modules, Symbol}, external::ExternalMappingParser
+    type_checking::{type_check_modules, Symbol}, external::ExternalMappingParser,
+    types::TypeScope
 };
 use backend::lowering::lower_typed_ast;
 
 use std::{fs, env, collections::HashMap};
-
 
 fn main() {
     if cfg!(target_os = "windows") {
@@ -47,13 +47,14 @@ fn main() {
             return;
         }
     };
-    // read all files zz
+    // read all files
     let mut modules = HashMap::new();
+    let mut type_scope= TypeScope::new();
     let mut typed_symbols = HashMap::new();
     let mut external_backings = HashMap::new();
     let mut errored = false;
     for file_name in args.free_values() {
-        match load_file(strings.insert(file_name), &mut strings, &mut modules, &mut typed_symbols, &mut external_backings) {
+        match load_file(strings.insert(file_name), &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
             Ok(_) => {}
             Err(errors) => {
                 for error in errors { println!("{}", error.display(&strings)); }
@@ -74,7 +75,7 @@ fn main() {
         }
     }
     // type check
-    match type_check_modules(modules, &strings, &mut typed_symbols) {
+    match type_check_modules(modules, &strings, &mut type_scope, &mut typed_symbols) {
         Ok(_) => {}
         Err(errors) => {
             for error in errors { println!("{}", error.display(&strings)); }
@@ -117,7 +118,7 @@ fn main() {
     };
     // lower typed AST
     let (ir_symbols, ir_types) = match lower_typed_ast(
-         &mut strings, &typed_symbols, &external_backings,
+         &mut strings, &mut type_scope, &typed_symbols, &external_backings,
          (&main_procedure_path, main_procedure)
     ) {
         Ok(ir) => ir,
@@ -135,6 +136,7 @@ fn load_file(
     file_path: StringIdx,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
+    type_scope: &mut TypeScope,
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &mut HashMap<NamespacePath, StringIdx>
 ) -> Result<(), Vec<Error>> {
@@ -200,7 +202,7 @@ fn load_file(
             None => Ok(()),
             Some(Err(error)) => Err(vec![error]),
             Some(Ok(mut parser)) => if let Err(error) = 
-                    parser.parse_header(strings, &mut lexer, modules, typed_symbols, external_backings) {
+                    parser.parse_header(strings, &mut lexer, modules, type_scope, typed_symbols, external_backings) {
                 Err(vec![error])
             } else {
                 Ok(())

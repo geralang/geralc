@@ -29,7 +29,7 @@ fn possible_types_to_ir_type(
         PossibleTypes::Any => {
             IrType::Unit // If 'any' it reached this point, it's unused.
         }
-        PossibleTypes::OfGroup(group_idx) => {
+        PossibleTypes::OfGroup(group_idx) | PossibleTypes::OfImmutableGroup(group_idx) => {
             let group_internal_idx = type_scope.get_group_internal_index(group_idx);
             if let Some(indirect_idx) = encountered.get_mut(&group_internal_idx) {
                 if indirect_idx.is_none() {
@@ -133,6 +133,7 @@ fn type_to_ir_type(
 
 pub fn lower_typed_ast(
     strings: &mut StringMap,
+    type_scope: &mut TypeScope,
     typed_symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &HashMap<NamespacePath, StringIdx>,
     main_procedure: (&NamespacePath, &Symbol<TypedAstNode>)
@@ -141,7 +142,7 @@ pub fn lower_typed_ast(
     let mut type_bank = IrTypeBank::new();
     let mut ir_symbols = Vec::new();
     if let Symbol::Procedure {
-        parameter_names: _, scope,
+        parameter_names: _,
         parameter_types: _, returns,
         body
     } = main_procedure.1 {
@@ -149,7 +150,7 @@ pub fn lower_typed_ast(
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
             (IrVariable { index: 0, version: 0 }, &HashMap::new()),
-            scope, HashMap::new(), typed_symbols, strings, external_backings, &HashMap::new(),
+            type_scope, HashMap::new(), typed_symbols, strings, external_backings, &HashMap::new(),
             &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
         ir_symbols.push(IrSymbol::Procedure {
@@ -157,7 +158,7 @@ pub fn lower_typed_ast(
             variant: 0,
             parameter_types: Vec::new(), 
             return_type: possible_types_to_ir_type(
-                scope,
+                type_scope,
                 &PossibleTypes::OfGroup(*returns),
                 &mut type_bank,
                 strings,
@@ -581,17 +582,14 @@ impl IrGenerator {
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure {
-                        parameter_names, scope, parameter_types, returns, body
+                        parameter_names, parameter_types, returns, body
                     } = symbols.get(path).expect("symbol should exist") {
                         let mut call_type_scope = type_scope.clone();
-                        let inserted_proc_scope = call_type_scope.insert_type_scope(&scope);
                         let mut parameter_ir_types = Vec::new();
                         let mut parameter_values = Vec::new();
                         for argument_idx in 0..arguments.len() {
                             let concrete_param_type = call_type_scope.limit_possible_types(
-                                &PossibleTypes::OfGroup(inserted_proc_scope.translate_group(
-                                    &parameter_types[argument_idx]
-                                )),
+                                &PossibleTypes::OfGroup(parameter_types[argument_idx]),
                                 arguments[argument_idx].get_types()
                             ).expect("should have a possible value");
                             let param_ir_type = possible_types_to_ir_type(
@@ -605,7 +603,7 @@ impl IrGenerator {
                         }
                         let return_ir_type = possible_types_to_ir_type(
                             &call_type_scope,
-                            &inserted_proc_scope.translate(&PossibleTypes::OfGroup(*returns)),
+                            &PossibleTypes::OfGroup(*returns),
                             type_bank, strings, &mut HashMap::new()
                         );
                         let mut exists = false;
@@ -616,8 +614,17 @@ impl IrGenerator {
                             } = symbol {
                                 if path != proc_path { continue; }
                                 proc_variant = proc_variant.max(*variant + 1);
-                                if *parameter_types != parameter_ir_types { continue; }
-                                if *return_type != return_ir_type { continue; }
+                                if parameter_types.len() != parameter_ir_types.len() { continue; }
+                                let mut params_eq = true;
+                                for param_idx in 0..parameter_types.len() {
+                                    if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank) {
+                                        continue;
+                                    }
+                                    params_eq = false;
+                                    break;
+                                }
+                                if !params_eq { continue; }
+                                if !return_type.eq(&return_ir_type, type_bank) { continue; } 
                                 exists = true;
                                 break;
                             }

@@ -19,7 +19,8 @@ pub struct TypeScope {
 pub enum PossibleTypes {
     Any,
     OneOf(Vec<Type>),
-    OfGroup(VarTypeIdx)
+    OfGroup(VarTypeIdx),
+    OfImmutableGroup(VarTypeIdx)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,21 +74,6 @@ impl TypeScope {
     }
     pub fn get_group_types_from_internal_index(&self, idx: usize) -> &PossibleTypes {
         &self.type_groups[idx]
-    }
-
-    pub fn insert_type_scope(&mut self, inserted: &TypeScope) -> TypeScopeTranslation {
-        let mut mappings = HashMap::new();
-        for internal_group_idx in 0..inserted.type_groups.len() {
-            mappings.insert(internal_group_idx, self.register_variable());
-        }
-        let translation = TypeScopeTranslation {
-            var_type_groups: inserted.var_type_groups.clone(),
-            mappings: mappings.clone()
-        };
-        for (old_internal_idx, new_idx) in &mappings {
-            *self.get_group_types_mut(new_idx) = translation.translate(&inserted.type_groups[*old_internal_idx]);
-        }
-        translation
     }
 
     pub fn limit_possible_types(&mut self, a: &PossibleTypes, b: &PossibleTypes) -> Option<PossibleTypes> {
@@ -163,6 +149,22 @@ impl TypeScope {
                 } else {
                     None
                 }
+            }
+            (PossibleTypes::OfImmutableGroup(a_group), _) => {
+                // encountered.push(self.get_group_internal_index(a_group));
+                self.limit_possible_types_internal(
+                    &self.get_group_types(a_group).clone(),
+                    b,
+                    encountered,
+                )
+            }
+            (_, PossibleTypes::OfImmutableGroup(b_group)) => {
+                // encountered.push(self.get_group_internal_index(b_group));
+                self.limit_possible_types_internal(
+                    a,
+                    &self.get_group_types(b_group).clone(),
+                    encountered
+                )
             }
             (PossibleTypes::OneOf(one_of_types_a), PossibleTypes::OneOf(one_of_types_b)) => {
                 let mut limited: Vec<Type> = Vec::new();
@@ -326,59 +328,6 @@ impl TypeScope {
                 Some(Type::Variants(new_variant_types, *a_fixed || *b_fixed))
             }
             _ => if std::mem::discriminant(a) == std::mem::discriminant(b) { Some(a.clone()) } else { None }
-        }
-    }
-}
-
-impl TypeScopeTranslation {
-    pub fn translate_group(&self, old_group: &VarTypeIdx) -> VarTypeIdx {
-        *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
-    }
-
-    pub fn translate(&self, translated: &PossibleTypes) -> PossibleTypes {
-        match translated {
-            PossibleTypes::Any => PossibleTypes::Any,
-            PossibleTypes::OneOf(possible_types) => PossibleTypes::OneOf(
-                possible_types.iter().map(|t| self.translate_type(t)).collect()
-            ),
-            PossibleTypes::OfGroup(old_group) => PossibleTypes::OfGroup(
-                *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
-            )
-        }
-    }
-
-    fn translate_type(&self, translated: &Type) -> Type {
-        match translated {
-            Type::Unit => Type::Unit,
-            Type::Boolean => Type::Boolean,
-            Type::Integer => Type::Integer,
-            Type::Float => Type::Float,
-            Type::String => Type::String,
-            Type::Array(element_types) => Type::Array(
-                self.translate(element_types)
-            ),
-            Type::Object(member_types, fixed) => Type::Object(
-                member_types.iter().map(|(member_name, member_types)| {
-                    (*member_name, self.translate(member_types))
-                }).collect(),
-                *fixed
-            ),
-            Type::ConcreteObject(member_types) => Type::ConcreteObject(member_types.clone()),
-            Type::Closure(old_param_groups, old_return_group, old_captures) => Type::Closure(
-                old_param_groups.iter().map(|old_group| {
-                    *self.mappings.get(&self.var_type_groups[old_group.0]).expect("mapping should exist")
-                }).collect(),
-                *self.mappings.get(&self.var_type_groups[old_return_group.0]).expect("mapping should exist"),
-                old_captures.as_ref().map(|captures| captures.iter().map(|(capture_name, capture_type)| {
-                    (*capture_name, self.translate_group(capture_type))
-                }).collect())
-            ),
-            Type::Variants(variant_types, fixed) => Type::Variants(
-                variant_types.iter().map(|(variant_name, variant_types)| {
-                    (*variant_name, self.translate(variant_types))
-                }).collect(),
-                *fixed
-            )
         }
     }
 }

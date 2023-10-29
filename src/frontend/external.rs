@@ -67,6 +67,7 @@ impl ExternalMappingParser {
         strings: &mut StringMap,
         lexer: &mut Lexer,
         modules: &mut HashMap<NamespacePath, Module<AstNode>>,
+        type_scope: &mut TypeScope,
         typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
         external_backings: &mut HashMap<NamespacePath, StringIdx>
     ) -> Result<(), Error> {
@@ -87,7 +88,6 @@ impl ExternalMappingParser {
                     let source_start = self.current.source;
                     self.expect_next(strings, lexer, "the full path of the procedure")?;
                     let procedure_path = self.parse_path(strings, lexer, "the full path of the procedure")?;
-                    let mut type_scope = TypeScope::new();
                     self.expect_type(&[TokenType::ParenOpen], "an opening parenthesis ('(')")?;
                     self.expect_next(strings, lexer, "a parameter's type or a closing parenthesis (')')")?;
                     let mut parameters = Vec::new();
@@ -146,7 +146,6 @@ impl ExternalMappingParser {
                     }
                     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
                         parameter_names: Vec::new(),
-                        scope: type_scope,
                         parameter_types: parameters,
                         returns: return_type_group,
                         body: None
