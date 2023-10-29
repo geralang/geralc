@@ -163,7 +163,7 @@ impl ErrorType {
             ),
 
             ErrorType::NoPossibleTypes(limited, to_only) => format!(
-                concat!("The expression is expected to have incompatible types:\n - ", style_red!(), "{}", style_dark_red!(), "\n - ", style_red!(), "{}", style_dark_red!()),
+                concat!("This expression has incompatible types:\n - ", style_red!(), "{}", style_dark_red!(), "\n - ", style_red!(), "{}", style_dark_red!()),
                 limited,
                 to_only
             ),

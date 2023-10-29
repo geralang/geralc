@@ -290,6 +290,11 @@ fn type_check_node(
             Some(result) => result,
             None => return Err(error_from_type_limit(strings, type_scope!(), node_source, $a, $b)),
         }
+    } }; ($scope: expr, $a: expr, $b: expr) => { {
+        match $scope.limit_possible_types($a, $b) {
+            Some(result) => result,
+            None => return Err(error_from_type_limit(strings, type_scope!(), node_source, $a, $b)),
+        }
     } } }
     macro_rules! limit_typed_node { ($node: expr, $limited_to: expr) => {
         if let Some(error) = limit_typed_node(strings, type_scope!(), variables, node_source, $node, $limited_to) {
@@ -486,18 +491,33 @@ fn type_check_node(
                             ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
                         ].into())) }
-                        let inserted_proc_scope = type_scope!().insert_type_scope(&scope);
-                        let mut typed_arguments = Vec::new();
-                        for argument_idx in 0..arguments.len() {
-                            let argument_type = inserted_proc_scope.translate(&PossibleTypes::OfGroup(parameter_types[argument_idx]));
-                            typed_arguments.push(type_check_node!(arguments.remove(0), &argument_type).0);
+                        if procedure_name.map(|p| *p == *path).unwrap_or(false) {
+                            let mut typed_arguments = Vec::new();
+                            for argument_idx in 0..arguments.len() {
+                                typed_arguments.push(type_check_node!(arguments.remove(0), &PossibleTypes::OfGroup(parameter_types[argument_idx])).0);
+                            }
+                            let return_types = PossibleTypes::OfGroup(returns);
+                            limit!(&return_types, limited_to);
+                            let called = type_check_node!(*called, &PossibleTypes::Any).0;
+                            return Ok((TypedAstNode::new(AstNodeVariant::Call {
+                                called: Box::new(called),
+                                arguments: typed_arguments
+                            }, return_types, node_source), (false, false)));
+                        } else {
+                            let inserted_proc_scope = type_scope!().insert_type_scope(&scope);
+                            let mut typed_arguments = Vec::new();
+                            for argument_idx in 0..arguments.len() {
+                                let argument_type = inserted_proc_scope.translate(&PossibleTypes::OfGroup(parameter_types[argument_idx]));
+                                typed_arguments.push(type_check_node!(arguments.remove(0), &argument_type).0);
+                            }
+                            let return_types = inserted_proc_scope.translate(&PossibleTypes::OfGroup(returns));
+                            limit!(&return_types, limited_to);
+                            let called = type_check_node!(*called, &PossibleTypes::Any).0;
+                            return Ok((TypedAstNode::new(AstNodeVariant::Call {
+                                called: Box::new(called),
+                                arguments: typed_arguments
+                            }, return_types, node_source), (false, false)));
                         }
-                        let return_types = inserted_proc_scope.translate(&PossibleTypes::OfGroup(returns));
-                        let called = type_check_node!(*called, &PossibleTypes::Any).0;
-                        return Ok((TypedAstNode::new(AstNodeVariant::Call {
-                            called: Box::new(called),
-                            arguments: typed_arguments
-                        }, return_types, node_source), (false, false)));
                     }
                     Ok(_) => {}
                     Err(error) => return Err(error)
