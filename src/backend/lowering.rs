@@ -29,7 +29,7 @@ fn possible_types_to_ir_type(
         PossibleTypes::Any => {
             IrType::Unit // If 'any' it reached this point, it's unused.
         }
-        PossibleTypes::OfGroup(group_idx) | PossibleTypes::OfImmutableGroup(group_idx) => {
+        PossibleTypes::OfGroup(group_idx) => {
             let group_internal_idx = type_scope.get_group_internal_index(group_idx);
             if let Some(indirect_idx) = encountered.get_mut(&group_internal_idx) {
                 if indirect_idx.is_none() {

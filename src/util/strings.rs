@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct StringIdx(usize);
+pub struct StringIdx(pub usize);
 
 pub struct StringMap {
     indices: HashMap<Box<str>, StringIdx>,

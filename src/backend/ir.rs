@@ -63,6 +63,7 @@ impl IrTypeBank {
         return IrArrayTypeIdx(self.arrays.len() - 1);
     }
     pub fn get_array(&self, idx: IrArrayTypeIdx) -> &IrType { &self.arrays[idx.0] }
+    pub fn get_all_arrays(&self) -> &Vec<IrType> { &self.arrays }
 
     pub fn insert_object(&mut self, member_types: HashMap<StringIdx, IrType>) -> IrObjectTypeIdx {
         for i in 0..self.objects.len() {
@@ -72,6 +73,7 @@ impl IrTypeBank {
         return IrObjectTypeIdx(self.objects.len() - 1);
     }
     pub fn get_object(&self, idx: IrObjectTypeIdx) -> &HashMap<StringIdx, IrType> { &self.objects[idx.0] }
+    pub fn get_all_objects(&self) -> &Vec<HashMap<StringIdx, IrType>> { &self.objects }
 
     pub fn insert_concrete_object(&mut self, member_types: Vec<(StringIdx, IrType)>) -> IrConcreteObjectTypeIdx {
         for i in 0..self.concrete_objects.len() {
@@ -81,6 +83,7 @@ impl IrTypeBank {
         return IrConcreteObjectTypeIdx(self.concrete_objects.len() - 1);
     }
     pub fn get_concrete_object(&self, idx: IrConcreteObjectTypeIdx) -> &Vec<(StringIdx, IrType)> { &self.concrete_objects[idx.0] }
+    pub fn get_all_concrete_objects(&self) -> &Vec<Vec<(StringIdx, IrType)>> { &self.concrete_objects }
 
     pub fn insert_variants(&mut self, variant_types: HashMap<StringIdx, IrType>) -> IrVariantTypeIdx {
         for i in 0..self.variants.len() {
@@ -90,6 +93,7 @@ impl IrTypeBank {
         return IrVariantTypeIdx(self.variants.len() - 1);
     }
     pub fn get_variants(&self, idx: IrVariantTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
+    pub fn get_all_variants(&self) -> &Vec<HashMap<StringIdx, IrType>> { &self.variants }
 
     pub fn insert_procedure_ptr(&mut self, signature: (Vec<IrType>, IrType)) -> IrProcedurePtrTypeIdx {
         for i in 0..self.procedure_ptrs.len() {
@@ -99,6 +103,7 @@ impl IrTypeBank {
         return IrProcedurePtrTypeIdx(self.procedure_ptrs.len() - 1);
     }
     pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &(Vec<IrType>, IrType) { &self.procedure_ptrs[idx.0] }
+    pub fn get_all_procedure_ptrs(&self) -> &Vec<(Vec<IrType>, IrType)> { &self.procedure_ptrs }
 
     pub fn insert_indirect(&mut self, inserted: IrType) -> IrIndirectTypeIdx {
         for i in 0..self.indirect.len() {
@@ -111,6 +116,7 @@ impl IrTypeBank {
     pub fn overwrite_indirect(&mut self, idx: IrIndirectTypeIdx, new_type: IrType) {
         self.indirect[idx.0] = new_type;
     }
+    pub fn get_all_indirects(&self) -> &Vec<IrType> { &self.indirect }
 }
 
 #[derive(Debug, Copy, Clone)]

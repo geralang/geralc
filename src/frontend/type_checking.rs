@@ -471,7 +471,7 @@ fn type_check_node(
             }, PossibleTypes::OneOf(vec![Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::Return { value } => {
-            let typed_value = type_check_node!(*value, &return_types.clone()).0;
+            let typed_value = type_check_node!(*value, return_types).0;
             limit!(return_types, typed_value.get_types());
             Ok((TypedAstNode::new(AstNodeVariant::Return {
                 value: Box::new(typed_value)
@@ -490,25 +490,29 @@ fn type_check_node(
                             for argument_idx in 0..arguments.len() {
                                 typed_arguments.push(type_check_node!(arguments.remove(0), &PossibleTypes::OfGroup(parameter_types[argument_idx])).0);
                             }
-                            let return_types = PossibleTypes::OfGroup(returns);
-                            limit!(&return_types, limited_to);
+                            let returned_types = PossibleTypes::OfGroup(returns);
+                            limit!(&returned_types, limited_to);
                             let called = type_check_node!(*called, &PossibleTypes::Any).0;
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
-                            }, return_types, node_source), (false, false)));
+                            }, returned_types, node_source), (false, false)));
                         } else {
+                            let inserted = type_scope.insert_type_scope(&type_scope.clone());
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
-                                typed_arguments.push(type_check_node!(arguments.remove(0), &PossibleTypes::OfImmutableGroup(parameter_types[argument_idx])).0);
+                                typed_arguments.push(type_check_node!(
+                                    arguments.remove(0),
+                                    &PossibleTypes::OfGroup(inserted.translate_group(&parameter_types[argument_idx]))
+                                ).0);
                             }
-                            let return_types = PossibleTypes::OfImmutableGroup(returns);
-                            limit!(&return_types, limited_to);
+                            let returned_types = PossibleTypes::OfGroup(inserted.translate_group(&returns));
+                            limit!(&returned_types, limited_to);
                             let called = type_check_node!(*called, &PossibleTypes::Any).0;
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
-                            }, return_types, node_source), (false, false)));
+                            }, returned_types, node_source), (false, false)));
                         }
                     }
                     Ok(_) => {}
@@ -1079,7 +1083,7 @@ fn display_types(
             }
             result
         }
-        PossibleTypes::OfGroup(group_idx) | PossibleTypes::OfImmutableGroup(group_idx) => {
+        PossibleTypes::OfGroup(group_idx) => {
             let group_internal_idx = type_scope.get_group_internal_index(group_idx);
             for encounter_idx in 0..encountered.len() {
                 let encounter = &mut encountered[encounter_idx];

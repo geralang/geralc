@@ -2,14 +2,11 @@
 use std::collections::HashMap;
 
 use crate::backend::{
-    ir::{IrSymbol, IrTypeBank, IrType, IrInstruction},
+    ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
     interpreter::Value
 };
 use crate::frontend::modules::NamespacePath;
 use crate::util::strings::{StringMap, StringIdx};
-
-use super::ir::IrVariable;
-
 
 pub fn generate_c(
     symbols: Vec<IrSymbol>,
@@ -19,10 +16,17 @@ pub fn generate_c(
 ) -> String {
     let mut output = String::new();
     let mut external = HashMap::new();
+    emit_core_library(&mut output);
     output.push_str("\n");
-    emit_core_functions(&mut output);
+    emit_type_declarations(&types, &mut output);
     output.push_str("\n");
-    emit_declarations(&symbols, &types, strings, &mut external, &mut output);
+    emit_procedure_pointers(&types, &mut output);
+    output.push_str("\n");
+    emit_type_members(&types, strings, &mut output);
+    output.push_str("\n");
+    emit_conversion_functions(&types, &mut output);
+    output.push_str("\n");
+    emit_symbol_declarations(&symbols, &types, strings, &mut external, &mut output);
     output.push('\n');
     emit_procedure_impls(&symbols, &types, strings, &mut external, &mut output);
     output.push('\n');
@@ -30,25 +34,202 @@ pub fn generate_c(
     return output;
 }
 
-fn emit_core_functions(
+fn emit_core_library(
     output: &mut String
 ) {
-    output.push_str("double gerafmod(double x, double div) {
-    if (div != div || x != x) { return x; }
-    if (div == 0) { return (0.0f / 0.0f); }
-    return x - (int) (x / div) * div;
-}\n");
-    output.push_str("char gerastreq(char* a, char* b) {
-    char eq = 0;
-    for(unsigned long long int i = 0;; i += 1) {
-        if(a[i] != b[i]) { return 0; }
-        if(a[i] != '\\0') { continue; }
-        return 1;
-    }
-}\n");
+    let core_library: Box<[u8]> = include_bytes!("./gen_libs/core.c").clone().into();
+    output.push_str(&String::from_utf8(core_library.into()).expect("should be valid"));
+    output.push_str("\n");
 }
 
-fn emit_declarations(
+fn emit_object_name(index: usize, output: &mut String) {
+    output.push_str("GeraObject");
+    output.push_str(&index.to_string());
+} 
+
+fn emit_concrete_object_name(index: usize, output: &mut String) {
+    output.push_str("GeraConcreteObject");
+    output.push_str(&index.to_string());
+} 
+
+fn emit_variants_name(index: usize, output: &mut String) {
+    output.push_str("GeraVariants");
+    output.push_str(&index.to_string());
+} 
+
+fn emit_procedure_ptr_name(index: usize, output: &mut String) {
+    output.push_str("GeraProcPtr");
+    output.push_str(&index.to_string());
+} 
+
+fn emit_type_declarations(
+    types: &IrTypeBank,
+    output: &mut String
+) {
+    // arrays are not needed
+    for object_idx in 0..types.get_all_objects().len() {
+        output.push_str("typedef struct ");
+        emit_object_name(object_idx, output);
+        emit_object_name(object_idx, output);
+        output.push_str(";\n");
+    }
+    for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
+        output.push_str("typedef struct ");
+        emit_concrete_object_name(concrete_object_idx, output);
+        emit_concrete_object_name(concrete_object_idx, output);
+        output.push_str(";\n");
+    }
+    for variants_idx in 0..types.get_all_variants().len() {
+        output.push_str("typedef struct ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(" ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(";\n");
+    }
+    // procedure pointers are done later
+    // indirects are not needed
+}
+
+fn emit_procedure_pointers(
+    types: &IrTypeBank,
+    output: &mut String
+) {
+    for proc_ptr_idx in 0..types.get_all_procedure_ptrs().len() {
+        output.push_str("typedef ");
+        let proc_type = &types.get_all_procedure_ptrs()[proc_ptr_idx];
+        emit_type(proc_type.1, types, output);
+        output.push_str("(*");
+        emit_procedure_ptr_name(proc_ptr_idx, output);
+        output.push_str(")(");
+        for arg_idx in 0..proc_type.0.len() {
+            if arg_idx >= 1 { output.push_str(", "); }
+            emit_type(proc_type.0[arg_idx], types, output);
+        }
+        output.push_str(");\n");
+    }
+}
+
+fn emit_type_members(
+    types: &IrTypeBank,
+    strings: &StringMap,
+    output: &mut String
+) {
+    for object_idx in 0..types.get_all_objects().len() {
+        output.push_str("typedef struct ");
+        emit_object_name(object_idx, output);
+        output.push_str(" {");
+        for (member_name, member_type) in &types.get_all_objects()[object_idx] {
+            output.push_str("\n    ");
+            emit_type(*member_type, types, output);
+            output.push_str("* ");
+            output.push_str(strings.get(*member_name));
+            output.push_str(";");
+        }
+        output.push_str("\n} ");
+        emit_object_name(object_idx, output);
+        output.push_str(";\n");
+    }
+    for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
+        output.push_str("typedef struct ");
+        emit_concrete_object_name(concrete_object_idx, output);
+        output.push_str(" {");
+        for (member_name, member_type) in &types.get_all_concrete_objects()[concrete_object_idx] {
+            output.push_str("\n    ");
+            emit_type(*member_type, types, output);
+            output.push_str(" ");
+            output.push_str(strings.get(*member_name));
+            output.push_str(";");
+        }
+        output.push_str("\n} ");
+        emit_concrete_object_name(concrete_object_idx, output);
+        output.push_str(";\n");
+    }
+    for variants_idx in 0..types.get_all_variants().len() {
+        let has_values = types.get_all_variants()[variants_idx].iter().filter(|(_, vt)|
+                if let IrType::Unit = vt.direct(types) { false } else { true }
+            ).next().is_some();
+        if has_values {
+            output.push_str("typedef union ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value {");
+            for (variant_name, variant_type) in &types.get_all_variants()[variants_idx] {
+                if let IrType::Unit = variant_type.direct(types) { continue; }
+                output.push_str("\n    ");
+                emit_type(*variant_type, types, output);
+                output.push_str(" ");
+                output.push_str(strings.get(*variant_name));
+                output.push_str(";");
+            }
+            output.push_str("\n} ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value;\n");
+        }
+        output.push_str("typedef struct ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(" {\n    unsigned long long int tag;");
+        if has_values {
+            output.push_str("\n    ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value value;");
+        }
+        output.push_str("\n} ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(";\n");
+    }
+}
+
+fn emit_variant_conversion_name(
+    from: usize,
+    to: usize,
+    output: &mut String
+) {
+    output.push_str("geravariant");
+    output.push_str(&from.to_string());
+    output.push_str("into");
+    output.push_str(&to.to_string());
+}
+
+fn emit_conversion_functions(
+    types: &IrTypeBank,
+    output: &mut String
+) {
+    fn variant_is_subset(major: usize, minor: usize, types: &IrTypeBank) -> bool {
+        if major == minor { return false; }
+        for (variant_name, variant_type) in &types.get_all_variants()[minor] {
+            if let Some(major_variant_type) = types.get_all_variants()[major].get(variant_name) {
+                if !variant_type.eq(major_variant_type, types) { return false; }
+            } else { return false; }
+        }
+        return true;
+    }
+    for to_variants_idx in 0..types.get_all_variants().len() {
+        let to_has_values = types.get_all_variants()[to_variants_idx].iter().filter(|(_, vt)|
+                if let IrType::Unit = vt.direct(types) { false } else { true }
+            ).next().is_some();
+        for from_variants_idx in 0..types.get_all_variants().len() {
+            let from_has_values = types.get_all_variants()[from_variants_idx].iter().filter(|(_, vt)|
+                if let IrType::Unit = vt.direct(types) { false } else { true }
+            ).next().is_some();
+            if !variant_is_subset(to_variants_idx, from_variants_idx, types) { continue; }
+            emit_variants_name(to_variants_idx, output);
+            output.push_str(" ");
+            emit_variant_conversion_name(from_variants_idx, to_variants_idx, output);
+            output.push_str("(");
+            emit_variants_name(from_variants_idx, output);
+            output.push_str(" from) {\n    ");
+            emit_variants_name(to_variants_idx, output);
+            output.push_str(" to;");
+            if to_has_values && from_has_values {
+                output.push_str("\n    for(unsigned long long int b = 0; b < sizeof(");
+                emit_variants_name(from_variants_idx, output);
+                output.push_str("Value); b += 1) {\n        ((char*) &to.value)[b] = ((char*) &from.value)[b];\n    }");
+            }
+            output.push_str("\n    to.tag = from.tag;\n    return to;\n}\n");
+        }
+    }
+}
+
+fn emit_symbol_declarations(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
     strings: &StringMap,
@@ -138,7 +319,7 @@ fn emit_procedure_impls(
                 output.push_str(";");
             }
             let mut body_str = String::new();
-            emit_block(body, variables, types, external, strings, &mut body_str);
+            emit_block(body, variables, types, external, symbols, strings, &mut body_str);
             indent(&body_str, output, true);
             output.push_str("\n}\n");
         }
@@ -170,22 +351,10 @@ fn emit_type(
             emit_type(*types.get_array(a), types, output);
             output.push_str("*");
         }
-        IrType::Object(o) => {
-            output.push_str("GeraObject");
-            output.push_str(&o.0.to_string());
-        }
-        IrType::ConcreteObject(o) => {
-            output.push_str("GeraConcreteObject");
-            output.push_str(&o.0.to_string());
-        }
-        IrType::Variants(v) => {
-            output.push_str("GeraVariants");
-            output.push_str(&v.0.to_string());
-        }
-        IrType::ProcedurePtr(p) => {
-            output.push_str("GeraProcPtr");
-            output.push_str(&p.0.to_string());
-        }
+        IrType::Object(o) => emit_object_name(o.0, output),
+        IrType::ConcreteObject(o) => emit_concrete_object_name(o.0, output),
+        IrType::Variants(v) => emit_variants_name(v.0, output),
+        IrType::ProcedurePtr(p) => emit_procedure_ptr_name(p.0, output),
         IrType::Indirect(i) => emit_type(*types.get_indirect(i), types, output)
     }
 }
@@ -263,13 +432,14 @@ fn emit_block(
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
     external: &HashMap<NamespacePath, StringIdx>,
+    symbols: &Vec<IrSymbol>,
     strings: &StringMap,
     output: &mut String
 ) {
     output.push_str("{");
     for instruction in instructions {
         let mut o = String::new();
-        emit_instruction(instruction, variable_types, types, external, strings, &mut o);
+        emit_instruction(instruction, variable_types, types, external, symbols, strings, &mut o);
         indent(&o, output, true);
     }
     output.push_str("\n}");
@@ -281,6 +451,29 @@ fn emit_variable(
 ) {
     output.push_str("local");
     output.push_str(&variable.index.to_string());
+}
+
+fn emit_variable_poly(
+    variable: &str,
+    from_type: IrType,
+    to_type: IrType,
+    types: &IrTypeBank,
+    output: &mut String
+) {
+    if from_type.eq(&to_type, types) {
+        output.push_str(variable);
+        return;
+    }
+    if let IrType::Variants(to_variants_idx) = to_type.direct(types) {
+        let from_variants_idx = if let IrType::Variants(v) = from_type.direct(types) { v }
+            else { panic!("should be a variant"); };
+        emit_variant_conversion_name(from_variants_idx.0, to_variants_idx.0, output);
+        output.push_str("(");
+        output.push_str(variable);
+        output.push_str(")");
+        return;
+    }
+    todo!("implicit conversions between objects and concrete objects");
 }
 
 fn emit_equality(
@@ -295,7 +488,7 @@ fn emit_equality(
             output.push_str("1");
         }
         IrType::String => {
-            output.push_str("gerastreq(");
+            output.push_str("gera___string_eq(");
             output.push_str(a);
             output.push_str(", ");
             output.push_str(b);
@@ -319,6 +512,7 @@ fn emit_instruction(
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
     external: &HashMap<NamespacePath, StringIdx>,
+    symbols: &Vec<IrSymbol>,
     strings: &StringMap,
     output: &mut String
 ) {
@@ -350,7 +544,25 @@ fn emit_instruction(
         }
         IrInstruction::LoadObject { member_values, into } => todo!("emit object literals"),
         IrInstruction::LoadArray { element_values, into } => todo!("emit array literals"),
-        IrInstruction::LoadVariant { name, v, into } => todo!("emit variant literals"),
+        IrInstruction::LoadVariant { name, v, into } => {
+            emit_variable(*into, output);
+            output.push_str(" = ");
+            let variant_idx = if let IrType::Variants(v)
+                = variable_types[into.index].direct(types) { v.0 }
+                else { panic!("should be a variant"); };
+            output.push_str("(");
+            emit_variants_name(variant_idx, output);
+            output.push_str(") {\n    .tag = ");
+            output.push_str(&name.0.to_string());
+            if let IrType::Unit = variable_types[v.index].direct(types) {} else {
+                output.push_str(",\n    .value = { .");
+                output.push_str(strings.get(*name));
+                output.push_str(" = ");
+                emit_variable(*v, output);
+                output.push_str(" }");
+            }
+            output.push_str("\n};\n");
+        }
         IrInstruction::LoadGlobalVariable { path, into } => {
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }
             emit_variable(*into, output);
@@ -453,7 +665,7 @@ fn emit_instruction(
             emit_variable(*into, output);
             output.push_str(" = ");
             if let IrType::Float = variable_types[a.index].direct(types) {
-                output.push_str("gerafmod(");
+                output.push_str("gera___float_mod(");
                 emit_variable(*a, output);
                 output.push_str(", ");
                 emit_variable(*b, output);
@@ -554,47 +766,141 @@ fn emit_instruction(
                 output.push_str(") ");
                 let mut branch_str = String::new();
                 emit_block(
-                    &branches[branch_idx].1, variable_types, types, external, strings,
+                    &branches[branch_idx].1, variable_types, types, external, symbols, strings,
                     &mut branch_str
                 );
                 indent(&branch_str, output, false);
                 output.push_str(" else ");
             }
             let mut else_branch_str = String::new();
-            emit_block(else_branch, variable_types, types, external, strings, &mut else_branch_str);
+            emit_block(else_branch, variable_types, types, external, symbols, strings, &mut else_branch_str);
             indent(&else_branch_str, output, false);
             output.push_str("\n}\n");
         }
-        IrInstruction::BranchOnVariant { value, branches, else_branch } => todo!("emit branch on variant"),
+        IrInstruction::BranchOnVariant { value, branches, else_branch } => {
+            output.push_str("switch(");
+            emit_variable(*value, output);
+            output.push_str(".tag) {");
+            let variant_idx = if let IrType::Variants(v)
+                = variable_types[value.index].direct(types) { v.0 }
+                else { panic!("should be a variant"); };
+            for (branch_variant, branch_variable, branch_body) in branches {
+                output.push_str("\n    case ");
+                output.push_str(&branch_variant.0.to_string());
+                output.push_str(":\n");
+                if let IrType::Unit = variable_types[branch_variable.index].direct(types) {} else {
+                    output.push_str("        ");
+                    emit_variable(*branch_variable, output);
+                    output.push_str(" = ");
+                    emit_variable(*value, output);
+                    output.push_str(".value.");
+                    output.push_str(strings.get(*branch_variant));
+                    output.push_str(";\n");
+                }
+                for instruction in branch_body {
+                    output.push_str("        ");
+                    emit_instruction(
+                        instruction, variable_types, types, external, symbols, strings, output
+                    );
+                }
+                output.push_str("        break;");
+            }
+            if else_branch.len() > 0 {
+                output.push_str("\n    default:\n");
+                for instruction in else_branch {
+                    output.push_str("        ");
+                    emit_instruction(
+                        instruction, variable_types, types, external, symbols, strings, output
+                    );
+                }
+            }
+            output.push_str("\n}\n");
+        }
         IrInstruction::Call { path, variant, arguments, into } => {
-            if let IrType::Unit = variable_types[into.index].direct(types) {} else {
+            // this is cursed and I hate it
+            let (parameter_types, return_type) = match symbols.into_iter().filter(|s| match *s {
+                IrSymbol::Procedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
+                IrSymbol::ExternalProcedure { path: p, .. } => *path == *p,
+                _ => false
+            }).next().expect("should exist") {
+                IrSymbol::Procedure { parameter_types, return_type, .. } |
+                IrSymbol::ExternalProcedure { parameter_types, return_type, .. } => (
+                    parameter_types, return_type
+                ),
+                _ => panic!("should be a procedure")
+            };
+            // end of cursed part 
+            let returns_value = if let IrType::Unit = return_type.direct(types) { false }
+                else { true };
+            let mut value = String::new();
+            if let Some(backing) = external.get(path) {
+                value.push_str(strings.get(*backing));
+            } else {
+                emit_procedure_name(path, *variant, strings, &mut value);
+            }
+            value.push_str("(");
+            for argument_idx in 0..arguments.len() {
+                if argument_idx >= 1 { value.push_str(", "); }
+                let mut variable = String::new();
+                emit_variable(arguments[argument_idx], &mut variable);
+                emit_variable_poly(
+                    &variable,
+                    variable_types[arguments[argument_idx].index],
+                    parameter_types[argument_idx],
+                    types, &mut value
+                );
+            }
+            value.push_str(")");
+            if returns_value {
                 emit_variable(*into, output);
                 output.push_str(" = ");
-            }
-            if let Some(backing) = external.get(path) {
-                output.push_str(strings.get(*backing));
+                emit_variable_poly(
+                    &value,
+                    *return_type,
+                    variable_types[into.index],
+                    types, output
+                );
             } else {
-                emit_procedure_name(path, *variant, strings, output);
+                output.push_str(&value);
             }
-            output.push_str("(");
-            for argument_idx in 0..arguments.len() {
-                if argument_idx >= 1 { output.push_str(", "); }
-                emit_variable(arguments[argument_idx], output);
-            }
-            output.push_str(");\n");
+            output.push_str(";\n");
         }
         IrInstruction::CallPtr { called, arguments, into } => {
-            if let IrType::Unit = variable_types[into.index].direct(types) {} else {
-                emit_variable(*into, output);
-                output.push_str(" = (");
-            }
-            emit_variable(*called, output);
-            output.push_str(")(");
+            let (parameter_types, return_type) = if let IrType::ProcedurePtr(p)
+                    = variable_types[called.index].direct(types) {
+                types.get_procedure_ptr(p)
+            } else { panic!("should be a procedure pointer"); };
+            let returns_value = if let IrType::Unit = return_type.direct(types) { false }
+                else { true };
+            let mut value = String::new();
+            value.push_str("(");
+            emit_variable(*called, &mut value);
+            value.push_str(")(");
             for argument_idx in 0..arguments.len() {
-                if argument_idx >= 1 { output.push_str(", "); }
-                emit_variable(arguments[argument_idx], output);
+                if argument_idx >= 1 { value.push_str(", "); }
+                let mut variable = String::new();
+                emit_variable(arguments[argument_idx], &mut variable);
+                emit_variable_poly(
+                    &variable,
+                    variable_types[arguments[argument_idx].index],
+                    parameter_types[argument_idx],
+                    types, &mut value
+                );
             }
-            output.push_str(");\n");
+            value.push_str(")");
+            if returns_value {
+                emit_variable(*into, output);
+                output.push_str(" = ");
+                emit_variable_poly(
+                    &value,
+                    *return_type,
+                    variable_types[into.index],
+                    types, output
+                );
+            } else {
+                output.push_str(&value);
+            }
+            output.push_str(";\n");
         }
         IrInstruction::Return { value } => {
             output.push_str("return ");
