@@ -41,10 +41,10 @@ fn possible_types_to_ir_type(
             let ir_type = possible_types_to_ir_type(
                 type_scope, type_scope.get_group_types(group_idx), type_bank, strings, encountered
             );
-            let indirect_idx = encountered.get(&group_internal_idx).expect("should still be inside");
+            let indirect_idx = encountered.remove(&group_internal_idx).expect("should still be inside");
             return if let Some(indirect_idx) = indirect_idx {
-                type_bank.overwrite_indirect(*indirect_idx, ir_type);
-                IrType::Indirect(*indirect_idx)
+                type_bank.overwrite_indirect(indirect_idx, ir_type);
+                IrType::Indirect(indirect_idx)
             } else {
                 ir_type
             };
@@ -375,7 +375,7 @@ impl IrGenerator {
                 let body_proc_signature = type_bank.get_procedure_ptr(body_proc_ptr).clone();
                 let captures = type_bank.get_object(captures_obj).clone();
                 let body_proc_path = NamespacePath::new(vec![
-                    strings.insert(&ir_symbols.len().to_string())
+                    strings.insert(&format!("closure{}", ir_symbols.len()))
                 ]);
                 let mut generator = IrGenerator::new();
                 let mut parameters = (HashMap::new(), Vec::new());

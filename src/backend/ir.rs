@@ -235,7 +235,7 @@ impl IrType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IrVariable {
     pub index: usize,
     pub version: usize

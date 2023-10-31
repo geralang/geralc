@@ -432,26 +432,28 @@ impl Parser {
                     ));
                     next!();
                 }
-                TokenType::Pipe => {
+                TokenType::Pipe | TokenType::DoublePipe => {
                     let source_start = self.current.source;
-                    enforce_next!("a function parameter's name or a pipe ('|')");
                     let mut arguments = Vec::new();
-                    loop {
-                        enforce_current_type!(&[TokenType::Identifier, TokenType::Pipe], "a function parameter's name or a pipe ('|')");
-                        match self.current.token_type {
-                            TokenType::Identifier => arguments.push(self.current.token_content),
-                            TokenType::Pipe => break,
-                            _ => panic!("unreachable")
+                    if TokenType::Pipe == self.current.token_type {
+                        enforce_next!("a function parameter's name or a pipe ('|')");
+                        loop {
+                            enforce_current_type!(&[TokenType::Identifier, TokenType::Pipe], "a function parameter's name or a pipe ('|')");
+                            match self.current.token_type {
+                                TokenType::Identifier => arguments.push(self.current.token_content),
+                                TokenType::Pipe => break,
+                                _ => panic!("unreachable")
+                            }
+                            enforce_next!("a comma (',') or a pipe ('|')");
+                            enforce_current_type!(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')");
+                            match self.current.token_type {
+                                TokenType::Comma => enforce_next!("a function parameter's name or a pipe ('|')"),
+                                TokenType::Pipe => break,
+                                _ => panic!("unreachable")
+                            }
                         }
-                        enforce_next!("a comma (',') or a pipe ('|')");
-                        enforce_current_type!(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')");
-                        match self.current.token_type {
-                            TokenType::Comma => enforce_next!("a function parameter's name or a pipe ('|')"),
-                            TokenType::Pipe => break,
-                            _ => panic!("unreachable")
-                        }
+                        enforce_current_type!(&[TokenType::Pipe], "a pipe ('|')");
                     }
-                    enforce_current_type!(&[TokenType::Pipe], "a pipe ('|')");
                     enforce_next!("the function's body");
                     if self.current.token_type == TokenType::BraceOpen {
                         enforce_next!("the function's body");

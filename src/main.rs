@@ -53,7 +53,7 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             println!("{}", error.display(&strings));
-            return;
+            std::process::exit(1);
         }
     };
     // read all files
@@ -71,7 +71,7 @@ fn main() {
             }
         }
     }
-    if errored { return; }
+    if errored { std::process::exit(1); }
     // canonicalize modules
     let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
     for module_path in module_paths {
@@ -80,7 +80,7 @@ fn main() {
         modules.insert(module_path, module);
         if canonicalization_errors.len() > 0 {
             for error in canonicalization_errors { println!("{}", error.display(&strings)); }
-            return;
+            std::process::exit(1);
         }
     }
     // type check
@@ -88,7 +88,7 @@ fn main() {
         Ok(_) => {}
         Err(errors) => {
             for error in errors { println!("{}", error.display(&strings)); }
-            return;
+            std::process::exit(1);
         }
     };
     // find main procedure
@@ -123,7 +123,7 @@ fn main() {
             ErrorSection::Error(ErrorType::InvalidMainProcedure(main_procedure_path.display(&strings))),
             ErrorSection::Help(String::from("The main procedure needs to be a procedure without any arguments."))
         ].into()).display(&strings));
-        return;
+        std::process::exit(1);
     };
     // lower typed AST
     let (ir_symbols, ir_types) = match lower_typed_ast(
@@ -133,7 +133,7 @@ fn main() {
         Ok(ir) => ir,
         Err(error) => {
             println!("{}", error.display(&strings));
-            return;
+            std::process::exit(1);
         }
     };
     // generate file content based on format
@@ -152,7 +152,7 @@ fn main() {
             ErrorSection::Error(ErrorType::InvalidCompileTarget(selected_target.clone())),
             ErrorSection::Help(format!("List of available targets: {}", targets.iter().map(|t| format!("\n- {}", t.0)).collect::<Vec<String>>().join("")))
         ].into()).display(&strings));
-        return;
+        std::process::exit(1);
     };
     // write to output file
     let output_file_name = args.values(CLI_ARG_OUTPUT)
@@ -164,7 +164,7 @@ fn main() {
             ErrorSection::Error(ErrorType::FileSystemError(error.to_string())),
             ErrorSection::Info(format!("While trying to write to '{}'", output_file_name))
         ].into()).display(&strings));
-        return;
+        std::process::exit(1);
     }
     // done!
 }

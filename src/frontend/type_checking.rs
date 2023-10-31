@@ -523,13 +523,9 @@ fn type_check_node(
             let mut passed_arg_vars = Vec::new();
             for argument in arguments {
                 let typed_argument = type_check_node!(argument, &PossibleTypes::Any).0;
-                if let PossibleTypes::OfGroup(group) = typed_argument.get_types() {
-                    passed_arg_vars.push(*group);
-                } else {
-                    let group = type_scope.register_variable();
-                    *type_scope.get_group_types_mut(&group) = typed_argument.get_types().clone();
-                    passed_arg_vars.push(group);
-                }
+                let group = type_scope.register_variable();
+                *type_scope.get_group_types_mut(&group) = typed_argument.get_types().clone();
+                passed_arg_vars.push(group);
                 typed_arguments.push(typed_argument);
             }
             let passed_return_type = type_scope.register_variable();
@@ -545,7 +541,7 @@ fn type_check_node(
                     if let Type::Closure(_, return_types, _) = possible_type {
                         result_type = limit!(&result_type, &PossibleTypes::OfGroup(return_types));
                     } else {
-                        panic!("We called something that's not a closure! Shouln't the first call to 'type_check_node!' have already enforced this?");
+                        panic!("We called something that's not a closure! Shouln't the call to 'type_check_node!' have already enforced this?");
                     }
                 }
             }
