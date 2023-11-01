@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use crate::util::{
     strings::StringIdx,
-    error::Error,
-    strings::StringMap
+    error::{Error, ErrorSection, ErrorType},
+    strings::StringMap,
+    source::{SourceRange, HasSource}
 };
 use crate::frontend::{
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
@@ -93,17 +94,8 @@ fn type_to_ir_type(
             }).collect();
             IrType::ConcreteObject(type_bank.insert_concrete_object(members))
         }
-        Type::Closure(arguments, returns, captured) => {
-            let captured = captured.as_ref().map(|captured| {
-                captured.iter().map(|(capture_name, capture_type)| {
-                    (*capture_name, possible_types_to_ir_type(
-                        type_scope, &PossibleTypes::OfGroup(*capture_type),
-                        type_bank, strings, encountered
-                    ))
-                }).collect()
-            }).unwrap_or(HashMap::new());
-            let capture_obj = type_bank.insert_object(captured);
-            let mut procedure_signature = (
+        Type::Closure(arguments, returns, _) => {
+            let signature = (
                 arguments.iter().map(|arg| possible_types_to_ir_type(
                     type_scope, &PossibleTypes::OfGroup(*arg), type_bank, strings, encountered
                 )).collect::<Vec<IrType>>(),
@@ -111,13 +103,7 @@ fn type_to_ir_type(
                     type_scope, &PossibleTypes::OfGroup(*returns), type_bank, strings, encountered
                 )
             );
-            procedure_signature.0.insert(0, IrType::Object(capture_obj));
-            let procedure_ptr = type_bank.insert_procedure_ptr(procedure_signature);
-            let closure_obj = type_bank.insert_object([
-                (strings.insert("data"), IrType::Object(capture_obj)),
-                (strings.insert("proc"), IrType::ProcedurePtr(procedure_ptr))
-            ].into());
-            IrType::Object(closure_obj)
+            IrType::Closure(type_bank.insert_closure(signature))
         }
         Type::Variants(variant_types, _) => {
             let variant_types = variant_types.iter().map(|(variant_name, variant_types)| {
@@ -130,6 +116,26 @@ fn type_to_ir_type(
     }
 }
 
+fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<(), Error> {
+    match value {
+        Value::Unit |
+        Value::Boolean(_) |
+        Value::Integer(_) |
+        Value::Float(_) |
+        Value::String(_) => Ok(()),
+        Value::Array(_) |
+        Value::Object(_) |
+        Value::Closure(_, _, _, _, _) => Err(Error::new([
+            ErrorSection::Error(ErrorType::ConstantHeapAllocation),
+            ErrorSection::Code(source),
+            ErrorSection::Help(String::from("Objects, arrays and closures are stored in heap memory. Heap memory must be initialized when the program is executed. Therefore objects, arrays and closures may not be used as constants."))
+        ].into())),
+        Value::Variant(_, variant_value) => {
+            enforce_valid_constant_value(&*variant_value, source)?;
+            Ok(())
+        }
+    }
+}
 
 pub fn lower_typed_ast(
     strings: &mut StringMap,
@@ -149,7 +155,7 @@ pub fn lower_typed_ast(
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
-            (IrVariable { index: 0, version: 0 }, &HashMap::new()),
+            &HashMap::new(),
             type_scope, HashMap::new(), typed_symbols, strings, external_backings,
             &(HashMap::new(), Vec::new()), &mut interpreter, &mut type_bank, &mut ir_symbols
         )?;
@@ -179,10 +185,11 @@ pub fn lower_typed_ast(
                     } else {
                         interpreter.evaluate_node(value, typed_symbols, strings)?
                     };
+                    enforce_valid_constant_value(&v, value.source())?;
                     ir_symbols.push(IrSymbol::Variable {
                         path: symbol_path.clone(),
                         value_type: possible_types_to_ir_type(
-                            &TypeScope::new(), value_types, &mut type_bank, strings,
+                            &type_scope, value_types, &mut type_bank, strings,
                             &mut HashMap::new()
                         ),
                         value: v
@@ -227,7 +234,7 @@ impl IrGenerator {
     fn lower_nodes(
         &mut self,
         nodes: &[TypedAstNode],
-        captured: (IrVariable, &HashMap<StringIdx, IrType>),
+        captured: &HashMap<StringIdx, IrType>,
         type_scope: &TypeScope,
         mut named_variables: HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -327,7 +334,7 @@ impl IrGenerator {
         &mut self,
         node: &TypedAstNode,
         into: Option<IrVariable>,
-        captured: (IrVariable, &HashMap<StringIdx, IrType>),
+        captured: &HashMap<StringIdx, IrType>,
         type_scope: &TypeScope,
         named_variables: &mut HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -354,92 +361,77 @@ impl IrGenerator {
         } }
         match node.node_variant() {
             AstNodeVariant::Function { arguments, body } => {
-                let node_type = node_type!();
-                let (body_proc_ptr, captures_obj)
-                    = if let IrType::Object(closure_obj_idx) = node_type.direct(type_bank) { (
-                    if let IrType::ProcedurePtr(proc_ptr_idx) = type_bank
-                        .get_object(closure_obj_idx)
-                        .get(&strings.insert("proc"))
-                        .expect("closure object should have 'proc'-property")
-                        .direct(type_bank) {
-                        proc_ptr_idx
-                    } else { panic!("lowered closure type should have a proc ptr"); },
-                    if let IrType::Object(captures_obj) = type_bank
-                        .get_object(closure_obj_idx)
-                        .get(&strings.insert("data"))
-                        .expect("closure object should have 'data'-property")
-                        .direct(type_bank) {
-                        captures_obj
-                    } else { panic!("lowered closure type should have a data obj"); }
-                ) } else { panic!("lowered closure type should be an object"); };
-                let body_proc_signature = type_bank.get_procedure_ptr(body_proc_ptr).clone();
-                let captures = type_bank.get_object(captures_obj).clone();
-                let body_proc_path = NamespacePath::new(vec![
-                    strings.insert(&format!("closure{}", ir_symbols.len()))
-                ]);
+                let mut node_types = node.get_types();
+                while let PossibleTypes::OfGroup(group_idx) = node_types {
+                    node_types = type_scope.get_group_types(group_idx);
+                }
+                let (parameter_types, return_type, body_captures)
+                    = if let PossibleTypes::OneOf(possible_types) = node_types {
+                    if let Type::Closure(param_types, return_type, captures) 
+                        = &possible_types[0] { (
+                        param_types.iter().map(|param_type| possible_types_to_ir_type(
+                            type_scope, &PossibleTypes::OfGroup(*param_type), type_bank, strings,
+                            &mut HashMap::new()
+                        )).collect::<Vec<IrType>>(),
+                        possible_types_to_ir_type(
+                            type_scope, &PossibleTypes::OfGroup(*return_type), type_bank, strings,
+                            &mut HashMap::new()
+                        ),
+                        captures.as_ref().expect("node type should be a closure with capture info")
+                            .iter().map(|(capture_name, capture_type)|
+                                (*capture_name, possible_types_to_ir_type(
+                                    type_scope, &PossibleTypes::OfGroup(*capture_type), type_bank,
+                                    strings, &mut HashMap::new()
+                                ))
+                            ).collect::<HashMap<StringIdx, IrType>>()
+                    ) } else { panic!("node type should be a closure"); }
+                } else { panic!("node type should be a closure"); };
+                let mut body_captured = HashMap::new();
+                for (capture_name, _) in &body_captures {
+                    if let Some(parameter_index) = call_parameters.0.get(capture_name) {
+                        let into = into_given_or_alloc!(call_parameters.1[*parameter_index]);
+                        self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
+                        body_captured.insert(*capture_name, into);
+                    }
+                    if let Some(var_idx) = named_variables.get(capture_name) {
+                        let var = &self.variables[*var_idx];
+                        body_captured.insert(*capture_name, IrVariable { 
+                            index: *var_idx,
+                            version: var.0
+                        });
+                    } else {
+                        let into = into_given_or_alloc!(
+                            *captured.get(capture_name)
+                                .expect("variable should be captured")
+                        );
+                        self.add(IrInstruction::GetClosureCapture { name: *capture_name, into });
+                        body_captured.insert(*capture_name, into);
+                    }
+                }
                 let mut generator = IrGenerator::new();
                 let mut parameters = (HashMap::new(), Vec::new());
-                for param_idx in 0..body_proc_signature.0.len() {
-                    if param_idx >= 1 { parameters.0.insert(arguments[param_idx - 1], param_idx); }
-                    parameters.1.push(body_proc_signature.0[param_idx]);
+                for param_idx in 0..parameter_types.len() {
+                    parameters.0.insert(arguments[param_idx], param_idx);
+                    parameters.1.push(parameter_types[param_idx]);
                 }
-                let closure_obj = generator.allocate(body_proc_signature.0[0]);
-                let mut body_proc_body = generator.lower_nodes(
-                    body, (closure_obj, &captures),
+                let body = generator.lower_nodes(
+                    body, &body_captures,
                     type_scope, HashMap::new(), symbols, strings, external_backings,
                     &parameters, interpreter, type_bank, ir_symbols
                 )?;
-                body_proc_body.insert(0, IrInstruction::LoadParameter {
-                    index: 0,
-                    into: closure_obj
-                });
-                ir_symbols.push(IrSymbol::Procedure {
-                    path: body_proc_path.clone(),
-                    variant: 0,
-                    parameter_types: body_proc_signature.0.clone(),
-                    return_type: body_proc_signature.1,
+                let into = into_given_or_alloc!(IrType::Closure(
+                    type_bank.insert_closure((parameter_types.clone(), return_type))
+                ));
+                self.add(IrInstruction::LoadClosure {
+                    parameter_types,
+                    return_type,
+                    captured: body_captured,
                     variables: generator.variables.into_iter()
                         .map(|v| v.1)
                         .collect(),
-                    body: body_proc_body
+                    body,
+                    into
                 });
-                let mut captured_values = HashMap::new();
-                for (captured_name, _) in &captures {
-                    let val_var;
-                    if let Some(parameter_idx) = call_parameters.0.get(captured_name) {
-                        let into = into_given_or_alloc!(call_parameters.1[*parameter_idx]);
-                        self.add(IrInstruction::LoadParameter { index: *parameter_idx, into });
-                        val_var = into;
-                    } else if let Some(var_idx) = named_variables.get(captured_name) {
-                        val_var = IrVariable { 
-                            index: *var_idx,
-                            version: self.variables[*var_idx].0
-                        };
-                    } else {
-                        let into = into_given_or_alloc!(
-                            *captured.1.get(captured_name)
-                                .expect("variable should be captured")
-                        );
-                        self.add(IrInstruction::GetObjectMember {
-                            accessed: captured.0,
-                            member: *captured_name,
-                            into
-                        });
-                        val_var = into;
-                    }
-                    captured_values.insert(*captured_name, val_var);
-                }
-                let captured_data = self.allocate(IrType::Object(captures_obj));
-                self.add(IrInstruction::LoadObject {
-                    member_values: captured_values, into: captured_data
-                });
-                let proc_ptr = self.allocate(IrType::ProcedurePtr(body_proc_ptr));
-                self.add(IrInstruction::LoadProcedurePtr { path: body_proc_path, variant: 0, into: proc_ptr });
-                let into = into_given_or_alloc!(node_type);
-                self.add(IrInstruction::LoadObject { member_values: [
-                    (strings.insert("data"), captured_data),
-                    (strings.insert("proc"), proc_ptr)
-                ].into(), into });
                 Ok(Some(into))
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
@@ -460,6 +452,7 @@ impl IrGenerator {
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
                     let branch_value = interpreter.evaluate_node(&branch.0, symbols, strings)?;
+                    enforce_valid_constant_value(&branch_value, branch.0.source())?;
                     let branch_body = self.lower_nodes(
                         &branch.1, captured, type_scope, named_variables.clone(), symbols, strings,
                         external_backings, call_parameters, interpreter, type_bank, ir_symbols
@@ -561,11 +554,7 @@ impl IrGenerator {
                             }));
                         } else {
                             let value = lower_node!(&*value, None);
-                            self.add(IrInstruction::SetObjectMember {
-                                value,
-                                accessed: captured.0,
-                                member: *name
-                            });
+                            self.add(IrInstruction::SetClosureCapture { value, name: *name });
                         }
                     }
                     _ => panic!("assignment to invalid node type")
@@ -582,146 +571,156 @@ impl IrGenerator {
                     if let Symbol::Procedure {
                         parameter_names, parameter_types, returns, body
                     } = symbols.get(path).expect("symbol should exist") {
-                        let mut call_type_scope = type_scope.clone();
-                        let mut parameter_ir_types = Vec::new();
-                        let mut parameter_values = Vec::new();
-                        for argument_idx in 0..arguments.len() {
-                            let concrete_param_type = call_type_scope.limit_possible_types(
-                                &PossibleTypes::OfGroup(parameter_types[argument_idx]),
-                                arguments[argument_idx].get_types()
-                            ).expect("should have a possible value");
-                            let param_ir_type = possible_types_to_ir_type(
-                                &call_type_scope, &concrete_param_type, type_bank, strings,
-                                &mut HashMap::new()
+                        if body.is_some() {
+                            let mut call_type_scope = type_scope.clone();
+                            let mut parameter_ir_types = Vec::new();
+                            let mut parameter_values = Vec::new();
+                            for argument_idx in 0..arguments.len() {
+                                let concrete_param_type = call_type_scope.limit_possible_types(
+                                    &PossibleTypes::OfGroup(parameter_types[argument_idx]),
+                                    arguments[argument_idx].get_types()
+                                ).expect("should have a possible value");
+                                let param_ir_type = possible_types_to_ir_type(
+                                    &call_type_scope, &concrete_param_type, type_bank, strings,
+                                    &mut HashMap::new()
+                                );
+                                parameter_ir_types.push(param_ir_type);
+                                parameter_values.push(
+                                    lower_node!(&arguments[argument_idx], None)
+                                );
+                            }
+                            let return_ir_type = possible_types_to_ir_type(
+                                &call_type_scope,
+                                &PossibleTypes::OfGroup(*returns),
+                                type_bank, strings, &mut HashMap::new()
                             );
-                            parameter_ir_types.push(param_ir_type);
-                            parameter_values.push(
-                                lower_node!(&arguments[argument_idx], None)
-                            );
-                        }
-                        let return_ir_type = possible_types_to_ir_type(
-                            &call_type_scope,
-                            &PossibleTypes::OfGroup(*returns),
-                            type_bank, strings, &mut HashMap::new()
-                        );
-                        let mut exists = false;
-                        let mut proc_variant = 0;
-                        for symbol in &*ir_symbols {
-                            if let IrSymbol::Procedure {
-                                path: proc_path, variant, parameter_types, return_type, ..
-                            } = symbol {
-                                if path != proc_path { continue; }
-                                proc_variant = proc_variant.max(*variant + 1);
-                                if parameter_types.len() != parameter_ir_types.len() { continue; }
-                                let mut params_eq = true;
-                                for param_idx in 0..parameter_types.len() {
-                                    if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank) {
-                                        continue;
+                            let mut exists = false;
+                            let mut proc_variant = 0;
+                            for symbol in &*ir_symbols {
+                                if let IrSymbol::Procedure {
+                                    path: proc_path, variant, parameter_types, return_type, ..
+                                } = symbol {
+                                    if path != proc_path { continue; }
+                                    proc_variant = proc_variant.max(*variant + 1);
+                                    if parameter_types.len() != parameter_ir_types.len() { continue; }
+                                    let mut params_eq = true;
+                                    for param_idx in 0..parameter_types.len() {
+                                        if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank) {
+                                            continue;
+                                        }
+                                        params_eq = false;
+                                        break;
                                     }
-                                    params_eq = false;
+                                    if !params_eq { continue; }
+                                    if !return_type.eq(&return_ir_type, type_bank) { continue; } 
+                                    proc_variant = *variant;
+                                    exists = true;
                                     break;
                                 }
-                                if !params_eq { continue; }
-                                if !return_type.eq(&return_ir_type, type_bank) { continue; } 
-                                proc_variant = *variant;
-                                exists = true;
-                                break;
                             }
-                            if let IrSymbol::ExternalProcedure { path: proc_path, .. } = symbol {
-                                if path != proc_path { continue; }
-                                exists = true;
-                                break;
-                            }
-                        }
-                        if !exists {
-                            let mut generator = IrGenerator::new();
-                            let mut call_parameters = (HashMap::new(), Vec::new());
-                            for arg_idx in 0..parameter_names.len() {
-                                call_parameters.0.insert(parameter_names[arg_idx], call_parameters.1.len());
-                                call_parameters.1.push(parameter_ir_types[arg_idx]);
-                            }
-                            if let Some(body) = body {
-                                let ir_symbol = ir_symbols.len();
-                                ir_symbols.push(IrSymbol::Procedure {
-                                    path: path.clone(),
-                                    variant: proc_variant,
-                                    parameter_types: parameter_ir_types,
-                                    return_type: return_ir_type,
-                                    variables: Vec::new(),
-                                    body: Vec::new()
-                                });
-                                let new_body = generator.lower_nodes(
-                                    body, captured,
-                                    &call_type_scope, HashMap::new(), symbols, strings,
-                                    external_backings, &call_parameters, interpreter, type_bank, 
-                                    ir_symbols
-                                )?;
-                                if let IrSymbol::Procedure { body, variables, .. }
-                                    = &mut ir_symbols[ir_symbol] {
-                                    *body = new_body;
-                                    *variables = generator.variables.iter()
-                                        .map(|v| v.1)
-                                        .collect();
+                            if !exists {
+                                let mut generator = IrGenerator::new();
+                                let mut call_parameters = (HashMap::new(), Vec::new());
+                                for arg_idx in 0..parameter_names.len() {
+                                    call_parameters.0.insert(parameter_names[arg_idx], call_parameters.1.len());
+                                    call_parameters.1.push(parameter_ir_types[arg_idx]);
                                 }
-                            } else {
+                                if let Some(body) = body {
+                                    let ir_symbol = ir_symbols.len();
+                                    ir_symbols.push(IrSymbol::Procedure {
+                                        path: path.clone(),
+                                        variant: proc_variant,
+                                        parameter_types: parameter_ir_types,
+                                        return_type: return_ir_type,
+                                        variables: Vec::new(),
+                                        body: Vec::new()
+                                    });
+                                    let new_body = generator.lower_nodes(
+                                        body, captured,
+                                        &call_type_scope, HashMap::new(), symbols, strings,
+                                        external_backings, &call_parameters, interpreter, type_bank, 
+                                        ir_symbols
+                                    )?;
+                                    if let IrSymbol::Procedure { body, variables, .. }
+                                        = &mut ir_symbols[ir_symbol] {
+                                        *body = new_body;
+                                        *variables = generator.variables.iter()
+                                            .map(|v| v.1)
+                                            .collect();
+                                    }
+                                } else {
+                                    ir_symbols.push(IrSymbol::ExternalProcedure {
+                                        path: path.clone(),
+                                        backing: *external_backings
+                                            .get(path)
+                                            .expect("should have backing"), 
+                                        parameter_types: parameter_ir_types,
+                                        return_type: return_ir_type,
+                                    });
+                                }
+                            }
+                            let into = into_given_or_alloc!(node_type!());
+                            self.add(IrInstruction::Call {
+                                path: path.clone(),
+                                variant: proc_variant,
+                                arguments: parameter_values,
+                                into
+                            });
+                            return Ok(Some(into));
+                        } else {
+                            let exists = ir_symbols.iter().filter(|s|
+                                if let IrSymbol::ExternalProcedure { path: p, .. } = s {
+                                    *p == *path
+                                } else { false }
+                            ).next().is_some();
+                            if !exists {
                                 ir_symbols.push(IrSymbol::ExternalProcedure {
                                     path: path.clone(),
                                     backing: *external_backings
                                         .get(path)
                                         .expect("should have backing"), 
-                                    parameter_types: parameter_ir_types,
-                                    return_type: return_ir_type,
+                                    parameter_types: parameter_types.iter().map(|p|
+                                        possible_types_to_ir_type(
+                                            type_scope, &PossibleTypes::OfGroup(*p), type_bank, 
+                                            strings, &mut HashMap::new()
+                                        )
+                                    ).collect(),
+                                    return_type: possible_types_to_ir_type(
+                                        type_scope, &PossibleTypes::OfGroup(*returns), type_bank, 
+                                        strings, &mut HashMap::new()
+                                    ),
                                 });
                             }
+                            let mut parameter_values = Vec::new();
+                            for argument_idx in 0..arguments.len() {
+                                parameter_values.push(
+                                    lower_node!(&arguments[argument_idx], None)
+                                );
+                            }
+                            let into = into_given_or_alloc!(node_type!());
+                            self.add(IrInstruction::Call {
+                                path: path.clone(),
+                                variant: 0,
+                                arguments: parameter_values,
+                                into
+                            });
+                            return Ok(Some(into));
                         }
-                        let into = into_given_or_alloc!(node_type!());
-                        self.add(IrInstruction::Call {
-                            path: path.clone(),
-                            variant: proc_variant,
-                            arguments: parameter_values,
-                            into
-                        });
-                        return Ok(Some(into));
                     }
                 }
-                let (captured_data_obj, impl_closure_ptr) = if let IrType::Object(closure_obj)
+                let return_type = if let IrType::Closure(closure_idx)
                     = possible_types_to_ir_type(
                         type_scope, called.get_types(), type_bank, strings, &mut HashMap::new()
-                    ).direct(type_bank) { (
-                    if let IrType::Object(captured_data_obj) = type_bank
-                        .get_object(closure_obj)
-                        .get(&strings.insert("data"))
-                        .expect("lowered closure type should be an object with a 'data'-property")
-                        .direct(type_bank) {
-                        captured_data_obj
-                    } else { panic!("closure data should be an object"); },
-                    if let IrType::ProcedurePtr(impl_closure_ptr) = type_bank
-                        .get_object(closure_obj)
-                        .get(&strings.insert("proc"))
-                        .expect("lowered closure type should be an object with a 'proc'-property")
-                        .direct(type_bank) {
-                        impl_closure_ptr
-                    } else { panic!("closure proc ptr should be an proc ptr"); }
-                ) } else { panic!("lowered closure type should be an object"); };
-                let closure = lower_node!(&*called, None);
-                let called = self.allocate(IrType::ProcedurePtr(impl_closure_ptr));
-                self.add(IrInstruction::GetObjectMember {
-                    accessed: closure,
-                    member: strings.insert("proc"),
-                    into: called
-                });
-                let captured_data = self.allocate(IrType::Object(captured_data_obj));
-                self.add(IrInstruction::GetObjectMember {
-                    accessed: closure,
-                    member: strings.insert("data"),
-                    into: captured_data
-                });
-                let mut parameters = vec![captured_data];
+                    ).direct(type_bank) {
+                    type_bank.get_closure(closure_idx).1
+                } else { panic!("called should be a closure"); };
+                let called = lower_node!(&*called, None);
+                let mut parameters = Vec::new();
                 for argument in arguments {
                     parameters.push(lower_node!(argument, None));
                 }
-                let into = into_given_or_alloc!(type_bank.get_procedure_ptr(impl_closure_ptr).1);
-                self.add(IrInstruction::CallPtr { called, arguments: parameters, into });
+                let into = into_given_or_alloc!(return_type);
+                self.add(IrInstruction::CallClosure { called, arguments: parameters, into });
                 Ok(Some(into))
             }
             AstNodeVariant::Object { values } => {
@@ -782,14 +781,10 @@ impl IrGenerator {
                     }
                 } else {
                     let into = into_given_or_alloc!(
-                        *captured.1.get(name)
+                        *captured.get(name)
                             .expect("variable should be captured")
                     );
-                    self.add(IrInstruction::GetObjectMember {
-                        accessed: captured.0,
-                        member: *name,
-                        into
-                    });
+                    self.add(IrInstruction::GetClosureCapture { name: *name, into });
                     Ok(Some(into))
                 }
             }

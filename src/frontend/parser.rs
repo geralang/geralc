@@ -28,7 +28,7 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::GreaterThan |
         TokenType::LessThanEqual |
         TokenType::GreaterThanEqual => Some(3),
-        TokenType::Equals |
+        TokenType::DoubleEquals |
         TokenType::NotEquals => Some(4),
         TokenType::DoubleAmpersand => Some(5),
         TokenType::DoublePipe => Some(6),

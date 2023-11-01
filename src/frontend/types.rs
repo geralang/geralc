@@ -250,7 +250,7 @@ impl TypeScope {
                         new_member_types.insert(*member_name, b_member_type.clone());
                     }
                 }
-                Some(Type::Object(new_member_types, *a_fixed && *b_fixed))
+                Some(Type::Object(new_member_types, *a_fixed || *b_fixed))
             }
             (
                 Type::Closure(a_param_groups, a_returned_group, a_captures),
@@ -286,11 +286,9 @@ impl TypeScope {
                 Some(Type::Closure(
                     n_param_groups,
                     n_returned_group,
-                    if a_captures.is_some() && b_captures.is_some() {
-                        None
-                    } else {
-                        a_captures.as_ref().map(|c| Some(c.clone())).unwrap_or(b_captures.clone())
-                    }
+                    if let Some(_) = a_captures { a_captures.clone() }
+                    else if let Some(_) = b_captures {b_captures.clone() }
+                    else { None }
                 ))
             }
             (

@@ -39,7 +39,7 @@ pub struct IrTypeBank {
     objects: Vec<HashMap<StringIdx, IrType>>,
     concrete_objects: Vec<Vec<(StringIdx, IrType)>>,
     variants: Vec<HashMap<StringIdx, IrType>>,
-    procedure_ptrs: Vec<(Vec<IrType>, IrType)>,
+    closures: Vec<(Vec<IrType>, IrType)>,
     indirect: Vec<IrType>
 }
 
@@ -50,7 +50,7 @@ impl IrTypeBank {
             objects: Vec::new(),
             concrete_objects: Vec::new(),
             variants: Vec::new(),
-            procedure_ptrs: Vec::new(),
+            closures: Vec::new(),
             indirect: Vec::new()
         }
     }
@@ -95,15 +95,15 @@ impl IrTypeBank {
     pub fn get_variants(&self, idx: IrVariantTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
     pub fn get_all_variants(&self) -> &Vec<HashMap<StringIdx, IrType>> { &self.variants }
 
-    pub fn insert_procedure_ptr(&mut self, signature: (Vec<IrType>, IrType)) -> IrProcedurePtrTypeIdx {
-        for i in 0..self.procedure_ptrs.len() {
-            if IrType::procedure_ptr_eq(&self.procedure_ptrs[i], &signature, self) { return IrProcedurePtrTypeIdx(i); }
+    pub fn insert_closure(&mut self, closure: (Vec<IrType>, IrType)) -> IrClosureTypeIdx {
+        for i in 0..self.closures.len() {
+            if IrType::closures_eq(&self.closures[i], &closure, self) { return IrClosureTypeIdx(i); }
         }
-        self.procedure_ptrs.push(signature);
-        return IrProcedurePtrTypeIdx(self.procedure_ptrs.len() - 1);
+        self.closures.push(closure);
+        return IrClosureTypeIdx(self.closures.len() - 1);
     }
-    pub fn get_procedure_ptr(&self, idx: IrProcedurePtrTypeIdx) -> &(Vec<IrType>, IrType) { &self.procedure_ptrs[idx.0] }
-    pub fn get_all_procedure_ptrs(&self) -> &Vec<(Vec<IrType>, IrType)> { &self.procedure_ptrs }
+    pub fn get_closure(&self, idx: IrClosureTypeIdx) -> &(Vec<IrType>, IrType) { &self.closures[idx.0] }
+    pub fn get_all_closures(&self) -> &Vec<(Vec<IrType>, IrType)> { &self.closures }
 
     pub fn insert_indirect(&mut self, inserted: IrType) -> IrIndirectTypeIdx {
         for i in 0..self.indirect.len() {
@@ -132,7 +132,7 @@ pub struct IrConcreteObjectTypeIdx(pub usize);
 pub struct IrVariantTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
-pub struct IrProcedurePtrTypeIdx(pub usize);
+pub struct IrClosureTypeIdx(pub usize);
 
 #[derive(Debug, Copy, Clone)]
 pub struct IrIndirectTypeIdx(pub usize);
@@ -148,7 +148,7 @@ pub enum IrType {
     Object(IrObjectTypeIdx),
     ConcreteObject(IrConcreteObjectTypeIdx),
     Variants(IrVariantTypeIdx),
-    ProcedurePtr(IrProcedurePtrTypeIdx),
+    Closure(IrClosureTypeIdx),
     Indirect(IrIndirectTypeIdx)
 }
 
@@ -194,7 +194,7 @@ impl IrType {
         return true;
     }
 
-    pub fn procedure_ptr_eq(a: &(Vec<IrType>, IrType), b: &(Vec<IrType>, IrType), type_bank: &IrTypeBank) -> bool {
+    pub fn closures_eq(a: &(Vec<IrType>, IrType), b: &(Vec<IrType>, IrType), type_bank: &IrTypeBank) -> bool {
         if a.0.len() != b.0.len() { return false; }
         for arg in 0..a.0.len() {
             if !a.0[arg].eq(&b.0[arg], type_bank) { return false; }
@@ -225,9 +225,9 @@ impl IrType {
                     type_bank.get_variants(*a), type_bank.get_variants(*b), type_bank
                 )
             }
-            (IrType::ProcedurePtr(a), IrType::ProcedurePtr(b)) => {
-                IrType::procedure_ptr_eq(
-                    type_bank.get_procedure_ptr(*a), type_bank.get_procedure_ptr(*b), type_bank
+            (IrType::Closure(a), IrType::Closure(b)) => {
+                IrType::closures_eq(
+                    type_bank.get_closure(*a), type_bank.get_closure(*b), type_bank
                 )
             }
             (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b)
@@ -253,14 +253,20 @@ pub enum IrInstruction {
     LoadArray { element_values: Vec<IrVariable>, into: IrVariable },
     LoadVariant { name: StringIdx, v: IrVariable, into: IrVariable },
     LoadGlobalVariable { path: NamespacePath, into: IrVariable },
-    LoadProcedurePtr { path: NamespacePath, variant: usize, into: IrVariable },
     LoadParameter { index: usize, into: IrVariable },
+    LoadClosure {
+        parameter_types: Vec<IrType>, return_type: IrType, captured: HashMap<StringIdx, IrVariable>,
+        variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable
+    },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },
 
     GetArrayElement { accessed: IrVariable, index: IrVariable, into: IrVariable },
     SetArrayElement { value: IrVariable, accessed: IrVariable, index: IrVariable },
+
+    GetClosureCapture { name: StringIdx, into: IrVariable },
+    SetClosureCapture { value: IrVariable, name: StringIdx },
 
     Move { from: IrVariable, into: IrVariable },
 
@@ -283,7 +289,7 @@ pub enum IrInstruction {
     BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
     Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable },
-    CallPtr { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },
+    CallClosure { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },
     Return { value: IrVariable },
 
     Phi { options: Vec<IrVariable>, into: IrVariable }

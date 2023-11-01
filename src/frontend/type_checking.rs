@@ -129,10 +129,11 @@ fn type_check_symbol<'s>(
                         Err(error) => return Err(error),
                     }
                 } else { panic!("grammar checker failed to see a constant without a value"); };
-                let value_types = value_typed.get_types().clone();
+                let variable_group = type_scope.register_variable();
+                *type_scope.get_group_types_mut(&variable_group) = value_typed.get_types().clone();
                 symbols.insert(name.clone(), Symbol::Constant {
                     value: Some(value_typed),
-                    value_types
+                    value_types: PossibleTypes::OfGroup(variable_group)
                 });
             }
             other => panic!("Unhandled symbol type checking for {:?}!", other)
@@ -816,8 +817,9 @@ fn type_check_node(
         AstNodeVariant::Equals { a, b } => {
             let a_typed = type_check_node!(*a, &PossibleTypes::Any).0;
             let b_typed = type_check_node!(*b, &PossibleTypes::Any).0;
-            limit_typed_node!(&a_typed, b_typed.get_types());
-            limit_typed_node!(&b_typed, a_typed.get_types());
+            let types = limit!(a_typed.get_types(), b_typed.get_types());
+            limit_typed_node!(&a_typed, &types);
+            limit_typed_node!(&b_typed, &types);
             Ok((TypedAstNode::new(AstNodeVariant::Equals {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
@@ -826,8 +828,9 @@ fn type_check_node(
         AstNodeVariant::NotEquals { a, b } => {
             let a_typed = type_check_node!(*a, &PossibleTypes::Any).0;
             let b_typed = type_check_node!(*b, &PossibleTypes::Any).0;
-            limit_typed_node!(&a_typed, b_typed.get_types());
-            limit_typed_node!(&b_typed, a_typed.get_types());
+            let types = limit!(a_typed.get_types(), b_typed.get_types());
+            limit_typed_node!(&a_typed, &types);
+            limit_typed_node!(&b_typed, &types);
             Ok((TypedAstNode::new(AstNodeVariant::NotEquals {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
@@ -882,12 +885,15 @@ fn type_check_node(
         }
         AstNodeVariant::Variant { name, value } => {
             let value_typed = type_check_node!(*value, &PossibleTypes::Any).0;
-            let result_type = PossibleTypes::OneOf(vec![Type::Variants([(name, value_typed.get_types().clone())].into(), false)]);
-            limit!(&result_type, limited_to);
+            let variant_types = type_scope.register_variable();
+            *type_scope.get_group_types_mut(&variant_types) = PossibleTypes::OneOf(vec![
+                Type::Variants([(name, value_typed.get_types().clone())].into(), false)
+            ]);
+            limit!(&PossibleTypes::OfGroup(variant_types), limited_to);
             Ok((TypedAstNode::new(AstNodeVariant::Variant {
                 name,
                 value: Box::new(value_typed),
-            }, result_type, node_source), (false, false)))
+            }, PossibleTypes::OfGroup(variant_types), node_source), (false, false)))
         }
     }
 }

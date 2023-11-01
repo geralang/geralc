@@ -21,7 +21,7 @@ pub enum Value {
     String(Rc<str>),
     Array(Rc<RefCell<Box<[Value]>>>),
     Object(Rc<RefCell<HashMap<StringIdx, Value>>>),
-    Closure(Vec<StringIdx>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>),
+    Closure(Vec<StringIdx>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>, StringIdx, usize),
     Variant(StringIdx, Box<Value>)
 }
 
@@ -35,15 +35,15 @@ impl PartialEq for Value {
             (
                 Value::Array(a),
                 Value::Array(b)
-            ) => Rc::ptr_eq(a, b),
+            ) => *a.borrow() == *b.borrow(),
             (
                 Value::Object(a),
                 Value::Object(b)
-            ) => Rc::ptr_eq(a, b),
+            ) => *a.borrow() == *b.borrow(),
             (
-                Value::Closure(a0, a1, a2),
-                Value::Closure(b0, b1, b2)
-            ) => *a0 == *b0 && *a1 == *b1 && *a2 == *b2,
+                Value::Closure(_, _, _, a_file, a_pos),
+                Value::Closure(_, _, _, b_file, b_pos)
+            ) => a_file == b_file && a_pos == b_pos,
             (
                 Value::Variant(a0, a1),
                 Value::Variant(b0, b1)
@@ -108,7 +108,10 @@ impl Interpreter {
                 panic!("procedure should not be in the tree by now");
             }
             AstNodeVariant::Function { arguments, body } => {
-                Ok(Value::Closure(arguments.clone(), self.stack.clone(), body.clone()))
+                Ok(Value::Closure(
+                    arguments.clone(), self.stack.clone(), body.clone(),
+                    node.source().file_name(), node.source().start_position()
+                ))
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
                 if let Some(value) = value {
@@ -217,7 +220,7 @@ impl Interpreter {
                 }
                 let called = self.evaluate_node(&*called, symbols, strings)?;
                 let (parameter_names, mut captured_stack, body) = if let Value::Closure(
-                    a, b, c
+                    a, b, c, _, _
                 ) = called { (a, b, c) } else { panic!("value should be a closure") };
                 let mut parameter_values = HashMap::new();
                 for param_idx in 0..parameter_names.len() {

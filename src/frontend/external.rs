@@ -234,7 +234,8 @@ impl ExternalMappingParser {
                 }
             }
             TokenType::BraceOpen => {
-                self.expect_next(strings, lexer, "the name of a member or a closing brace ('}')")?;
+                self.expect_next(strings, lexer, "the name of a member")?;
+                self.expect_type(&[TokenType::Identifier], "the name of a member")?;
                 let mut members = Vec::new();
                 while self.current.token_type != TokenType::BraceClose {
                     self.expect_type(&[TokenType::Identifier], "the name of a member")?;
