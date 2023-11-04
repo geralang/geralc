@@ -76,7 +76,7 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Variable { public: bool, mutable: bool, name: StringIdx, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
-    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, StringIdx, Option<PossibleTypes>, Vec<T>)>, else_body: Option<Vec<T>> },
+    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, Option<PossibleTypes>)>, Vec<T>)>, else_body: Option<Vec<T>> },
     Assignment { variable: Box<T>, value: Box<T> },
     Return { value: Box<T> },
     Call { called: Box<T>, arguments: Vec<T> },
@@ -155,9 +155,9 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
             AstNodeVariant::CaseVariant { value, branches, else_body } =>
                 format!("CaseVariant\n  condition = \n    {}\n  body = \n    {}\n  else_body = \n    {}",
                     indent(value.to_string(strings), 4),
-                    indent(branches.iter().map(|(variant_name, var_name, _, branch_body)| format!("branch\n  variant_name = '{}'\n  variant_variable_name = '{}'\n  body = \n    {}",
+                    indent(branches.iter().map(|(variant_name, variable, branch_body)| format!("branch\n  variant_name = '{}'\n  variant_variable = {}\n  body = \n    {}",
                         strings.get(*variant_name),
-                        strings.get(*var_name),
+                        variable.as_ref().map(|v| format!("'{}'", strings.get(v.0))).unwrap_or(String::from("<none>")),
                         indent(branch_body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                     )).collect::<Vec<String>>().join("\n"), 4),
                     indent(else_body.as_ref().map(|else_body| else_body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n")).unwrap_or(String::from("<none>")), 4)

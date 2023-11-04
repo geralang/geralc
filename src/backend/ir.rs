@@ -20,6 +20,11 @@ pub enum IrSymbol {
         backing: StringIdx,
         parameter_types: Vec<IrType>, return_type: IrType
     },
+    BuiltInProcedure {
+        path: NamespacePath,
+        variant: usize,
+        parameter_types: Vec<IrType>, return_type: IrType
+    },
     Variable {
         path: NamespacePath,
         value_type: IrType,
@@ -57,7 +62,7 @@ impl IrTypeBank {
 
     pub fn insert_array(&mut self, element_type: IrType) -> IrArrayTypeIdx {
         for i in 0..self.arrays.len() {
-            if self.arrays[i].eq(&element_type, self) { return IrArrayTypeIdx(i); }
+            if self.arrays[i].eq(&element_type, self, &mut Vec::new()) { return IrArrayTypeIdx(i); }
         }
         self.arrays.push(element_type);
         return IrArrayTypeIdx(self.arrays.len() - 1);
@@ -67,7 +72,7 @@ impl IrTypeBank {
 
     pub fn insert_object(&mut self, member_types: HashMap<StringIdx, IrType>) -> IrObjectTypeIdx {
         for i in 0..self.objects.len() {
-            if IrType::objects_eq(&self.objects[i], &member_types, self) { return IrObjectTypeIdx(i); }
+            if IrType::objects_eq(&self.objects[i], &member_types, self, &mut Vec::new()) { return IrObjectTypeIdx(i); }
         }
         self.objects.push(member_types);
         return IrObjectTypeIdx(self.objects.len() - 1);
@@ -77,7 +82,7 @@ impl IrTypeBank {
 
     pub fn insert_concrete_object(&mut self, member_types: Vec<(StringIdx, IrType)>) -> IrConcreteObjectTypeIdx {
         for i in 0..self.concrete_objects.len() {
-            if IrType::concrete_objects_eq(&self.concrete_objects[i], &member_types, self) { return IrConcreteObjectTypeIdx(i); }
+            if IrType::concrete_objects_eq(&self.concrete_objects[i], &member_types, self, &mut Vec::new()) { return IrConcreteObjectTypeIdx(i); }
         }
         self.concrete_objects.push(member_types);
         return IrConcreteObjectTypeIdx(self.concrete_objects.len() - 1);
@@ -87,7 +92,7 @@ impl IrTypeBank {
 
     pub fn insert_variants(&mut self, variant_types: HashMap<StringIdx, IrType>) -> IrVariantTypeIdx {
         for i in 0..self.variants.len() {
-            if IrType::variants_eq(&self.variants[i], &variant_types, self) { return IrVariantTypeIdx(i); }
+            if IrType::variants_eq(&self.variants[i], &variant_types, self, &mut Vec::new()) { return IrVariantTypeIdx(i); }
         }
         self.variants.push(variant_types);
         return IrVariantTypeIdx(self.variants.len() - 1);
@@ -97,7 +102,7 @@ impl IrTypeBank {
 
     pub fn insert_closure(&mut self, closure: (Vec<IrType>, IrType)) -> IrClosureTypeIdx {
         for i in 0..self.closures.len() {
-            if IrType::closures_eq(&self.closures[i], &closure, self) { return IrClosureTypeIdx(i); }
+            if IrType::closures_eq(&self.closures[i], &closure, self, &mut Vec::new()) { return IrClosureTypeIdx(i); }
         }
         self.closures.push(closure);
         return IrClosureTypeIdx(self.closures.len() - 1);
@@ -107,7 +112,7 @@ impl IrTypeBank {
 
     pub fn insert_indirect(&mut self, inserted: IrType) -> IrIndirectTypeIdx {
         for i in 0..self.indirect.len() {
-            if self.indirect[i].eq(&inserted, self) { return IrIndirectTypeIdx(i); }
+            if self.indirect[i].eq(&inserted, self, &mut Vec::new()) { return IrIndirectTypeIdx(i); }
         }
         self.indirect.push(inserted);
         return IrIndirectTypeIdx(self.indirect.len() - 1);
@@ -161,73 +166,103 @@ impl IrType {
         v
     }
 
-    pub fn objects_eq(a: &HashMap<StringIdx, IrType>, b: &HashMap<StringIdx, IrType>, type_bank: &IrTypeBank) -> bool {
+    pub fn objects_eq(a: &HashMap<StringIdx, IrType>, b: &HashMap<StringIdx, IrType>, type_bank: &IrTypeBank, encountered: &mut Vec<usize>) -> bool {
         for member in a.keys() {
             if !b.contains_key(member) { return false; }
-            if !a.get(member).unwrap().eq(b.get(member).unwrap(), type_bank) { return false; }
+            if !a.get(member).unwrap().eq(b.get(member).unwrap(), type_bank, encountered) { return false; }
         }
         for member in b.keys() {
             if !a.contains_key(member) { return false; }
-            if !a.get(member).unwrap().eq(b.get(member).unwrap(), type_bank) { return false; }
+            if !a.get(member).unwrap().eq(b.get(member).unwrap(), type_bank, encountered) { return false; }
         }
         return true;
     }
 
-    pub fn concrete_objects_eq(a: &Vec<(StringIdx, IrType)>, b: &Vec<(StringIdx, IrType)>, type_bank: &IrTypeBank) -> bool {
+    pub fn concrete_objects_eq(a: &Vec<(StringIdx, IrType)>, b: &Vec<(StringIdx, IrType)>, type_bank: &IrTypeBank, encountered: &mut Vec<usize>) -> bool {
         if a.len() != b.len() { return false; }
         for member in 0..a.len() {
             if a[member].0 != b[member].0 { return false; }
-            if !a[member].1.eq(&b[member].1, type_bank) { return false; }
+            if !a[member].1.eq(&b[member].1, type_bank, encountered) { return false; }
         }
         return true;
     }
 
-    pub fn variants_eq(a: &HashMap<StringIdx, IrType>, b: &HashMap<StringIdx, IrType>, type_bank: &IrTypeBank) -> bool {
+    pub fn variants_eq(a: &HashMap<StringIdx, IrType>, b: &HashMap<StringIdx, IrType>, type_bank: &IrTypeBank, encountered: &mut Vec<usize>) -> bool {
         for variant in a.keys() {
             if !b.contains_key(variant) { return false; }
-            if !a.get(variant).unwrap().eq(b.get(variant).unwrap(), type_bank) { return false; }
+            if !a.get(variant).unwrap().eq(b.get(variant).unwrap(), type_bank, encountered) { return false; }
         }
         for variant in b.keys() {
             if !a.contains_key(variant) { return false; }
-            if !a.get(variant).unwrap().eq(b.get(variant).unwrap(), type_bank) { return false; }
+            if !a.get(variant).unwrap().eq(b.get(variant).unwrap(), type_bank, encountered) { return false; }
         }
         return true;
     }
 
-    pub fn closures_eq(a: &(Vec<IrType>, IrType), b: &(Vec<IrType>, IrType), type_bank: &IrTypeBank) -> bool {
+    pub fn closures_eq(a: &(Vec<IrType>, IrType), b: &(Vec<IrType>, IrType), type_bank: &IrTypeBank, encountered: &mut Vec<usize>) -> bool {
         if a.0.len() != b.0.len() { return false; }
         for arg in 0..a.0.len() {
-            if !a.0[arg].eq(&b.0[arg], type_bank) { return false; }
+            if !a.0[arg].eq(&b.0[arg], type_bank, encountered) { return false; }
         }
-        if !a.1.eq(&b.1, type_bank) { return false; }
+        if !a.1.eq(&b.1, type_bank, encountered) { return false; }
         return true;
     }
 
-    pub fn eq(&self, other: &IrType, type_bank: &IrTypeBank) -> bool {
+    pub fn eq(&self, other: &IrType, type_bank: &IrTypeBank, encountered: &mut Vec<usize>) -> bool {
         match (self, other) {
-            (IrType::Indirect(_), IrType::Indirect(_)) => true,
-            (IrType::Indirect(i), o) => o.eq(type_bank.get_indirect(*i), type_bank),
+            (IrType::Indirect(a), IrType::Indirect(b)) => {
+                if encountered.contains(&a.0) || encountered.contains(&b.0) {
+                    println!("Whoopsie! You just made a recursive data type. Sadly the compiler is unable to handle them at the moment. THIS IS AN ISSUE THAT SHALL BE FIXED IN THE FUTURE.");
+                    std::process::exit(1);
+                }
+                encountered.push(a.0);
+                encountered.push(b.0);
+                let e = type_bank.get_indirect(*a).eq(type_bank.get_indirect(*b), type_bank, encountered);
+                encountered.pop();
+                encountered.pop();
+                return e;
+            }
+            (IrType::Indirect(i), o) => {
+                if encountered.contains(&i.0) {
+                    println!("Whoopsie! You just made a recursive data type. Sadly the compiler is unable to handle them at the moment. THIS IS AN ISSUE THAT SHALL BE FIXED IN THE FUTURE.");
+                    std::process::exit(1);
+                }
+                encountered.push(i.0);
+                let e = type_bank.get_indirect(*i).eq(o, type_bank, encountered);
+                encountered.pop();
+                return e;
+            }
+            (o, IrType::Indirect(i)) => {
+                if encountered.contains(&i.0) {
+                    println!("Whoopsie! You just made a recursive data type. Sadly the compiler is unable to handle them at the moment. THIS IS AN ISSUE THAT SHALL BE FIXED IN THE FUTURE.");
+                    std::process::exit(1);
+                }
+                encountered.push(i.0);
+                let e = o.eq(type_bank.get_indirect(*i), type_bank, encountered);
+                encountered.pop();
+                return e;
+            }
             (IrType::Array(a), IrType::Array(b)) => {
-                type_bank.get_array(*a).eq(type_bank.get_array(*b), type_bank)
+                type_bank.get_array(*a).eq(type_bank.get_array(*b), type_bank, encountered)
             }
             (IrType::Object(a), IrType::Object(b)) => {
                 IrType::objects_eq(
-                    type_bank.get_object(*a), type_bank.get_object(*b), type_bank
+                    type_bank.get_object(*a), type_bank.get_object(*b), type_bank, encountered
                 )
             }
             (IrType::ConcreteObject(a), IrType::ConcreteObject(b)) => {
                 IrType::concrete_objects_eq(
-                    type_bank.get_concrete_object(*a), type_bank.get_concrete_object(*b), type_bank
+                    type_bank.get_concrete_object(*a), type_bank.get_concrete_object(*b), type_bank, encountered
                 )
             }
             (IrType::Variants(a), IrType::Variants(b)) => {
                 IrType::variants_eq(
-                    type_bank.get_variants(*a), type_bank.get_variants(*b), type_bank
+                    type_bank.get_variants(*a), type_bank.get_variants(*b), type_bank, encountered
                 )
             }
             (IrType::Closure(a), IrType::Closure(b)) => {
                 IrType::closures_eq(
-                    type_bank.get_closure(*a), type_bank.get_closure(*b), type_bank
+                    type_bank.get_closure(*a), type_bank.get_closure(*b), type_bank, encountered
                 )
             }
             (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b)
@@ -286,7 +321,7 @@ pub enum IrInstruction {
     Not { x: IrVariable, into: IrVariable },
 
     BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
-    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, IrVariable, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
+    BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, Option<IrVariable>, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
     Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable },
     CallClosure { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },

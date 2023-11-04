@@ -46,19 +46,24 @@ pub struct Module<T: Clone + HasAstNodeVariant<T> + HasSource> {
 }
 
 impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
-    pub fn new(path: NamespacePath, file_name: StringIdx, nodes: Vec<T>, strings: &StringMap) -> Result<Module<T>, Vec<Error>> {
+    pub fn new(path: NamespacePath, file_name: StringIdx, nodes: Vec<T>, strings: &mut StringMap) -> Result<Module<T>, Vec<Error>> {
         let mut new = Module {
             path,
             file_name: Some(file_name),
             symbols: HashMap::new(),
             exported: HashMap::new(),
-            usages: Vec::new()
+            usages: vec![
+                NamespacePath::new(vec![
+                    strings.insert("core"),
+                    strings.insert("*")
+                ])
+            ]
         };
         let load_errors = new.load(nodes, strings);
         if load_errors.len() > 0 { Err(load_errors) } else { Ok(new) }
     }
 
-    pub fn is_raw(&self) -> bool { self.file_name.is_some() }
+    pub fn is_raw(&self) -> bool { self.file_name.is_none() }
 
     pub fn new_raw(path: NamespacePath) -> Module<T> {
         Module {
@@ -179,7 +184,8 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             ($node: expr) => { errors.append(&mut self.canonicalize_node($node, modules, variables, strings)) }
         }
         macro_rules! visit_nodes {
-            ($nodes: expr) => { errors.append(&mut self.canonicalize_nodes($nodes, modules, &mut variables.clone(), strings)) }
+            ($nodes: expr) => { errors.append(&mut self.canonicalize_nodes($nodes, modules, &mut variables.clone(), strings)) };
+            ($nodes: expr, $variables: expr) => { errors.append(&mut self.canonicalize_nodes($nodes, modules, $variables, strings)) }
         }
         let node_source = node.source();
         let node_variant = node.node_variant_mut();
@@ -212,7 +218,11 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::CaseVariant { value, branches, else_body } => {
                 visit_node!(&mut **value);
                 for branch in branches {
-                    visit_nodes!(&mut branch.3);
+                    let mut variables = variables.clone();
+                    if let Some((var_name, _)) = branch.1 {
+                        variables.insert(var_name);
+                    }
+                    visit_nodes!(&mut branch.2, &mut variables);
                 }
                 if let Some(else_body) = else_body {
                     visit_nodes!(else_body);

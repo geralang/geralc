@@ -161,8 +161,12 @@ impl Interpreter {
                 let mut ran_branch = false;
                 for branch in branches {
                     if variant_name != branch.0 { continue; }
-                    self.stack.push([(branch.1, *variant_value)].into());
-                    if let Some(error) = self.evaluate_nodes(&branch.3, symbols, strings) {
+                    if let Some(variant_var) = &branch.1 {
+                        self.stack.push([(variant_var.0, *variant_value)].into());
+                    } else {
+                        self.stack.push(HashMap::new());
+                    }
+                    if let Some(error) = self.evaluate_nodes(&branch.2, symbols, strings) {
                         return Err(error);
                     };
                     self.stack.pop();

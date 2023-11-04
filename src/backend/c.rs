@@ -28,12 +28,12 @@ pub fn generate_c(
     output.push_str("\n");
     emit_comparison_functions(&types, strings, &mut output);
     output.push_str("\n");
+    emit_symbol_declarations(
+        &symbols, &types, strings, &mut external, &mut output
+    );
+    output.push('\n');
     let mut closure_bodies = Vec::new();
     let mut procedures = String::new();
-    emit_symbol_declarations(
-        &symbols, &types, strings, &mut external, &mut procedures
-    );
-    procedures.push('\n');
     emit_procedure_impls(
         &symbols, &types, strings, &mut closure_bodies, &mut external, &mut procedures
     );
@@ -405,7 +405,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         if major == minor { return false; }
         for (variant_name, variant_type) in &types.get_all_variants()[minor] {
             if let Some(major_variant_type) = types.get_all_variants()[major].get(variant_name) {
-                if !variant_type.eq(major_variant_type, types) { return false; }
+                if !variant_type.eq(major_variant_type, types, &mut Vec::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -439,7 +439,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         if major == minor { return false; }
         for (member_name, member_type) in &types.get_all_objects()[minor] {
             if let Some(major_member_type) = types.get_all_objects()[major].get(member_name) {
-                if !member_type.eq(major_member_type, types) { return false; }
+                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -448,7 +448,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         for (member_name, member_type) in &types.get_all_objects()[minor] {
             if let Some((_, major_member_type)) = types.get_all_concrete_objects()[major].iter()
                 .filter(|(mn, _)| *mn == *member_name).next() {
-                if !member_type.eq(major_member_type, types) { return false; }
+                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -533,7 +533,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
     fn concrete_object_is_object_subset(major: usize, minor: usize, types: &IrTypeBank) -> bool {
         for (member_name, member_type) in &types.get_all_concrete_objects()[minor] {
             if let Some(major_member_type) = types.get_all_objects()[major].get(member_name) {
-                if !member_type.eq(major_member_type, types) { return false; }
+                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -767,6 +767,19 @@ fn emit_symbol_declarations(
                 }
                 output.push_str(");\n");
             }
+            IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type } => {
+                emit_type(*return_type, types, output);
+                output.push_str(" ");
+                emit_procedure_name(path, *variant, strings, output);
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    if p > 0 { output.push_str(", "); }
+                    emit_type(parameter_types[p], types, output);
+                    output.push_str(" param");
+                    output.push_str(&p.to_string());
+                }
+                output.push_str(");\n");
+            }
             IrSymbol::Variable { path, value_type, value } => {
                 if let IrType::Unit = value_type.direct(types) { continue; }
                 output.push_str("const ");
@@ -804,7 +817,7 @@ fn emit_variable_poly(
 ) {
     from_type = from_type.direct(types);
     to_type = to_type.direct(types);
-    if from_type.eq(&to_type, types) {
+    if from_type.eq(&to_type, types, &mut Vec::new()) {
         output.push_str(variable);
         return;
     }
@@ -863,46 +876,104 @@ fn emit_scope_decrements(
     }
 }
 
+fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> {
+    fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
+        NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
+    }
+    let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> = HashMap::new();
+    builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _| {
+        String::from("
+return param0.allocation == param1.allocation;
+")
+    });
+    builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, _, _| {
+        String::from("
+return param0.tag == param1.tag;
+")
+    });
+    builtins.insert(path_from(&["core", "length"], strings), |param_types, _, types, _| {
+        if let IrType::String = param_types[0].direct(types) {
+            String::from("
+for(size_t c = 0;; c += 1) {
+    if(param0[c] == '\\0') { return c; }
+}
+")
+        } else {
+            String::from("
+return param0.length;
+")
+        }
+    });
+    builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, strings| {
+        format!("
+while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
+", strings.insert("next").0)
+    });
+    return builtins;
+}
+
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
-    strings: &StringMap,
+    strings: &mut StringMap,
     closure_bodies: &mut Vec<String>,
     external: &mut HashMap<NamespacePath, StringIdx>,
     output: &mut String
 ) {
+    let builtin_bodies = get_builtin_bodies(strings);
     for symbol in symbols {
-        if let IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body }
-            = symbol {
-            emit_type(*return_type, types, output);
-            output.push_str(" ");
-            emit_procedure_name(path, *variant, strings, output);
-            output.push_str("(");
-            for p in 0..parameter_types.len() {
-                if p > 0 { output.push_str(", "); }
-                emit_type(parameter_types[p], types, output);
-                output.push_str(" param");
-                output.push_str(&p.to_string());
-            }
-            output.push_str(") {\n");
-            for variable_idx in 0..variables.len() {
-                if let IrType::Unit = variables[variable_idx].direct(types) { continue; }
-                output.push_str("    ");
-                emit_type(variables[variable_idx], types, output);
+        match symbol {
+            IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body } => {
+                emit_type(*return_type, types, output);
                 output.push_str(" ");
-                emit_variable(IrVariable { index: variable_idx, version: 0 }, output);
-                output.push_str(";\n");
+                emit_procedure_name(path, *variant, strings, output);
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    if p > 0 { output.push_str(", "); }
+                    emit_type(parameter_types[p], types, output);
+                    output.push_str(" param");
+                    output.push_str(&p.to_string());
+                }
+                output.push_str(") {\n");
+                for variable_idx in 0..variables.len() {
+                    if let IrType::Unit = variables[variable_idx].direct(types) { continue; }
+                    output.push_str("    ");
+                    emit_type(variables[variable_idx], types, output);
+                    output.push_str(" ");
+                    emit_variable(IrVariable { index: variable_idx, version: 0 }, output);
+                    output.push_str(";\n");
+                }
+                let mut body_str = String::new();
+                let mut body_free = HashSet::new();
+                emit_block(
+                    body, variables, &mut body_free, closure_bodies, types, external, symbols, strings,
+                    &mut body_str
+                );
+                body_str.push_str("\n");
+                emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
+                indent(&body_str, output);
+                output.push_str("}\n");
             }
-            let mut body_str = String::new();
-            let mut body_free = HashSet::new();
-            emit_block(
-                body, variables, &mut body_free, closure_bodies, types, external, symbols, strings,
-                &mut body_str
-            );
-            body_str.push_str("\n");
-            emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
-            indent(&body_str, output);
-            output.push_str("}\n");
+            IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type } => {
+                emit_type(*return_type, types, output);
+                output.push_str(" ");
+                emit_procedure_name(path, *variant, strings, output);
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    if p > 0 { output.push_str(", "); }
+                    emit_type(parameter_types[p], types, output);
+                    output.push_str(" param");
+                    output.push_str(&p.to_string());
+                }
+                output.push_str(") {\n");
+                let body_str = (builtin_bodies
+                    .get(path)
+                    .expect("builtin should have implementation"))
+                    (parameter_types, *return_type, types, strings);
+                indent(&body_str, output);
+                output.push_str("}\n");
+            }
+            _ => {}
         }
     }
 }
@@ -1624,61 +1695,58 @@ fn emit_instruction(
                 );
                 output.push_str(";");
             }
-            output.push_str("\n    ");
+            output.push_str("\n");
             let mut v_str = String::new();
             emit_variable(*value, &mut v_str);
+            let mut branches_str = String::new();
             for branch_idx in 0..branches.len() {
-                output.push_str("if(");
+                branches_str.push_str("if(");
                 let mut b_str = String::from("branchval");
                 b_str.push_str(&branch_idx.to_string());
-                emit_equality(&v_str, &b_str, variable_types[value.index], types, output);
-                output.push_str(") ");
-                let mut branch_str = String::new();
+                emit_equality(&v_str, &b_str, variable_types[value.index], types, &mut branches_str);
+                branches_str.push_str(") ");
                 emit_block(
                     &branches[branch_idx].1, variable_types, free, closure_bodies, types, external,
-                    symbols, strings, &mut branch_str
+                    symbols, strings, &mut branches_str
                 );
-                indent(&branch_str, output);
-                output.push_str(" else ");
+                branches_str.push_str(" else ");
             }
-            let mut else_branch_str = String::new();
             emit_block(
                 else_branch, variable_types, free, closure_bodies, types, external, symbols,
-                strings, &mut else_branch_str
+                strings, &mut branches_str
             );
-            indent(&else_branch_str, output);
+            indent(&branches_str, output);
             output.push_str("\n}\n");
         }
         IrInstruction::BranchOnVariant { value, branches, else_branch } => {
             output.push_str("switch(");
             emit_variable(*value, output);
             output.push_str(".tag) {");
-            // let variant_idx = if let IrType::Variants(v)
-            //     = variable_types[value.index].direct(types) { v.0 }
-            //     else { panic!("should be a variant"); };
             for (branch_variant, branch_variable, branch_body) in branches {
                 output.push_str("\n    case ");
                 output.push_str(&branch_variant.0.to_string());
                 output.push_str(":\n");
-                if let IrType::Unit = variable_types[branch_variable.index].direct(types) {} else {
-                    output.push_str("        ");
-                    let mut branch_variable_str = String::new();
-                    emit_variable(*branch_variable, &mut branch_variable_str);
-                    output.push_str(&branch_variable_str);
-                    output.push_str(" = ");
-                    emit_variable(*value, output);
-                    output.push_str(".value.");
-                    output.push_str(strings.get(*branch_variant));
-                    output.push_str(";\n");
-                    let mut branch_variable_incr = String::new();
-                    emit_rc_incr(
-                        &branch_variable_str, variable_types[branch_variable.index], types, strings,
-                        &mut branch_variable_incr
-                    );
-                    let mut branch_variable_incr_indented = String::new();
-                    indent(&branch_variable_incr, &mut branch_variable_incr_indented);
-                    indent(&branch_variable_incr_indented, output);
-                    free.insert(branch_variable.index);
+                if let Some(branch_variable) = branch_variable {
+                    if let IrType::Unit = variable_types[branch_variable.index].direct(types) {} else {
+                        output.push_str("        ");
+                        let mut branch_variable_str = String::new();
+                        emit_variable(*branch_variable, &mut branch_variable_str);
+                        output.push_str(&branch_variable_str);
+                        output.push_str(" = ");
+                        emit_variable(*value, output);
+                        output.push_str(".value.");
+                        output.push_str(strings.get(*branch_variant));
+                        output.push_str(";\n");
+                        let mut branch_variable_incr = String::new();
+                        emit_rc_incr(
+                            &branch_variable_str, variable_types[branch_variable.index], types, strings,
+                            &mut branch_variable_incr
+                        );
+                        let mut branch_variable_incr_indented = String::new();
+                        indent(&branch_variable_incr, &mut branch_variable_incr_indented);
+                        indent(&branch_variable_incr_indented, output);
+                        free.insert(branch_variable.index);
+                    }
                 }
                 let mut branch = String::new();
                 for instruction in branch_body {
@@ -1711,10 +1779,12 @@ fn emit_instruction(
             // this is cursed and I hate it
             let (parameter_types, return_type) = match symbols.into_iter().filter(|s| match *s {
                 IrSymbol::Procedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
+                IrSymbol::BuiltInProcedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
                 IrSymbol::ExternalProcedure { path: p, .. } => *path == *p,
                 _ => false
             }).next().expect("should exist") {
                 IrSymbol::Procedure { parameter_types, return_type, .. } |
+                IrSymbol::BuiltInProcedure { parameter_types, return_type, .. } |
                 IrSymbol::ExternalProcedure { parameter_types, return_type, .. } => (
                     parameter_types, return_type
                 ),

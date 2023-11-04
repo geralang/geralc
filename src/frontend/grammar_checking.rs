@@ -126,7 +126,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_max_scope!("'case'", ScopeType::Statement, ScopeType::Statement);
             check_grammar_singular(&*value, ScopeType::Expression, errors);
             for branch in branches {
-                check_grammar(&branch.3, ScopeType::Statement, errors);
+                check_grammar(&branch.2, ScopeType::Statement, errors);
             }
             if let Some(else_body) = else_body {
                 check_grammar(else_body, ScopeType::Statement, errors);

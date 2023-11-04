@@ -52,6 +52,7 @@ fn possible_types_to_ir_type(
         }
         PossibleTypes::OneOf(possible_types) => {
             if possible_types.len() != 1 {
+                println!("=> {}", crate::frontend::type_checking::display_types(strings, type_scope, converted, &mut Vec::new()));
                 panic!("possible types should be concrete!");
             }
             type_to_ir_type(type_scope, &possible_types[0], type_bank, strings, encountered)
@@ -392,8 +393,7 @@ impl IrGenerator {
                         let into = into_given_or_alloc!(call_parameters.1[*parameter_index]);
                         self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
                         body_captured.insert(*capture_name, into);
-                    }
-                    if let Some(var_idx) = named_variables.get(capture_name) {
+                    } else if let Some(var_idx) = named_variables.get(capture_name) {
                         let var = &self.variables[*var_idx];
                         body_captured.insert(*capture_name, IrVariable { 
                             index: *var_idx,
@@ -501,18 +501,21 @@ impl IrGenerator {
                 let mut branches = Vec::new();
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
-                    let variant_val_type = possible_types_to_ir_type(
-                        type_scope, branch.2.as_ref().expect("should have type"), type_bank,
-                        strings, &mut HashMap::new()
-                    );
-                    let variant_var = self.allocate(variant_val_type);
                     let mut branch_variables = named_variables.clone();
-                    branch_variables.insert(branch.1, variant_var.index);
+                    let branch_variant_variable = if let Some((branch_var_variable, branch_var_type)) = &branch.1 {
+                        let variant_val_type = possible_types_to_ir_type(
+                            type_scope, branch_var_type.as_ref().expect("should have type"), type_bank,
+                            strings, &mut HashMap::new()
+                        );
+                        let variant_var = self.allocate(variant_val_type);
+                        branch_variables.insert(*branch_var_variable, variant_var.index);
+                        Some(variant_var)
+                    } else { None };
                     let branch_body = self.lower_nodes(
-                        &branch.3, captured, type_scope, branch_variables, symbols, strings,
+                        &branch.2, captured, type_scope, branch_variables, symbols, strings,
                         external_backings, call_parameters, interpreter, type_bank, ir_symbols
                     )?;
-                    branches.push((branch.0, variant_var, branch_body));
+                    branches.push((branch.0, branch_variant_variable, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = if let Some(else_body) = else_body {
@@ -571,54 +574,64 @@ impl IrGenerator {
                     if let Symbol::Procedure {
                         parameter_names, parameter_types, returns, body
                     } = symbols.get(path).expect("symbol should exist") {
-                        if body.is_some() {
-                            let mut call_type_scope = type_scope.clone();
-                            let mut parameter_ir_types = Vec::new();
-                            let mut parameter_values = Vec::new();
-                            for argument_idx in 0..arguments.len() {
-                                let concrete_param_type = call_type_scope.limit_possible_types(
-                                    &PossibleTypes::OfGroup(parameter_types[argument_idx]),
-                                    arguments[argument_idx].get_types()
-                                ).expect("should have a possible value");
-                                let param_ir_type = possible_types_to_ir_type(
-                                    &call_type_scope, &concrete_param_type, type_bank, strings,
-                                    &mut HashMap::new()
-                                );
-                                parameter_ir_types.push(param_ir_type);
-                                parameter_values.push(
-                                    lower_node!(&arguments[argument_idx], None)
-                                );
-                            }
-                            let return_ir_type = possible_types_to_ir_type(
-                                &call_type_scope,
-                                &PossibleTypes::OfGroup(*returns),
-                                type_bank, strings, &mut HashMap::new()
+                        let mut call_type_scope = type_scope.clone();
+                        let mut parameter_ir_types = Vec::new();
+                        let mut parameter_values = Vec::new();
+                        for argument_idx in 0..arguments.len() {
+                            let concrete_param_type = call_type_scope.limit_possible_types(
+                                &PossibleTypes::OfGroup(parameter_types[argument_idx]),
+                                arguments[argument_idx].get_types()
+                            ).expect("should have a possible value");
+                            let param_ir_type = possible_types_to_ir_type(
+                                &call_type_scope, &concrete_param_type, type_bank, strings,
+                                &mut HashMap::new()
                             );
-                            let mut exists = false;
-                            let mut proc_variant = 0;
-                            for symbol in &*ir_symbols {
-                                if let IrSymbol::Procedure {
+                            parameter_ir_types.push(param_ir_type);
+                            parameter_values.push(
+                                lower_node!(&arguments[argument_idx], None)
+                            );
+                        }
+                        let return_ir_type = possible_types_to_ir_type(
+                            &call_type_scope,
+                            &PossibleTypes::OfGroup(*returns),
+                            type_bank, strings, &mut HashMap::new()
+                        );    
+                        let mut exists = false;
+                        let mut proc_variant = 0;
+                        for symbol in &*ir_symbols {
+                            match symbol {
+                                IrSymbol::ExternalProcedure { path: proc_path, .. } => {
+                                    if path != proc_path { continue; }
+                                    exists = true;
+                                    break;
+                                }   
+                                IrSymbol::Procedure {
                                     path: proc_path, variant, parameter_types, return_type, ..
-                                } = symbol {
+                                } | IrSymbol::BuiltInProcedure {
+                                    path: proc_path, variant, parameter_types, return_type
+                                } => {
                                     if path != proc_path { continue; }
                                     proc_variant = proc_variant.max(*variant + 1);
                                     if parameter_types.len() != parameter_ir_types.len() { continue; }
                                     let mut params_eq = true;
                                     for param_idx in 0..parameter_types.len() {
-                                        if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank) {
+                                        if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank, &mut Vec::new()) {
                                             continue;
                                         }
                                         params_eq = false;
                                         break;
                                     }
                                     if !params_eq { continue; }
-                                    if !return_type.eq(&return_ir_type, type_bank) { continue; } 
+                                    if !return_type.eq(&return_ir_type, type_bank, &mut Vec::new()) { continue; } 
                                     proc_variant = *variant;
                                     exists = true;
                                     break;
                                 }
+                                _ => {}
                             }
-                            if !exists {
+                        }
+                        if !exists {
+                            if body.is_some() {
                                 let mut generator = IrGenerator::new();
                                 let mut call_parameters = (HashMap::new(), Vec::new());
                                 for arg_idx in 0..parameter_names.len() {
@@ -649,63 +662,32 @@ impl IrGenerator {
                                             .collect();
                                     }
                                 } else {
-                                    ir_symbols.push(IrSymbol::ExternalProcedure {
-                                        path: path.clone(),
-                                        backing: *external_backings
-                                            .get(path)
-                                            .expect("should have backing"), 
-                                        parameter_types: parameter_ir_types,
-                                        return_type: return_ir_type,
-                                    });
+                                    panic!("procedure should exist");
                                 }
-                            }
-                            let into = into_given_or_alloc!(node_type!());
-                            self.add(IrInstruction::Call {
-                                path: path.clone(),
-                                variant: proc_variant,
-                                arguments: parameter_values,
-                                into
-                            });
-                            return Ok(Some(into));
-                        } else {
-                            let exists = ir_symbols.iter().filter(|s|
-                                if let IrSymbol::ExternalProcedure { path: p, .. } = s {
-                                    *p == *path
-                                } else { false }
-                            ).next().is_some();
-                            if !exists {
+                            } else if let Some(backing) = external_backings.get(path) {
                                 ir_symbols.push(IrSymbol::ExternalProcedure {
                                     path: path.clone(),
-                                    backing: *external_backings
-                                        .get(path)
-                                        .expect("should have backing"), 
-                                    parameter_types: parameter_types.iter().map(|p|
-                                        possible_types_to_ir_type(
-                                            type_scope, &PossibleTypes::OfGroup(*p), type_bank, 
-                                            strings, &mut HashMap::new()
-                                        )
-                                    ).collect(),
-                                    return_type: possible_types_to_ir_type(
-                                        type_scope, &PossibleTypes::OfGroup(*returns), type_bank, 
-                                        strings, &mut HashMap::new()
-                                    ),
+                                    backing: *backing, 
+                                    parameter_types: parameter_ir_types,
+                                    return_type: return_ir_type
+                                });
+                            } else {
+                                ir_symbols.push(IrSymbol::BuiltInProcedure {
+                                    path: path.clone(),
+                                    variant: proc_variant,
+                                    parameter_types: parameter_ir_types,
+                                    return_type: return_ir_type
                                 });
                             }
-                            let mut parameter_values = Vec::new();
-                            for argument_idx in 0..arguments.len() {
-                                parameter_values.push(
-                                    lower_node!(&arguments[argument_idx], None)
-                                );
-                            }
-                            let into = into_given_or_alloc!(node_type!());
-                            self.add(IrInstruction::Call {
-                                path: path.clone(),
-                                variant: 0,
-                                arguments: parameter_values,
-                                into
-                            });
-                            return Ok(Some(into));
                         }
+                        let into = into_given_or_alloc!(node_type!());
+                        self.add(IrInstruction::Call {
+                            path: path.clone(),
+                            variant: proc_variant,
+                            arguments: parameter_values,
+                            into
+                        });
+                        return Ok(Some(into));
                     }
                 }
                 let return_type = if let IrType::Closure(closure_idx)

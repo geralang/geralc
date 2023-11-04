@@ -608,10 +608,13 @@ impl Parser {
                                     enforce_next!("the variant's name");
                                     enforce_current_type!(&[TokenType::Identifier], "the variant's name");
                                     let branch_variant_name = self.current.token_content;
-                                    enforce_next!("the value's variable's name");
-                                    enforce_current_type!(&[TokenType::Identifier], "the value's variable's name");
-                                    let branch_variable_name = self.current.token_content;
-                                    enforce_next!("an arrow ('->')");
+                                    enforce_next!("the value's variable's name or an arrow ('->')");
+                                    enforce_current_type!(&[TokenType::Identifier, TokenType::Arrow], "the value's variable's name or an arrow ('->')");
+                                    let branch_variable = if self.current.token_type == TokenType::Identifier {
+                                        let branch_variable_name = self.current.token_content;
+                                        enforce_next!("an arrow ('->')");
+                                        Some((branch_variable_name, None))
+                                    } else { None };
                                     enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
                                     enforce_next!("the body of the branch");
                                     let body = if self.current.token_type == TokenType::BraceOpen {
@@ -627,7 +630,7 @@ impl Parser {
                                     } else {
                                         vec![enforce_expression!(&[TokenType::BraceClose], None, "the body of the conditional branch")]
                                     };
-                                    branches.push((branch_variant_name, branch_variable_name, None, body));
+                                    branches.push((branch_variant_name, branch_variable, body));
                                 }
                                 enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                                 let mut source_end = self.current.source;

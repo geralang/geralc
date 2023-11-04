@@ -1,8 +1,9 @@
 
 #![allow(dead_code)]
 
-mod util;
 mod cli;
+mod builtin;
+mod util;
 mod frontend;
 mod backend;
 
@@ -25,6 +26,8 @@ use backend::{
 };
 
 use std::{fs, env, collections::HashMap};
+
+use crate::builtin::load_builtins;
 
 fn main() {
     if cfg!(target_os = "windows") {
@@ -56,14 +59,16 @@ fn main() {
             std::process::exit(1);
         }
     };
-    // read all files
+    // load builtins
     let mut modules = HashMap::new();
     let mut type_scope= TypeScope::new();
     let mut typed_symbols = HashMap::new();
     let mut external_backings = HashMap::new();
+    load_builtins(&mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings);
+    // read all files
     let mut errored = false;
     for file_name in args.free_values() {
-        match load_file(strings.insert(file_name), &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
+        match read_file(strings.insert(file_name), &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
             Ok(_) => {}
             Err(errors) => {
                 for error in errors { println!("{}", error.display(&strings)); }
@@ -169,7 +174,7 @@ fn main() {
     // done!
 }
 
-fn load_file(
+pub fn read_file(
     file_path: StringIdx,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
@@ -185,6 +190,19 @@ fn load_file(
             ErrorSection::Info(format!("While trying to read '{}'", strings.get(file_path)))
         ].into())]),
     };
+    // process the file
+    process_file(file_path, file_content, strings, modules, type_scope, typed_symbols, external_backings)
+}
+
+pub fn process_file(
+    file_path: StringIdx,
+    file_content: StringIdx,
+    strings: &mut StringMap,
+    modules: &mut HashMap<NamespacePath, Module<AstNode>>,
+    type_scope: &mut TypeScope,
+    typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
+    external_backings: &mut HashMap<NamespacePath, StringIdx>
+) -> Result<(), Vec<Error>> {
     if strings.get(file_path).ends_with(".gera") {
         // parse the file
         let mut lexer = Lexer::new(file_path, file_content, strings);

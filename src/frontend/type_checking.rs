@@ -75,13 +75,14 @@ fn type_check_symbol<'s>(
                     body: Some(Vec::new())
                 } );
                 procedure_names.push(name.clone());
-                let (typed_body, returns, _) = match type_check_nodes(
+                let (typed_body, returns) = match type_check_nodes(
                     strings,
                     type_scope,
                     procedure_names,
                     &mut procedure_variables,
                     &mut procedure_scope_variables,
                     &mut HashMap::new(),
+                    &mut HashSet::new(),
                     untyped_symbols,
                     symbols,
                     untyped_body,
@@ -158,14 +159,14 @@ fn type_check_nodes(
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool)>,
     scope_variables: &mut HashSet<StringIdx>,
     uninitialized_variables: &mut HashMap<StringIdx, bool>,
+    captured_variables: &mut HashSet<StringIdx>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     mut nodes: Vec<AstNode>,
     return_types: &PossibleTypes
-) -> Result<(Vec<TypedAstNode>, (SometimesReturns, AlwaysReturns), HashSet<StringIdx>), Error> {
+) -> Result<(Vec<TypedAstNode>, (SometimesReturns, AlwaysReturns)), Error> {
     let mut typed_nodes = Vec::new();
     let mut returns = (false, false);
-    let mut captured = HashSet::new();
     while nodes.len() > 0 {
         match type_check_node(
             strings,
@@ -174,7 +175,7 @@ fn type_check_nodes(
             variables,
             scope_variables,
             uninitialized_variables,
-            &mut captured,
+            captured_variables,
             untyped_symbols,
             symbols,
             nodes.remove(0),
@@ -190,7 +191,7 @@ fn type_check_nodes(
             Err(error) => return Err(error)
         }
     }
-    Ok((typed_nodes, returns, captured))
+    Ok((typed_nodes, returns))
 }
 
 fn error_from_type_limit(
@@ -280,7 +281,7 @@ fn type_check_node(
         }
     } }
     macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $scope_variables: expr, $uninitialized_variables: expr) => {
-        match type_check_nodes(strings, type_scope, procedure_names, $variables, $scope_variables,  $uninitialized_variables, untyped_symbols, symbols, $nodes, return_types) {
+        match type_check_nodes(strings, type_scope, procedure_names, $variables, $scope_variables,  $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
@@ -309,13 +310,15 @@ fn type_check_node(
                 closure_scope_variables.insert(*argument);
             }
             let return_types = type_scope.register_variable();
-            let (typed_body, returns, captured) = match type_check_nodes(
+            let mut captured = HashSet::new();
+            let (typed_body, returns) = match type_check_nodes(
                 strings,
                 type_scope,
                 procedure_names,
                 &mut closure_variables,
                 &mut closure_scope_variables,
                 &mut uninitialized_variables.clone(),
+                &mut captured,
                 untyped_symbols,
                 symbols,
                 body,
@@ -324,6 +327,11 @@ fn type_check_node(
                 Ok(typed_nodes) => typed_nodes,
                 Err(error) => return Err(error),
             };
+            for capture in &captured {
+                if !scope_variables.contains(capture) {
+                    captured_variables.insert(*capture);
+                }
+            }
             if match type_scope.get_group_types(&return_types) {
                 PossibleTypes::OneOf(types) => types.len() == 1 && match &types[0] {
                     Type::Unit => false,
@@ -337,6 +345,14 @@ fn type_check_node(
             if !returns.0 {
                 type_scope.limit_possible_types(&PossibleTypes::OfGroup(return_types), &PossibleTypes::OneOf(vec![Type::Unit]));
             }
+            println!(
+                "captured = {{ {} }}",
+                captured.iter().map(|n| strings.get(*n).into()).collect::<Vec<String>>().join(", ")
+            );
+            println!(
+                "variables = {{ {} }}",
+                variables.iter().map(|(n, _)| strings.get(*n).into()).collect::<Vec<String>>().join(", ")
+            );
             let closure_type = PossibleTypes::OneOf(vec![Type::Closure(
                 closure_args,
                 return_types,
@@ -378,7 +394,7 @@ fn type_check_node(
             for (branch_value, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
-                let (branch_body, branch_returns, _) = type_check_nodes!(branch_body, &mut branch_variables, &mut HashSet::new(), &mut branch_uninitialized_variables);
+                let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut scope_variables.clone(), &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
                 if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
                 typed_branches.push((type_check_node!(branch_value, typed_value.get_types(), false, &mut HashMap::new()).0, branch_body));
@@ -387,7 +403,7 @@ fn type_check_node(
             }
             let mut else_body_variables = variables.clone();
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
+            let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
             branches_variables.push(else_body_variables);
             branches_uninitialized_variables.push(else_body_uninitialized_variables);
             if let Some(error) = initalize_variables(
@@ -405,10 +421,10 @@ fn type_check_node(
             let typed_condition = type_check_node!(*condition, &PossibleTypes::OneOf(vec![Type::Boolean])).0;
             let mut body_variables = variables.clone();
             let mut body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_body, body_returns, _) = type_check_nodes!(body, &mut body_variables, &mut HashSet::new(), &mut body_uninitialized_variables);
+            let (typed_body, body_returns) = type_check_nodes!(body, &mut body_variables, &mut scope_variables.clone(), &mut body_uninitialized_variables);
             let mut else_body_variables = variables.clone();
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-            let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
+            let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
             if let Some(error) = initalize_variables(
                 strings, type_scope, node_source, variables, uninitialized_variables,
                 &[body_variables, else_body_variables],
@@ -427,15 +443,19 @@ fn type_check_node(
             let mut branches_variables = Vec::new();
             let mut branches_uninitialized_variables = Vec::new();
             let mut variant_types = HashMap::new();
-            for (branch_variant_name, branch_variant_variable, _, branch_body) in branches {
+            for (branch_variant_name, branch_variant_variable, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let branch_variant_variable_types = type_scope.register_variable();
-                branch_variables.insert(branch_variant_variable, (branch_variant_variable_types, false));
+                let mut branch_scope_variables = scope_variables.clone();
+                if let Some(branch_variant_variable) = &branch_variant_variable {
+                    branch_variables.insert(branch_variant_variable.0, (branch_variant_variable_types, false));
+                    branch_scope_variables.insert(branch_variant_variable.0);
+                }
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
-                let (branch_body, branch_returns, _) = type_check_nodes!(branch_body, &mut branch_variables, &mut HashSet::new(), &mut branch_uninitialized_variables);
+                let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_scope_variables, &mut branch_uninitialized_variables);
                 if branch_returns.0 { branches_return.0 = true; }
                 if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
-                typed_branches.push((branch_variant_name, branch_variant_variable, Some(PossibleTypes::OfGroup(branch_variant_variable_types)), branch_body));
+                typed_branches.push((branch_variant_name, branch_variant_variable.map(|v| (v.0, Some(PossibleTypes::OfGroup(branch_variant_variable_types)))), branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
                 variant_types.insert(branch_variant_name, PossibleTypes::OfGroup(branch_variant_variable_types));
@@ -444,7 +464,7 @@ fn type_check_node(
             let typed_else_body = if let Some(else_body) = else_body {
                 let mut else_body_variables = variables.clone();
                 let mut else_body_uninitialized_variables = uninitialized_variables.clone();
-                let (typed_else_body, else_returns, _) = type_check_nodes!(else_body, &mut else_body_variables, &mut HashSet::new(), &mut else_body_uninitialized_variables);
+                let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
                 branches_variables.push(else_body_variables);
                 branches_uninitialized_variables.push(else_body_uninitialized_variables);
                 if else_returns.0 { branches_return.0 = true; }
@@ -998,7 +1018,7 @@ fn limit_typed_node(
     None
 }
 
-fn display_types(
+pub fn display_types(
     strings: &StringMap,
     type_scope: &TypeScope,
     types: &PossibleTypes,
