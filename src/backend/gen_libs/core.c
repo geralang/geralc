@@ -45,3 +45,5 @@ char gera___string_eq(char* a, char* b) {
         return 1;
     }
 }
+
+void gera___free_nothing(char* data, size_t size) {}

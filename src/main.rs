@@ -77,6 +77,7 @@ fn main() {
         }
     }
     if errored { std::process::exit(1); }
+    println!("parsing done");
     // canonicalize modules
     let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
     for module_path in module_paths {
@@ -88,6 +89,7 @@ fn main() {
             std::process::exit(1);
         }
     }
+    println!("canonicalization done");
     // type check
     match type_check_modules(modules, &strings, &mut type_scope, &mut typed_symbols) {
         Ok(_) => {}
@@ -96,6 +98,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    println!("type checking done");
     // find main procedure
     let main_procedure_path = NamespacePath::new(
         args.values(CLI_ARG_MAIN)
@@ -141,6 +144,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    println!("lowering done");
     // generate file content based on format
     let targets: HashMap<String, CompileTarget> = HashMap::from([
         ("c".into(), CompileTarget(generate_c)),
@@ -159,6 +163,7 @@ fn main() {
         ].into()).display(&strings));
         std::process::exit(1);
     };
+    println!("emitting done");
     // write to output file
     let output_file_name = args.values(CLI_ARG_OUTPUT)
         .expect("is required")

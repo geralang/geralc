@@ -66,7 +66,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             for arg in arguments {
                 if args.contains(arg) {
                     errors.push(Error::new([
-                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(*arg)),
+                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(arg.0)),
                         ErrorSection::Code(node.source().clone())
                     ].into()))
                 }
@@ -80,7 +80,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             for arg in arguments {
                 if args.contains(arg) {
                     errors.push(Error::new([
-                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(*arg)),
+                        ErrorSection::Error(ErrorType::DuplicateFunctionParameter(arg.0)),
                         ErrorSection::Code(node.source().clone())
                     ].into()))
                 }

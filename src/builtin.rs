@@ -5,14 +5,16 @@ use crate::util::strings::{StringMap, StringIdx};
 use crate::frontend::{
     modules::{NamespacePath, Module},
     ast::{AstNode, TypedAstNode},
-    types::{TypeScope, VarTypeIdx, PossibleTypes, Type},
+    types::{TypeScope, VarTypeIdx, Type},
     type_checking::Symbol
 };
 
 fn register_foreign_builtin(
     procedure_path: NamespacePath,
+    parameter_names: &[&'static str],
     parameter_types: Vec<VarTypeIdx>,
     return_type: VarTypeIdx,
+    strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
 ) {
@@ -33,18 +35,11 @@ fn register_foreign_builtin(
         modules.insert(procedure_module_path, module);
     }
     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
-        parameter_names: Vec::new(),
+        parameter_names: parameter_names.iter().map(|p| strings.insert(p)).collect(),
         parameter_types: parameter_types,
         returns: return_type,
         body: None
     });
-}
-
-fn register_type(possible_types: &PossibleTypes, type_scope: &mut TypeScope) -> VarTypeIdx {
-    let group = type_scope.register_variable();
-    type_scope.limit_possible_types(&PossibleTypes::OfGroup(group), possible_types)
-        .expect("should be a valid type");
-    group
 }
 
 fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
@@ -69,71 +64,72 @@ fn load_foreign_builtins(
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>
 ) {
     {
-        let t = register_type(
-            &PossibleTypes::OneOf(vec![
-                Type::Object(HashMap::new(), false),
-                Type::Array(PossibleTypes::Any),
-                Type::String
-            ]),
-            type_scope
-        );
+        let array_element_type = type_scope.register_variable();
+        let t = type_scope.register_with_types(Some(vec![
+            Type::Object(HashMap::new(), false),
+            Type::Array(array_element_type),
+            Type::String
+        ]));
         register_foreign_builtin(
             path_from(&["core", "addr_eq"], strings),
-            vec![
-                register_type(&PossibleTypes::OfGroup(t), type_scope),
-                register_type(&PossibleTypes::OfGroup(t), type_scope),
-            ],
-            register_type(&PossibleTypes::OneOf(vec![Type::Boolean]), type_scope),
-            modules, typed_symbols
+            &["a", "b"],
+            vec![t, t],
+            type_scope.register_with_types(Some(vec![Type::Boolean])),
+            strings, modules, typed_symbols
         );
     }
     {
-        let t = register_type(
-            &PossibleTypes::OneOf(vec![
-                Type::Variants(HashMap::new(), false)
-            ]),
-            type_scope
-        );
+        let t = type_scope.register_with_types(Some(vec![
+            Type::Variants(HashMap::new(), false)
+        ]));
         register_foreign_builtin(
             path_from(&["core", "tag_eq"], strings),
-            vec![
-                register_type(&PossibleTypes::OfGroup(t), type_scope),
-                register_type(&PossibleTypes::OfGroup(t), type_scope),
-            ],
-            register_type(&PossibleTypes::OneOf(vec![Type::Boolean]), type_scope),
-            modules, typed_symbols
+            &["a", "b"],
+            vec![t, t],
+            type_scope.register_with_types(Some(vec![Type::Boolean])),
+            strings, modules, typed_symbols
         );
     }
-    register_foreign_builtin(
-        path_from(&["core", "length"], strings),
-        vec![
-            register_type(&PossibleTypes::OneOf(vec![
-                Type::String,
-                Type::Array(PossibleTypes::Any)
-            ]), type_scope),
-        ],
-        register_type(&PossibleTypes::OneOf(vec![Type::Integer]), type_scope),
-        modules, typed_symbols
-    );
-    register_foreign_builtin(
-        path_from(&["core", "exhaust"], strings),
-        vec![
-            register_type(&PossibleTypes::OneOf(vec![
-                Type::Closure(
-                    vec![],
-                    register_type(&PossibleTypes::OneOf(vec![
-                        Type::Variants([
-                            (strings.insert("end"), PossibleTypes::Any),
-                            (strings.insert("next"), PossibleTypes::Any)
-                        ].into(), true)
-                    ]), type_scope),
-                    None
-                )
-            ]), type_scope)
-        ],
-        register_type(&PossibleTypes::OneOf(vec![Type::Unit]), type_scope),
-        modules, typed_symbols
-    );
+    {
+        let array_element_type = type_scope.register_variable();
+        register_foreign_builtin(
+            path_from(&["core", "length"], strings),
+            &["thing"],
+            vec![
+                type_scope.register_with_types(Some(vec![
+                    Type::String,
+                    Type::Array(array_element_type)
+                ])),
+            ],
+            type_scope.register_with_types(Some(vec![Type::Integer])),
+            strings, modules, typed_symbols
+        );
+    }
+    { 
+        let end = type_scope.register_variable();
+        let next = type_scope.register_variable();
+        let exhausted_clore_return_types = type_scope.register_with_types(Some(vec![
+            Type::Variants([
+                (strings.insert("end"), end),
+                (strings.insert("next"), next)
+            ].into(), true)
+        ]));
+        register_foreign_builtin(
+            path_from(&["core", "exhaust"], strings),
+            &["iter"],
+            vec![
+                type_scope.register_with_types(Some(vec![
+                    Type::Closure(
+                        vec![],
+                        exhausted_clore_return_types,
+                        None
+                    )
+                ]))
+            ],
+            type_scope.register_with_types(Some(vec![Type::Unit])),
+            strings, modules, typed_symbols
+        );
+    }
 }
 
 fn load_native_builtins(

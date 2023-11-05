@@ -10,6 +10,7 @@ pub enum TokenType {
     Pipe,
     Equals,
     Dot,
+    DoubleDot,
     Plus,
     Minus,
     Asterisk,

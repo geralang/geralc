@@ -61,7 +61,15 @@ impl Lexer {
                         self.make_token("=", TokenType::Equals, string_map)
                     }))
                 }
-                '.' => { self.next(); return Some(Ok(self.make_token(".", TokenType::Dot, string_map))) },
+                '.' => {
+                    self.next();
+                    return Some(Ok(if self.has() && self.current() == '.' {
+                        self.next();
+                        self.make_token("..", TokenType::DoubleDot, string_map)
+                    } else {
+                        self.make_token(".", TokenType::Dot, string_map)
+                    }))
+                }
                 '+' => { self.next(); return Some(Ok(self.make_token("+", TokenType::Plus, string_map))) },
                 '-' => {
                     self.next();
@@ -175,6 +183,9 @@ impl Lexer {
                 let mut is_fraction = false;
                 while self.has() {
                     if self.current() == '.' && !is_fraction {
+                        if self.has_next() && self.peek() == '.' {
+                            break;
+                        }
                         is_fraction = true;
                     } else if '0' <= self.current() && self.current() <= '9' {
                     } else {

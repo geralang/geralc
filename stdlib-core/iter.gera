@@ -1,0 +1,136 @@
+
+mod std::iter
+
+pub proc map(iter, mapping) {
+    return || {
+        case iter() {
+            #end -> return #end unit
+            #next n -> return #next mapping(n)
+        }
+    }
+}
+
+pub proc filter(iter, condition) {
+    return || {
+        var result = { val = #end unit }
+        exhaust(|| {
+            case iter() {
+                #end -> return #end unit
+                #next n -> {
+                    case condition(n) -> {
+                        result.val = #next n
+                        return #end unit
+                    }
+                    return #next unit
+                }
+            }
+        })
+        return result.val
+    }
+}
+
+pub proc reduce(iter, reduction, initial) {
+    var value = { val = initial }
+    iter |> map(|v| {
+        value.val = reduction(value.val, v)
+    }) |> exhaust()
+    return value.val
+}
+
+pub proc take(iter, n) {
+    var taken = { count = 0 }
+    return || {
+        case taken.count >= n -> return #end unit
+        taken.count = taken.count + 1
+        return iter()
+    }
+}
+
+pub proc skip(iter, n) {
+    iter |> take(n) |> exhaust()
+    return iter
+}
+
+pub proc for_each(iter, action) {
+    iter |> map(action) |> exhaust()
+}
+
+pub proc zip(iter_a, iter_b, combinator) {
+    return || {
+        case iter_a() {
+            #end -> return #end unit
+            #next a -> case iter_b() {
+                #end -> return #end unit
+                #next b -> return #next combinator(a, b)
+            }
+        }
+    }
+}
+
+pub proc chain(iter_a, iter_b) {
+    return || {
+        case iter_a() {
+            #next n -> return #next n
+        } else {}
+        return iter_b()
+    }
+}
+
+pub proc any(iter, condition) {
+    var found = { val = false }
+    exhaust(|| {
+        case iter() {
+            #end -> return #end unit
+            #next n -> case condition(n) -> {
+                found.val = true
+                return #end unit
+            }
+        }
+        return #next unit
+    })
+    return found.val
+}
+
+pub proc all(iter, condition) {
+    var found = { val = false }
+    exhaust(|| {
+        case iter() {
+            #end -> return #end unit
+            #next n -> case condition(n) -> {} else {
+                found.val = true
+                return #end unit
+            }
+        }
+        return #next unit
+    })
+    return !found.val
+}
+
+pub proc find(iter, condition) {
+    var found = { val = #none unit }
+    exhaust(|| {
+        case iter() {
+            #end -> return #end unit
+            #next n -> case condition(n) -> {
+                found.val = #some n
+                return #end unit
+            }
+        }
+        return #next unit
+    })
+    return found.val
+}
+
+pub proc count(iter, condition) {
+    var found = { count = 0 }
+    exhaust(|| {
+        case iter() {
+            #end -> return #end unit
+            #next n -> case condition(n) -> {
+                found.count = found.count + 1
+            }
+        }
+        return #next unit
+    })
+    return found.count
+}

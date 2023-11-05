@@ -1,6 +1,6 @@
 
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
-use crate::frontend::{modules::NamespacePath, types::PossibleTypes};
+use crate::frontend::{modules::NamespacePath, types::VarTypeIdx};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstNode {
@@ -33,12 +33,12 @@ impl HasSource for AstNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedAstNode {
     variant: AstNodeVariant<TypedAstNode>,
-    node_type: PossibleTypes,
+    node_type: VarTypeIdx,
     source: SourceRange
 }
 
 impl TypedAstNode {
-    pub fn new(variant: AstNodeVariant<TypedAstNode>, node_type: PossibleTypes, source: SourceRange) -> TypedAstNode {
+    pub fn new(variant: AstNodeVariant<TypedAstNode>, node_type: VarTypeIdx, source: SourceRange) -> TypedAstNode {
         TypedAstNode {
             variant,
             node_type,
@@ -47,8 +47,8 @@ impl TypedAstNode {
     }
 
     pub fn replace_source(&mut self, new: SourceRange) { self.source = new; }
-    pub fn get_types(&self) -> &PossibleTypes { &self.node_type }
-    pub fn get_types_mut(&mut self) -> &mut PossibleTypes { &mut self.node_type }
+    pub fn get_types(&self) -> VarTypeIdx { self.node_type }
+    pub fn get_types_mut(&mut self) -> &mut VarTypeIdx { &mut self.node_type }
 }
 
 impl HasAstNodeVariant<TypedAstNode> for TypedAstNode {
@@ -71,12 +71,12 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
-    Procedure { public: bool, name: StringIdx, arguments: Vec<StringIdx>, body: Vec<T> },
-    Function { arguments: Vec<StringIdx>, body: Vec<T> },
+    Procedure { public: bool, name: StringIdx, arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
+    Function { arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
     Variable { public: bool, mutable: bool, name: StringIdx, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
-    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, Option<PossibleTypes>)>, Vec<T>)>, else_body: Option<Vec<T>> },
+    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, SourceRange, Option<VarTypeIdx>)>, Vec<T>)>, else_body: Option<Vec<T>> },
     Assignment { variable: Box<T>, value: Box<T> },
     Return { value: Box<T> },
     Call { called: Box<T>, arguments: Vec<T> },
@@ -122,12 +122,12 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                 format!("Procedure\n  public = {}\n  name = '{}'\n  arguments = [{}]\n  body = \n    {}",
                     public,
                     strings.get(*name),
-                    arguments.iter().map(|s| strings.get(*s).to_string()).collect::<Vec<String>>().join(", "),
+                    arguments.iter().map(|s| strings.get(s.0).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
             AstNodeVariant::Function { arguments, body } =>
                 format!("Function\n  arguments = [{}]\n  body = \n    {}",
-                    arguments.iter().map(|s| strings.get(*s).to_string()).collect::<Vec<String>>().join(", "),
+                    arguments.iter().map(|s| strings.get(s.0).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
             AstNodeVariant::Variable { public, mutable, name, value } => 

@@ -108,6 +108,11 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
         output.push_str(" ");
         emit_variants_name(variants_idx, output);
         output.push_str(";\n");
+        output.push_str("typedef union ");
+        emit_variants_name(variants_idx, output);
+        output.push_str("Value ");
+        emit_variants_name(variants_idx, output);
+        output.push_str("Value;\n");
     }
     for closure_idx in 0..types.get_all_closures().len() {
         output.push_str("typedef struct ");
@@ -119,6 +124,38 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
 }
 
 fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut String) {
+    for variants_idx in 0..types.get_all_variants().len() {
+        let has_values = types.get_all_variants()[variants_idx].iter().filter(|(_, vt)|
+                if let IrType::Unit = vt.direct(types) { false } else { true }
+            ).next().is_some();
+        if has_values {
+            output.push_str("typedef union ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value {");
+            for (variant_name, variant_type) in &types.get_all_variants()[variants_idx] {
+                if let IrType::Unit = variant_type.direct(types) { continue; }
+                output.push_str("\n    ");
+                emit_type(*variant_type, types, output);
+                output.push_str(" ");
+                output.push_str(strings.get(*variant_name));
+                output.push_str(";");
+            }
+            output.push_str("\n} ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value;\n");
+        }
+        output.push_str("typedef struct ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(" {\n    unsigned long long int tag;");
+        if has_values {
+            output.push_str("\n    ");
+            emit_variants_name(variants_idx, output);
+            output.push_str("Value value;");
+        }
+        output.push_str("\n} ");
+        emit_variants_name(variants_idx, output);
+        output.push_str(";\n");
+    }
     for object_idx in 0..types.get_all_objects().len() {
         output.push_str("typedef struct ");
         emit_object_name(object_idx, output);
@@ -160,38 +197,6 @@ fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut Strin
         }
         output.push_str("\n} ");
         emit_concrete_object_name(concrete_object_idx, output);
-        output.push_str(";\n");
-    }
-    for variants_idx in 0..types.get_all_variants().len() {
-        let has_values = types.get_all_variants()[variants_idx].iter().filter(|(_, vt)|
-                if let IrType::Unit = vt.direct(types) { false } else { true }
-            ).next().is_some();
-        if has_values {
-            output.push_str("typedef union ");
-            emit_variants_name(variants_idx, output);
-            output.push_str("Value {");
-            for (variant_name, variant_type) in &types.get_all_variants()[variants_idx] {
-                if let IrType::Unit = variant_type.direct(types) { continue; }
-                output.push_str("\n    ");
-                emit_type(*variant_type, types, output);
-                output.push_str(" ");
-                output.push_str(strings.get(*variant_name));
-                output.push_str(";");
-            }
-            output.push_str("\n} ");
-            emit_variants_name(variants_idx, output);
-            output.push_str("Value;\n");
-        }
-        output.push_str("typedef struct ");
-        emit_variants_name(variants_idx, output);
-        output.push_str(" {\n    unsigned long long int tag;");
-        if has_values {
-            output.push_str("\n    ");
-            emit_variants_name(variants_idx, output);
-            output.push_str("Value value;");
-        }
-        output.push_str("\n} ");
-        emit_variants_name(variants_idx, output);
         output.push_str(";\n");
     }
     for closure_idx in 0..types.get_all_closures().len() {
@@ -657,6 +662,15 @@ fn emit_comparison_functions(
         emit_object_name(object_idx, output);
         output.push_str(" b);\n");
     }
+    for variant_idx in 0..types.get_all_variants().len() {
+        output.push_str("char ");
+        emit_variant_comparison_name(variant_idx, output);
+        output.push_str("(");
+        emit_variants_name(variant_idx, output);
+        output.push_str(" a, ");
+        emit_variants_name(variant_idx, output);
+        output.push_str(" b);\n");
+    }
     for array_idx in 0..types.get_all_arrays().len() {
         let element_type = types.get_all_arrays()[array_idx];
         output.push_str("char ");
@@ -862,6 +876,25 @@ fn emit_variable_poly(
     panic!("unexpected implicit conversion!");
 }
 
+fn emit_conditional_decr(
+    variable: IrVariable,
+    variable_type: IrType,
+    types: &IrTypeBank,
+    strings: &StringMap,
+    output: &mut String
+) {
+    let mut var_str = String::new();
+    emit_variable(variable, &mut var_str);
+    let mut decr_str = String::new();
+    emit_rc_decr(&var_str, variable_type, types, strings, &mut decr_str);
+    if decr_str.len() == 0 { return; }
+    output.push_str("if(");
+    output.push_str(&var_str);
+    output.push_str("assigned) {\n");
+    indent(&decr_str, output);
+    output.push_str("}\n");
+}
+
 fn emit_scope_decrements(
     free: &HashSet<usize>,
     variable_types: &Vec<IrType>,
@@ -870,9 +903,11 @@ fn emit_scope_decrements(
     output: &mut String
 ) {
     for variable_idx in free {
-        let mut variable = String::new();
-        emit_variable(IrVariable { index: *variable_idx, version: 0 }, &mut variable);
-        emit_rc_decr(&variable, variable_types[*variable_idx], types, strings, output);
+        emit_conditional_decr(
+            IrVariable { index: *variable_idx, version: 0 },
+            variable_types[*variable_idx],
+            types, strings, output
+        );
     }
 }
 
@@ -942,6 +977,14 @@ fn emit_procedure_impls(
                     output.push_str(" ");
                     emit_variable(IrVariable { index: variable_idx, version: 0 }, output);
                     output.push_str(";\n");
+                    output.push_str("    char ");
+                    emit_variable(IrVariable { index: variable_idx, version: 0 }, output);
+                    output.push_str("assigned = 0;\n");
+                }
+                if let IrType::Unit = return_type.direct(types) {} else {
+                    output.push_str("    ");
+                    emit_type(*return_type, types, output);
+                    output.push_str(" returned;\n");
                 }
                 let mut body_str = String::new();
                 let mut body_free = HashSet::new();
@@ -949,9 +992,12 @@ fn emit_procedure_impls(
                     body, variables, &mut body_free, closure_bodies, types, external, symbols, strings,
                     &mut body_str
                 );
-                body_str.push_str("\n");
+                body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
                 indent(&body_str, output);
+                if let IrType::Unit = return_type.direct(types) {} else {
+                    output.push_str("    return returned;\n");
+                }
                 output.push_str("}\n");
             }
             IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type } => {
@@ -1102,6 +1148,25 @@ fn emit_block(
     output.push_str("}");
 }
 
+fn mark_as_assigned(
+    variable: IrVariable,
+    variable_type: IrType,
+    types: &IrTypeBank,
+    output: &mut String
+) {
+    if let IrType::Unit = variable_type.direct(types) {} else {
+        emit_variable(variable, output);
+        output.push_str("assigned = 1;\n");
+    }
+}
+
+fn emit_closure_body_name(closure_idx: usize, variant: usize, output: &mut String) {
+    output.push_str("geraclosure");
+    output.push_str(&closure_idx.to_string());
+    output.push_str("body");
+    output.push_str(&variant.to_string())
+}
+
 fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<IrType>,
@@ -1144,6 +1209,7 @@ fn emit_instruction(
                 .direct(types) {
                 object_idx.0
             } else { panic!("should be an object"); };
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str("{\n    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
             emit_object_alloc_name(object_idx, output);
             output.push_str("), &");
@@ -1185,6 +1251,7 @@ fn emit_instruction(
                 output.push_str(";\n");
             }
             output.push_str("}\n");
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::LoadArray { element_values, into } => {
@@ -1192,6 +1259,7 @@ fn emit_instruction(
                 .direct(types) {
                 array_idx.0
             } else { panic!("should be an array"); };
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             let element_type = types.get_all_arrays()[array_idx];
             output.push_str("{\n    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
             emit_type(element_type, types, output);
@@ -1233,14 +1301,13 @@ fn emit_instruction(
                 indent(&element_value_incr_str, output);
             }
             output.push_str("}\n");
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::LoadVariant { name, v, into } => {
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = ");
             let variant_idx = if let IrType::Variants(v)
@@ -1259,38 +1326,131 @@ fn emit_instruction(
             }
             output.push_str(" };\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::LoadGlobalVariable { path, into } => {
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }
-            let mut into_str = String::new();
-            emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+            let path_matches = |s: &&IrSymbol| match s {
+                IrSymbol::Procedure { path: p, .. } |
+                IrSymbol::ExternalProcedure { path: p, .. } |
+                IrSymbol::BuiltInProcedure { path: p, .. } |
+                IrSymbol::Variable { path: p, .. } |
+                IrSymbol::ExternalVariable { path: p, .. } => *path == *p
+            };
+            match symbols.iter().find(path_matches).expect("should exist") {
+                IrSymbol::Procedure { .. } |
+                IrSymbol::BuiltInProcedure { .. } |
+                IrSymbol::ExternalProcedure { .. } => {
+                    let (closure_idx, (expected_parameter_types, expected_return_type)) =
+                        if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types) {
+                            (closure_idx.0, types.get_closure(closure_idx))
+                        } else { panic!("should be a closure"); };
+                    let mut found_variant = 0;
+                    for symbol in symbols.iter().filter(path_matches) {
+                        match symbol {
+                            IrSymbol::Procedure { variant, parameter_types, return_type, .. } |
+                            IrSymbol::BuiltInProcedure { variant, parameter_types, return_type, .. } => {
+                                let mut params_match = true;
+                                for param_idx in 0..parameter_types.len() {
+                                    if !parameter_types[param_idx].eq(
+                                        &expected_parameter_types[param_idx], types,
+                                        &mut Vec::new()
+                                    ) {
+                                        params_match = false;
+                                        break;
+                                    }
+                                }
+                                if !params_match { continue; }
+                                if !return_type.eq(expected_return_type, types, &mut Vec::new()) {
+                                    continue;
+                                }
+                                found_variant = *variant;
+                                break;
+                            }
+                            IrSymbol::ExternalProcedure { .. } => {
+                                break;
+                            }
+                            IrSymbol::Variable { .. } |
+                            IrSymbol::ExternalVariable { .. } => panic!("impossible")
+                        }
+                    }
+                    let mut closure_body = String::new();
+                    let closure_variant = closure_bodies.len();
+                    emit_type(*expected_return_type, types, &mut closure_body);
+                    closure_body.push_str(" ");
+                    emit_closure_body_name(closure_idx, closure_variant, &mut closure_body);
+                    closure_body.push_str("(GeraAllocation* allocation");
+                    for param_idx in 0..expected_parameter_types.len() {
+                        closure_body.push_str(", ");
+                        emit_type(expected_parameter_types[param_idx], types, &mut closure_body);
+                        closure_body.push_str(" param");
+                        closure_body.push_str(&param_idx.to_string());
+                    }
+                    closure_body.push_str(") {\n");
+                    closure_body.push_str("    (void)(allocation);\n");
+                    closure_body.push_str("    return ");
+                    if let Some(backing) = external.get(path) {
+                        closure_body.push_str(strings.get(*backing));
+                    } else {
+                        emit_procedure_name(path, found_variant, strings, &mut closure_body);
+                    }
+                    closure_body.push_str("(");
+                    for param_idx in 0..expected_parameter_types.len() {
+                        if param_idx > 0 { closure_body.push_str(", "); }
+                        closure_body.push_str("param");
+                        closure_body.push_str(&param_idx.to_string());
+                    }
+                    closure_body.push_str(");\n");
+                    closure_body.push_str("}\n");
+                    closure_bodies.push(closure_body);
+                    emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
+                    output.push_str("{\n");
+                    output.push_str("    GeraAllocation* allocation = gera___rc_alloc(1, &gera___free_nothing);\n");
+                    let mut into_str = String::new();
+                    emit_variable(*into, &mut into_str);
+                    output.push_str("    ");
+                    output.push_str(&into_str);
+                    output.push_str(".allocation = allocation;\n");
+                    output.push_str("    ");
+                    output.push_str(&into_str);
+                    output.push_str(".procedure = &");
+                    emit_closure_body_name(closure_idx, closure_variant, output);
+                    output.push_str(";\n");
+                    output.push_str("}\n");
+                    mark_as_assigned(*into, variable_types[into.index], types, output);
+                    free.insert(into.index);
+                }
+                IrSymbol::Variable { .. } |
+                IrSymbol::ExternalVariable { .. } => {
+                    let mut into_str = String::new();
+                    emit_variable(*into, &mut into_str);
+                    emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
+                    output.push_str(&into_str);
+                    output.push_str(" = ");
+                    if let Some(backing) = external.get(path) {
+                        output.push_str(strings.get(*backing));
+                    } else {
+                        emit_path(path, strings, output);
+                    }
+                    output.push_str(";\n");
+                    emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+                    mark_as_assigned(*into, variable_types[into.index], types, output);
+                    free.insert(into.index);
+                }
             }
-            output.push_str(&into_str);
-            output.push_str(" = ");
-            if let Some(backing) = external.get(path) {
-                output.push_str(strings.get(*backing));
-            } else {
-                emit_path(path, strings, output);
-            }
-            output.push_str(";\n");
-            emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
-            free.insert(into.index);
         }
         IrInstruction::LoadParameter { index, into } => {
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = param");
             output.push_str(&index.to_string());
             output.push_str(";\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::LoadClosure {
@@ -1305,12 +1465,6 @@ fn emit_instruction(
                 output.push_str("geraclosure");
                 output.push_str(&closure_idx.to_string());
                 output.push_str("free");
-                output.push_str(&variant.to_string())
-            }
-            fn emit_closure_body_name(closure_idx: usize, variant: usize, output: &mut String) {
-                output.push_str("geraclosure");
-                output.push_str(&closure_idx.to_string());
-                output.push_str("body");
                 output.push_str(&variant.to_string())
             }
             let closure_idx = if let IrType::Closure(closure_idx) = variable_types[into.index]
@@ -1377,6 +1531,14 @@ fn emit_instruction(
                 closure_body.push_str(" ");
                 emit_variable(IrVariable { index: variable_idx, version: 0 }, &mut closure_body);
                 closure_body.push_str(";\n");
+                closure_body.push_str("    char ");
+                emit_variable(IrVariable { index: variable_idx, version: 0 }, &mut closure_body);
+                closure_body.push_str("assigned = 0;\n");
+            }
+            if let IrType::Unit = return_type.direct(types) {} else {
+                closure_body.push_str("    ");
+                emit_type(*return_type, types, &mut closure_body);
+                closure_body.push_str(" returned;\n");
             }
             let mut body_str = String::new();
             let mut body_free = HashSet::new();
@@ -1384,12 +1546,16 @@ fn emit_instruction(
                 body, variables, &mut body_free, closure_bodies, types, external, symbols, strings,
                 &mut body_str
             );
-            body_str.push_str("\n");
+            body_str.push_str("\nret:\n");
             emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
             indent(&body_str, &mut closure_body);
+            if let IrType::Unit = return_type.direct(types) {} else {
+                closure_body.push_str("    return returned;\n");
+            }
             closure_body.push_str("}\n");
             closure_bodies.push(closure_body);
             // emit closure literal
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str("{\n");
             output.push_str("    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
             emit_closure_captures_name(closure_idx, variant, output);
@@ -1427,6 +1593,7 @@ fn emit_instruction(
                 indent(&member_value_incr_str, output);
             }
             output.push_str("}\n");
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
@@ -1437,9 +1604,7 @@ fn emit_instruction(
             } else { panic!("accessed should be an object"); };
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = ");
             let mut access_str = String::new();
@@ -1453,6 +1618,7 @@ fn emit_instruction(
             );
             output.push_str(";\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::SetObjectMember { value, accessed, member } => {
@@ -1484,9 +1650,7 @@ fn emit_instruction(
             } else { panic!("should be an array"); };
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = ");
             let mut access_str = String::new();
@@ -1502,6 +1666,7 @@ fn emit_instruction(
             );
             output.push_str(";\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::SetArrayElement { value, accessed, index } => {
@@ -1531,15 +1696,14 @@ fn emit_instruction(
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = captures->");
             output.push_str(strings.get(*name));
             output.push_str("");
             output.push_str(";\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::SetClosureCapture { value, name } => {
@@ -1559,14 +1723,13 @@ fn emit_instruction(
             if *from == *into { return; }
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
-            if into.version > 0 {
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            }
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
             output.push_str(" = ");
             emit_variable(*from, output);
             output.push_str(";\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::Add { a, b, into } => {
@@ -1825,6 +1988,7 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::CallClosure { called, arguments, into } => {
@@ -1867,19 +2031,20 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
+            mark_as_assigned(*into, variable_types[into.index], types, output);
             free.insert(into.index);
         }
         IrInstruction::Return { value } => {
             let mut returned = String::new();
             emit_variable(*value, &mut returned);
-            emit_rc_incr(&returned, variable_types[value.index], types, strings, output);
-            emit_scope_decrements(free, variable_types, types, strings, output);
             if let IrType::Unit = variable_types[value.index].direct(types) {
-                output.push_str("return;\n");
+                output.push_str("goto ret;\n");
             } else {
-                output.push_str("return ");
+                output.push_str("returned = ");
                 output.push_str(&returned);
                 output.push_str(";\n");
+                emit_rc_incr(&returned, variable_types[value.index], types, strings, output);
+                output.push_str("goto ret;\n");
             }
         }
         IrInstruction::Phi { .. } => {}

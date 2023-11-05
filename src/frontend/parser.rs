@@ -32,7 +32,8 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::NotEquals => Some(4),
         TokenType::DoubleAmpersand => Some(5),
         TokenType::DoublePipe => Some(6),
-        TokenType::FunctionPipe => Some(7),
+        TokenType::DoubleDot => Some(7),
+        TokenType::FunctionPipe => Some(8),
         _ => None
     }
 }
@@ -288,6 +289,30 @@ impl Parser {
                         continue;
                     }
                 }
+                TokenType::DoubleDot => {
+                    let start = enforce_previous!("the start of the range");
+                    let start_source = start.source();
+                    enforce_next!("the end of the range");
+                    let end = enforce_expression!(&[], get_operator_precedence(TokenType::DoubleDot), "the end of the range");
+                    let end_source = end.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Call {
+                            called: AstNode::new(
+                                AstNodeVariant::ModuleAccess {
+                                    path: NamespacePath::new(vec![
+                                        strings.insert("core"),
+                                        strings.insert("range")
+                                    ])
+                                },
+                                (&start_source..&end_source).into()
+                            ).into(),
+                            arguments: vec![start, end]
+                        },
+                        (&start_source..&end_source).into()
+                    ));
+                    if self.reached_end { return Ok(previous); }
+                    continue;
+                }
                 TokenType::ParenOpen => if previous.is_some() {
                     let called = enforce_previous!("the thing to call");
                     enforce_next!("a call parameter or a closing parenthesis (')')");
@@ -440,7 +465,7 @@ impl Parser {
                         loop {
                             enforce_current_type!(&[TokenType::Identifier, TokenType::Pipe], "a function parameter's name or a pipe ('|')");
                             match self.current.token_type {
-                                TokenType::Identifier => arguments.push(self.current.token_content),
+                                TokenType::Identifier => arguments.push((self.current.token_content, self.current.source)),
                                 TokenType::Pipe => break,
                                 _ => panic!("unreachable")
                             }
@@ -494,7 +519,7 @@ impl Parser {
                     loop {
                         enforce_current_type!(&[TokenType::Identifier, TokenType::ParenClose], "a procedure parameter's name or a closing parenthesis (')')");
                         match self.current.token_type {
-                            TokenType::Identifier => arguments.push(self.current.token_content),
+                            TokenType::Identifier => arguments.push((self.current.token_content, self.current.source)),
                             TokenType::ParenClose => break,
                             _ => panic!("unreachable")
                         }
@@ -612,8 +637,9 @@ impl Parser {
                                     enforce_current_type!(&[TokenType::Identifier, TokenType::Arrow], "the value's variable's name or an arrow ('->')");
                                     let branch_variable = if self.current.token_type == TokenType::Identifier {
                                         let branch_variable_name = self.current.token_content;
+                                        let branch_variable_source = self.current.source;
                                         enforce_next!("an arrow ('->')");
-                                        Some((branch_variable_name, None))
+                                        Some((branch_variable_name, branch_variable_source, None))
                                     } else { None };
                                     enforce_current_type!(&[TokenType::Arrow], "an arrow ('->')");
                                     enforce_next!("the body of the branch");

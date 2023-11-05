@@ -219,7 +219,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_node!(&mut **value);
                 for branch in branches {
                     let mut variables = variables.clone();
-                    if let Some((var_name, _)) = branch.1 {
+                    if let Some((var_name, _, _)) = branch.1 {
                         variables.insert(var_name);
                     }
                     visit_nodes!(&mut branch.2, &mut variables);

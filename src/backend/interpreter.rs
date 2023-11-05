@@ -3,7 +3,7 @@ use std::{rc::Rc, cell::RefCell, collections::HashMap};
 use crate::util::{
     strings::{StringIdx, StringMap},
     error::{Error, ErrorSection, ErrorType},
-    source::HasSource
+    source::{HasSource, SourceRange}
 };
 use crate::frontend::{
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
@@ -21,7 +21,7 @@ pub enum Value {
     String(Rc<str>),
     Array(Rc<RefCell<Box<[Value]>>>),
     Object(Rc<RefCell<HashMap<StringIdx, Value>>>),
-    Closure(Vec<StringIdx>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>, StringIdx, usize),
+    Closure(Vec<(StringIdx, SourceRange)>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>, StringIdx, usize),
     Variant(StringIdx, Box<Value>)
 }
 
@@ -229,7 +229,7 @@ impl Interpreter {
                 let mut parameter_values = HashMap::new();
                 for param_idx in 0..parameter_names.len() {
                     parameter_values.insert(
-                        parameter_names[param_idx],
+                        parameter_names[param_idx].0,
                         self.evaluate_node(&arguments[param_idx], symbols, strings)?
                     );
                 }

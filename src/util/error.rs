@@ -11,6 +11,7 @@ macro_rules! style_bold_cyan { () => { "\x1b[1;96m" } }
 macro_rules! style_gray { () => { "\x1b[0;90m" } }
 
 
+#[derive(Debug)]
 pub enum ErrorType {
 
     // cli errors
@@ -47,7 +48,7 @@ pub enum ErrorType {
     ModuleAlreadyDefined(String),
 
     // type errors
-    NoPossibleTypes(String, String),
+    NoPossibleTypes,
     VariableDoesNotExist(StringIdx),
     ImmutableAssignmant(StringIdx),
     RecursiveConstant(String),
@@ -166,10 +167,8 @@ impl ErrorType {
                 path
             ),
 
-            ErrorType::NoPossibleTypes(limited, to_only) => format!(
-                concat!("This expression has incompatible types:\n - ", style_red!(), "{}", style_dark_red!(), "\n - ", style_red!(), "{}", style_dark_red!()),
-                limited,
-                to_only
+            ErrorType::NoPossibleTypes => format!(
+                concat!("Incompatible types")
             ),
             ErrorType::VariableDoesNotExist(name) => format!(
                 concat!("There is no variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope"),
@@ -226,6 +225,7 @@ impl ErrorType {
 }
 
 
+#[derive(Debug)]
 pub enum ErrorSection {
     Error(ErrorType),
     Info(String),
@@ -318,6 +318,7 @@ impl ErrorSection {
 }
 
 
+#[derive(Debug)]
 pub struct Error {
     sections: Box<[ErrorSection]>
 }
