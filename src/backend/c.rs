@@ -937,6 +937,33 @@ return param0.length;
 ")
         }
     });
+    builtins.insert(path_from(&["core", "array"], strings), |param_types, return_type, types, strings| {
+        let array_idx = if let IrType::Array(array_idx) = return_type.direct(types) {
+            array_idx.0
+        } else { panic!("should be an array!"); };
+        let mut result = String::new();
+        result.push_str("GeraArray result;\n");
+        result.push_str("GeraAllocation* allocation = gera___rc_alloc(sizeof(");
+        emit_type(param_types[0], types, &mut result);
+        result.push_str(") * param1, &");
+        emit_array_free_handler_name(array_idx, &mut result);
+        result.push_str(");\n");
+        result.push_str("result.allocation = allocation;\n");
+        result.push_str("result.data = allocation->data;\n");
+        result.push_str("result.length = param1;\n");
+        emit_type(param_types[0], types, &mut result);
+        result.push_str("* elements = (");
+        emit_type(param_types[0], types, &mut result);
+        result.push_str("*) allocation->data;\n");
+        result.push_str("for(size_t i = 0; i < param1; i += 1) {\n");
+        result.push_str("    elements[i] = param0;\n");
+        let mut value_rc_incr = String::new();
+        emit_rc_incr("param0", param_types[0], types, strings, &mut value_rc_incr);
+        indent(&value_rc_incr, &mut result);
+        result.push_str("}\n");
+        result.push_str("return result;\n");
+        result
+    });
     builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, strings| {
         format!("
 while(((param0.procedure)(param0.allocation)).tag == {}) {{}}

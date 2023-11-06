@@ -1503,7 +1503,6 @@ pub fn display_types(
         }
         display_group_types(type_scope.get_group_types(types), strings, type_scope, letters)
     }
-    println!("starting display");
     let mut letters = HashMap::new();
     collect_letters(&mut letters, types, type_scope);
     let mut result = display_types_internal(strings, type_scope, types, &letters);
@@ -1520,7 +1519,6 @@ pub fn display_types(
         result.push_str(&letter_types);
         result.push_str(")");
     }
-    println!("displaying done");
     format!(
         concat!(crate::style_cyan!(), "{}", crate::style_reset!()),
         result

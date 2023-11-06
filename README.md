@@ -16,7 +16,7 @@
 - [x] Headers for external procedures
 - [x] Lowering of AST into SSA IR
 - [ ] Code generation from IR
-    - [ ] C
+    - [x] C
     - [ ] WebAssembly
     - [ ] JVM byte code?
 - [ ] Standard library

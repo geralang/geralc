@@ -105,6 +105,21 @@ fn load_foreign_builtins(
             strings, modules, typed_symbols
         );
     }
+    {
+        let array_element_types = type_scope.register_variable();
+        register_foreign_builtin(
+            path_from(&["core", "array"], strings),
+            &["value", "size"],
+            vec![
+                array_element_types,
+                type_scope.register_with_types(Some(vec![Type::Integer]))
+            ],
+            type_scope.register_with_types(Some(vec![
+                Type::Array(array_element_types)
+            ])),
+            strings, modules, typed_symbols
+        );
+    }
     { 
         let end = type_scope.register_variable();
         let next = type_scope.register_variable();
