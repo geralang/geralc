@@ -48,11 +48,9 @@ pub fn generate_c(
 }
 
 fn emit_core_library(output: &mut String) {
-    let gera_header: Box<[u8]> = include_bytes!("./gen_libs/gera.h").clone().into();
-    output.push_str(&String::from_utf8(gera_header.into()).expect("should be valid"));
+    output.push_str(include_str!("./gen_libs/gera.h"));
     output.push_str("\n");
-    let core_library: Box<[u8]> = include_bytes!("./gen_libs/core.c").clone().into();
-    output.push_str(&String::from_utf8(core_library.into()).expect("should be valid"));
+    output.push_str(include_str!("./gen_libs/core.c"));
     output.push_str("\n");
 }
 

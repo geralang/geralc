@@ -65,7 +65,12 @@ impl Lexer {
                     self.next();
                     return Some(Ok(if self.has() && self.current() == '.' {
                         self.next();
-                        self.make_token("..", TokenType::DoubleDot, string_map)
+                        if self.has() && self.current() == '=' {
+                            self.next();
+                            self.make_token("..=", TokenType::DoubleDotEquals, string_map)
+                        } else {
+                            self.make_token("..", TokenType::DoubleDot, string_map)
+                        }
                     } else {
                         self.make_token(".", TokenType::Dot, string_map)
                     }))

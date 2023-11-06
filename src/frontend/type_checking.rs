@@ -65,7 +65,7 @@ impl TypeAssertion {
             from: variable_source,
             reason: format!(
                 "This variable is of type {}",
-                display_types(strings, type_scope, variable_types, &mut Vec::new())
+                display_types(strings, type_scope, variable_types)
             )
         }
     }
@@ -76,7 +76,7 @@ impl TypeAssertion {
             reason: format!(
                 "This {} literal is of type {}",
                 literal_kind,
-                display_types(strings, type_scope, literal_types, &mut Vec::new())
+                display_types(strings, type_scope, literal_types)
             )
         }
     }
@@ -86,7 +86,7 @@ impl TypeAssertion {
             from: source,
             reason: format!(
                 "Used as a condition here, meaning it must be of type {}",
-                display_types(strings, type_scope, condition_type, &mut Vec::new())
+                display_types(strings, type_scope, condition_type)
             )
         }
     }
@@ -96,7 +96,7 @@ impl TypeAssertion {
             from: value_source,
             reason: format!(
                 "The assigned value is of type {}",
-                display_types(strings, type_scope, value_types, &mut Vec::new())
+                display_types(strings, type_scope, value_types)
             )
         }
     }
@@ -106,7 +106,7 @@ impl TypeAssertion {
             from: procedure_source,
             reason: format!(
                 "Previous return values were of type {}",
-                display_types(strings, type_scope, returned_types, &mut Vec::new())
+                display_types(strings, type_scope, returned_types)
             )
         }
     }
@@ -117,7 +117,7 @@ impl TypeAssertion {
             reason: format!(
                 "This call expects the parameter '{}' to be of type {}",
                 strings.get(parameter_name),
-                display_types(strings, type_scope, parameter_types, &mut Vec::new())
+                display_types(strings, type_scope, parameter_types)
             )
         }
     }
@@ -127,7 +127,7 @@ impl TypeAssertion {
             from: call_source,
             reason: format!(
                 "This call returns a value of type {}",
-                display_types(strings, type_scope, return_types, &mut Vec::new())
+                display_types(strings, type_scope, return_types)
             )
         }
     }
@@ -137,7 +137,7 @@ impl TypeAssertion {
             from: call_source,
             reason: format!(
                 "This call expects the called closure to be of type {}",
-                display_types(strings, type_scope, called_types, &mut Vec::new())
+                display_types(strings, type_scope, called_types)
             )
         }
     }
@@ -147,7 +147,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This arithmetic operation results in a value of type {}",
-                display_types(strings, type_scope, result_types, &mut Vec::new())
+                display_types(strings, type_scope, result_types)
             )
         }
     }
@@ -157,7 +157,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This arithmetic operation requires a value of type {}",
-                display_types(strings, type_scope, argument_types, &mut Vec::new())
+                display_types(strings, type_scope, argument_types)
             )
         }
     }
@@ -167,7 +167,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This comparison results in a value of type {}",
-                display_types(strings, type_scope, result_types, &mut Vec::new())
+                display_types(strings, type_scope, result_types)
             )
         }
     }
@@ -177,7 +177,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This comparison requires a value of type {}",
-                display_types(strings, type_scope, argument_types, &mut Vec::new())
+                display_types(strings, type_scope, argument_types)
             )
         }
     }
@@ -187,7 +187,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This logical operation results in a value of type {}",
-                display_types(strings, type_scope, result_types, &mut Vec::new())
+                display_types(strings, type_scope, result_types)
             )
         }
     }
@@ -197,7 +197,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This logical operation requires a value of type {}",
-                display_types(strings, type_scope, argument_types, &mut Vec::new())
+                display_types(strings, type_scope, argument_types)
             )
         }
     }
@@ -207,7 +207,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This constant has type {}",
-                display_types(strings, type_scope, constant_types, &mut Vec::new())
+                display_types(strings, type_scope, constant_types)
             )
         }
     }
@@ -217,7 +217,7 @@ impl TypeAssertion {
             from: array_source,
             reason: format!(
                 "Previous array values were of type {}",
-                display_types(strings, type_scope, element_types, &mut Vec::new())
+                display_types(strings, type_scope, element_types)
             )
         }
     }
@@ -227,7 +227,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This access requires the accessed object to be of type {}",
-                display_types(strings, type_scope, accessed_types, &mut Vec::new())
+                display_types(strings, type_scope, accessed_types)
             )
         }
     }
@@ -237,7 +237,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This access results in a value of type {}",
-                display_types(strings, type_scope, result_types, &mut Vec::new())
+                display_types(strings, type_scope, result_types)
             )
         }
     }
@@ -254,7 +254,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "Used as an array index here, meaning it must be of type {}",
-                display_types(strings, type_scope, index_types, &mut Vec::new())
+                display_types(strings, type_scope, index_types)
             )
         }
     }
@@ -264,7 +264,7 @@ impl TypeAssertion {
             from: branch_source,
             reason: format!(
                 "Branches require the matched value to be of type {}",
-                display_types(strings, type_scope, variant_types, &mut Vec::new())
+                display_types(strings, type_scope, variant_types)
             )
         }
     }
@@ -274,7 +274,7 @@ impl TypeAssertion {
             from: branch_source,
             reason: format!(
                 "This matched value is of type {}",
-                display_types(strings, type_scope, matched_types, &mut Vec::new())
+                display_types(strings, type_scope, matched_types)
             )
         }
     }
@@ -771,22 +771,19 @@ fn type_check_node(
                             }, returns, node_source), (false, false)));
                         } else {
                             let mut duplications = TypeGroupDuplications::new();
-                            for parameter_group in &parameter_types {
-                                duplications.duplicate(*parameter_group, type_scope);
-                            }
-                            duplications.duplicate(returns, type_scope);
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
+                                let param_types = duplications.duplicate(parameter_types[argument_idx], type_scope);
                                 typed_arguments.push(type_check_node!(
                                     arguments.remove(0),
                                     Some(TypeAssertion::call_parameter(
                                         node_source, parameter_names[argument_idx],
-                                        duplications.apply(parameter_types[argument_idx]),
+                                        param_types,
                                         type_scope, strings
                                     ))
                                 ).0);
                             }
-                            let returned_types = duplications.apply(returns);
+                            let returned_types = duplications.duplicate(returns, type_scope);
                             if let Some(limited_to) = limited_to {
                                 assert_types(
                                     TypeAssertion::call_return_value(node_source, returned_types, type_scope, strings),
@@ -828,7 +825,7 @@ fn type_check_node(
                 let possible_types = possible_types.clone();
                 for possible_type in possible_types {
                     if let Type::Closure(_, return_types, _) = possible_type {
-                        type_scope.merge(result_type, return_types, Vec::new())
+                        type_scope.limit_possible_types(result_type, return_types)
                             .expect("should not fail");
                     } else {
                         panic!("We called something that's not a closure! Shouln't the call to 'type_check_node!' have already enforced this?");
@@ -886,10 +883,9 @@ fn type_check_node(
                 let possible_types = possible_types.clone();
                 for possible_type in possible_types {
                     if let Type::Object(member_types, _) = possible_type {
-                        type_scope.merge(
+                        type_scope.limit_possible_types(
                             result_types,
-                            *member_types.get(&member).expect("We accessed an invalid member! Shouln't the first call to 'type_check_node!' have already enforced this?"),
-                            Vec::new()
+                            *member_types.get(&member).expect("We accessed an invalid member! Shouln't the first call to 'type_check_node!' have already enforced this?")
                         ).expect("should be valid");
                     } else {
                         panic!("We accessed a member of something that's not an object! Shouln't the first call to 'type_check_node!' have already enforced this?");
@@ -918,7 +914,7 @@ fn type_check_node(
                 let possible_types = possible_types.clone();
                 for possible_type in possible_types {
                     if let Type::Array(element_type) = possible_type {
-                        type_scope.merge(result_types, element_type, Vec::new())
+                        type_scope.limit_possible_types(result_types, element_type)
                             .expect("should be valid");
                     } else {
                         panic!("We indexed into something that's not an array! Shouln't the first call to 'type_check_node!' have already enforced this?");
@@ -1302,13 +1298,11 @@ fn type_check_node(
                 }
                 Ok(Symbol::Procedure { parameter_names: _, parameter_types, returns, body: _ }) => {
                     let mut duplications = TypeGroupDuplications::new();
-                    for parameter_type in parameter_types {
-                        duplications.duplicate(*parameter_type, type_scope);
-                    }
-                    duplications.duplicate(*returns, type_scope);
+                    let closure_param_types = parameter_types.iter().map(|t| duplications.duplicate(*t, type_scope)).collect();
+                    let closure_return_type = duplications.duplicate(*returns, type_scope);
                     let closure_type = type_scope.register_with_types(Some(vec![Type::Closure(
-                        parameter_types.iter().map(|t| duplications.apply(*t)).collect(),
-                        duplications.apply(*returns),
+                        closure_param_types,
+                        closure_return_type,
                         None
                     )]));
                     if let Some(limited_to) = limited_to {
@@ -1351,14 +1345,101 @@ fn type_check_node(
 pub fn display_types(
     strings: &StringMap,
     type_scope: &TypeScope,
-    types: VarTypeIdx,
-    encountered: &mut Vec<(usize, bool)>
+    types: VarTypeIdx
 ) -> String {
+    fn choose_letter(i: usize) -> String {
+        const LETTERS: [char; 26] = [
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q',
+            'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
+        ];
+        let mut i = i;
+        let mut r = String::new();
+        loop {
+            let c = i % LETTERS.len();
+            r.push(LETTERS[c]);
+            i = i / LETTERS.len();
+            if i == 0 { break; }
+        }
+        r
+    }
+    fn collect_letters(
+        letters: &mut HashMap<usize, (String, bool)>,
+        types: VarTypeIdx,
+        type_scope: &TypeScope
+    ) {
+        let group_internal_idx = type_scope.get_group_internal_index(types);
+        if let Some((_, used_elsewhere)) = letters.get_mut(&group_internal_idx) {
+            if *used_elsewhere {
+                return;
+            }
+            *used_elsewhere = true;
+        } else {
+            let letter = choose_letter(letters.len());
+            letters.insert(group_internal_idx, (letter, false));
+        }
+        if let Some(possible_types) = type_scope.get_group_types(types) {
+            for possible_type in possible_types {
+                collect_type_letters(letters, possible_type, type_scope)
+            }
+        }
+    }
+    fn collect_type_letters(
+        letters: &mut HashMap<usize, (String, bool)>,
+        collected_type: &Type,
+        type_scope: &TypeScope
+    ) {
+        match collected_type {
+            Type::Unit |
+            Type::Boolean |
+            Type::Integer |
+            Type::Float |
+            Type::String => {}
+            Type::Array(element_types) => collect_letters(letters, *element_types, type_scope),
+            Type::Object(member_types, _) => {
+                for (_, member_types) in member_types {
+                    collect_letters(letters, *member_types, type_scope);
+                }
+            }
+            Type::ConcreteObject(member_types) => {
+                for (_, member_types) in member_types {
+                    collect_type_letters(letters, member_types, type_scope);
+                }
+            }
+            Type::Closure(parameter_types, return_types, _) => {
+                for parameter_types in parameter_types {
+                    collect_letters(letters, *parameter_types, type_scope);
+                }
+                collect_letters(letters, *return_types, type_scope);
+            }
+            Type::Variants(variant_types, _) => {
+                for (_, variant_types) in variant_types {
+                    collect_letters(letters, *variant_types, type_scope);
+                }
+            }
+        }
+    }
+    fn display_group_types(
+        group_types: &Option<Vec<Type>>,
+        strings: &StringMap,
+        type_scope: &TypeScope,
+        letters: &HashMap<usize, (String, bool)>
+    ) -> String {
+        if let Some(possible_types) = group_types {
+            let mut result = String::new();
+            for i in 0..possible_types.len() {
+                if i > 0 { result.push_str(" | "); }
+                result.push_str(&display_type(strings, type_scope, &possible_types[i], letters));
+            }
+            result
+        } else {
+            String::from("any")
+        }
+    }
     fn display_type(
         strings: &StringMap,
         type_scope: &TypeScope,
         displayed_type: &Type,
-        encountered: &mut Vec<(usize, bool)>
+        letters: &HashMap<usize, (String, bool)>
     ) -> String {
         match displayed_type {
             Type::Unit => String::from("unit"),
@@ -1368,14 +1449,14 @@ pub fn display_types(
             Type::String => String::from("string"),
             Type::Array(element_type) => format!(
                 "[{}]",
-                display_types(strings, type_scope, *element_type, encountered)
+                display_types_internal(strings, type_scope, *element_type, letters)
             ),
             Type::Object(member_types, fixed) => format!(
                 "{{ {}{} }}",
                 member_types.iter().map(|(member_name, member_type)| { format!(
                     "{} = {}",
                     strings.get(*member_name),
-                    display_types(strings, type_scope, *member_type, encountered)
+                    display_types_internal(strings, type_scope, *member_type, letters)
                 ) }).collect::<Vec<String>>().join(", "),
                 if *fixed { "" } else { ", ..." }
             ),
@@ -1384,34 +1465,17 @@ pub fn display_types(
                 member_types.iter().map(|(member_name, member_type)| { format!(
                     "{} = {}",
                     strings.get(*member_name),
-                    display_type(strings, type_scope, member_type, encountered)
+                    display_type(strings, type_scope, member_type, letters)
                 ) }).collect::<Vec<String>>().join(", ")
             ),
             Type::Closure(arg_groups, returned_group, _) => {
                 let mut result: String = String::from("(");
-                let mut used_internal_group_indices = HashSet::new();
                 for a in 0..arg_groups.len() {
                     if a > 0 { result.push_str(", "); }
-                    result.push_str("%");
-                    let internal_idx = type_scope.get_group_internal_index(arg_groups[a]);
-                    used_internal_group_indices.insert(internal_idx);
-                    result.push_str(&internal_idx.to_string());
+                    result.push_str(&display_types_internal(strings, type_scope, arg_groups[a], letters));
                 }
                 result.push_str(") -> ");
-                let returned_internal_idx = type_scope.get_group_internal_index(*returned_group);
-                used_internal_group_indices.insert(returned_internal_idx);
-                result.push_str("%");
-                result.push_str(&returned_internal_idx.to_string());
-                result.push_str(" (");
-                let used_internal_group_indices = used_internal_group_indices.into_iter().collect::<Vec<usize>>();
-                for i in 0..used_internal_group_indices.len() {
-                    if i > 0 { result.push_str(", "); }
-                    result.push_str("%");
-                    result.push_str(&used_internal_group_indices[i].to_string());
-                    result.push_str(" = ");
-                    result.push_str(&display_group_types(type_scope.get_group_types_from_internal_index(used_internal_group_indices[i]), strings, type_scope, encountered));
-                }
-                result.push_str(")");
+                result.push_str(&display_types_internal(strings, type_scope, *returned_group, letters));
                 result
             },
             Type::Variants(variant_types, fixed) => format!(
@@ -1419,44 +1483,46 @@ pub fn display_types(
                 variant_types.iter().map(|(variant_name, variant_type)| { format!(
                     "#{} {}",
                     strings.get(*variant_name),
-                    display_types(strings, type_scope, *variant_type, encountered)
+                    display_types_internal(strings, type_scope, *variant_type, letters)
                 ) }).collect::<Vec<String>>().join(" | "),
                 if *fixed { "" } else { " | ..." }
             ),
         }
     }
-    fn display_group_types(
-        group_types: &Option<Vec<Type>>,
+    fn display_types_internal(
         strings: &StringMap,
         type_scope: &TypeScope,
-        encountered: &mut Vec<(usize, bool)>
+        types: VarTypeIdx,
+        letters: &HashMap<usize, (String, bool)>
     ) -> String {
-        if let Some(possible_types) = group_types {
-            let mut result = String::new();
-            for i in 0..possible_types.len() {
-                if i > 0 { result.push_str(" | "); }
-                result.push_str(&display_type(strings, type_scope, &possible_types[i], encountered));
+        let group_internal_idx = type_scope.get_group_internal_index(types);
+        if let Some((letter, used_elsewhere)) = letters.get(&group_internal_idx) {
+            if *used_elsewhere {
+                return letter.clone();
             }
-            result
-        } else {
-            String::from("any")
         }
+        display_group_types(type_scope.get_group_types(types), strings, type_scope, letters)
     }
-    let group_internal_idx = type_scope.get_group_internal_index(types);
-    for encounter_idx in 0..encountered.len() {
-        let encounter = &mut encountered[encounter_idx];
-        if encounter.0 != group_internal_idx { continue; }
-        encounter.1 = true;
-        return format!(">{}<", encounter_idx);
+    println!("starting display");
+    let mut letters = HashMap::new();
+    collect_letters(&mut letters, types, type_scope);
+    let mut result = display_types_internal(strings, type_scope, types, &letters);
+    let mut letter_types = String::new();
+    for (internal_group_idx, (letter, used)) in &letters {
+        if !used { continue; }
+        if letter_types.len() > 0 { letter_types.push_str(", "); }
+        letter_types.push_str(letter);
+        letter_types.push_str(" = ");
+        letter_types.push_str(&display_group_types(type_scope.get_group_types_from_internal_index(*internal_group_idx), strings, type_scope, &letters));
+    }   
+    if letter_types.len() > 0 {
+        result.push_str(" (");
+        result.push_str(&letter_types);
+        result.push_str(")");
     }
-    let encountered_idx = encountered.len();
-    encountered.push((group_internal_idx, false));
-    let mut result = display_group_types(type_scope.get_group_types(types), strings, type_scope, encountered);
-    if encountered[encountered_idx].1 {
-        result.push_str(" = >");
-        result.push_str(&encountered_idx.to_string());
-        result.push_str("<");
-    }
-    encountered[encountered_idx].0 = usize::MAX; // dirty hack >:)
-    result
+    println!("displaying done");
+    format!(
+        concat!(crate::style_cyan!(), "{}", crate::style_reset!()),
+        result
+    )
 }

@@ -2,12 +2,21 @@
 use crate::util::{source::SourceRange, strings::{StringMap, StringIdx}};
 
 
+#[macro_export]
 macro_rules! style_reset { () => { "\x1b[0m" } }
+#[macro_export]
 macro_rules! style_dark_red { () => { "\x1b[0;31m" } }
+#[macro_export]
 macro_rules! style_bold_dark_red { () => { "\x1b[1;31m" } }
+#[macro_export]
 macro_rules! style_red { () => { "\x1b[0;91m" } }
+#[macro_export]
 macro_rules! style_bold_green { () => { "\x1b[1;92m" } }
+#[macro_export]
 macro_rules! style_bold_cyan { () => { "\x1b[1;96m" } }
+#[macro_export]
+macro_rules! style_cyan { () => { "\x1b[96m" } }
+#[macro_export]
 macro_rules! style_gray { () => { "\x1b[0;90m" } }
 
 
@@ -34,6 +43,7 @@ pub enum ErrorType {
     UnexpectedToken(&'static str, StringIdx),
     TotallyUnexpectedToken(StringIdx),
     MayNotBePublic,
+    NotACall,
 
     // grammar checking errors
     InvalidContext(&'static str, &'static str, &'static str),
@@ -130,6 +140,9 @@ impl ErrorType {
             ),
             ErrorType::MayNotBePublic => format!(
                 "This syntax may not be marked as public"
+            ),
+            ErrorType::NotACall => format!(
+                "Expected a call, but got something else instead"
             ),
 
             ErrorType::InvalidContext(thing, expected, got) => format!(

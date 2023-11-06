@@ -199,7 +199,6 @@ impl Parser {
                 }
                 TokenType::FunctionPipe => {
                     let piped = enforce_previous!("the thing to pipe");
-                    let piped_source = piped.source();
                     enforce_next!("the call to pipe into");
                     let into = enforce_expression!(&[], get_operator_precedence(TokenType::FunctionPipe), "the call to pipe into");
                     let into_source = into.source();
@@ -207,13 +206,13 @@ impl Parser {
                         arguments.insert(0, piped);
                         previous = Some(AstNode::new(
                             AstNodeVariant::Call { called, arguments },
-                            (&piped_source..&into_source).into()
+                            into_source
                         ));
                     } else {
-                        previous = Some(AstNode::new(
-                            AstNodeVariant::Call { called: Box::new(into), arguments: vec![piped] },
-                            (&piped_source..&into_source).into()
-                        ));
+                        return Err(Error::new([
+                            ErrorSection::Error(ErrorType::NotACall),
+                            ErrorSection::Code(into_source)
+                        ].into()))
                     }
                     if self.reached_end { return Ok(previous); }
                     continue;
@@ -302,6 +301,30 @@ impl Parser {
                                     path: NamespacePath::new(vec![
                                         strings.insert("core"),
                                         strings.insert("range")
+                                    ])
+                                },
+                                (&start_source..&end_source).into()
+                            ).into(),
+                            arguments: vec![start, end]
+                        },
+                        (&start_source..&end_source).into()
+                    ));
+                    if self.reached_end { return Ok(previous); }
+                    continue;
+                }
+                TokenType::DoubleDotEquals => {
+                    let start = enforce_previous!("the start of the range");
+                    let start_source = start.source();
+                    enforce_next!("the end of the range");
+                    let end = enforce_expression!(&[], get_operator_precedence(TokenType::DoubleDot), "the end of the range");
+                    let end_source = end.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Call {
+                            called: AstNode::new(
+                                AstNodeVariant::ModuleAccess {
+                                    path: NamespacePath::new(vec![
+                                        strings.insert("core"),
+                                        strings.insert("range_incl")
                                     ])
                                 },
                                 (&start_source..&end_source).into()

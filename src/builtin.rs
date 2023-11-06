@@ -139,19 +139,7 @@ fn load_native_builtins(
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &mut HashMap<NamespacePath, StringIdx>
 ) {
-    let src = strings.insert("
-mod core
-    
-pub proc range(start, end) {
-    mut var i = start
-    return || {
-        case i >= end -> return #end unit
-        var c = i
-        i = i + 1
-        return #next c
-    }
-}
-    ");
+    let src = strings.insert(include_str!("core.gera"));
     let file = strings.insert("<builtin>/core.gera");
     if let Err(errors) = process_file(file, src, strings, modules, type_scope, typed_symbols, external_backings) {
         for error in errors {

@@ -73,7 +73,18 @@ impl TypeScope {
         self.limit_possible_types_internal(a, b, Vec::new())
     }
 
-    pub fn merge(&mut self, a: VarTypeIdx, b: VarTypeIdx, encountered: Vec<usize>) -> Option<VarTypeIdx> {
+    pub fn limit_possible_types_internal(
+        &mut self,
+        a: VarTypeIdx,
+        b: VarTypeIdx,
+        mut encountered: Vec<usize>,
+    ) -> Option<VarTypeIdx> {
+        if encountered.contains(&self.get_group_internal_index(a))
+            && encountered.contains(&self.get_group_internal_index(b)) {
+            return Some(a)
+        }
+        encountered.push(self.get_group_internal_index(a));
+        encountered.push(self.get_group_internal_index(b));
         let limited_types = if let Some(a_types) = self.get_group_types(a) {
             let a_types = a_types.clone();
             if let Some(b_types) = self.get_group_types(b) {
@@ -113,21 +124,6 @@ impl TypeScope {
             }
         }
         Some(a)
-    }
-
-    pub fn limit_possible_types_internal(
-        &mut self,
-        a: VarTypeIdx,
-        b: VarTypeIdx,
-        mut encountered: Vec<usize>,
-    ) -> Option<VarTypeIdx> {
-        if encountered.contains(&self.get_group_internal_index(a))
-            && encountered.contains(&self.get_group_internal_index(b)) {
-            return Some(a)
-        }
-        encountered.push(self.get_group_internal_index(a));
-        encountered.push(self.get_group_internal_index(b));
-        self.merge(a, b, encountered)
     }
 
     fn types_limited(
@@ -290,11 +286,13 @@ impl TypeGroupDuplications {
         }
     }
 
-    pub fn duplicate(&mut self, var: VarTypeIdx, type_scope: &mut TypeScope) {
+    pub fn duplicate(&mut self, var: VarTypeIdx, type_scope: &mut TypeScope) -> VarTypeIdx {
         let group_idx = type_scope.get_group_internal_index(var);
-        if self.mapped.contains(&group_idx) { return; }
+        if self.mapped.contains(&group_idx) { return self.apply(var); }
         let new_var_idx = type_scope.register_variable();
-        *type_scope.get_group_types_mut(new_var_idx) = type_scope.get_group_types(var).clone();
+        let original_group_types = type_scope.get_group_types(var).clone();
+        let new_group_types = original_group_types.map(|possible_types| possible_types.iter().map(|t| self.duplicate_type(t, type_scope)).collect());
+        *type_scope.get_group_types_mut(new_var_idx) = new_group_types;
         for var_idx in 0..type_scope.var_type_groups.len() {
             let var_idx = VarTypeIdx(var_idx);
             if type_scope.get_group_internal_index(var_idx) == group_idx {
@@ -302,6 +300,46 @@ impl TypeGroupDuplications {
             }
         }
         self.mapped.insert(group_idx);
+        return new_var_idx;
+    }
+
+    fn duplicate_type(&mut self, duplicated_type: &Type, type_scope: &mut TypeScope) -> Type {
+        match duplicated_type {
+            Type::Unit |
+            Type::Boolean |
+            Type::Integer |
+            Type::Float |
+            Type::String => duplicated_type.clone(),
+            Type::Array(element_types) => Type::Array(self.duplicate(*element_types, type_scope)),
+            Type::Object(member_types, fixed) => Type::Object(
+                member_types.iter().map(|(member_name, member_types)| (
+                    *member_name,
+                    self.duplicate(*member_types, type_scope)
+                )).collect(),
+                *fixed
+            ),
+            Type::ConcreteObject(member_types) => Type::ConcreteObject(
+                member_types.iter().map(|(member_name, member_types)| (
+                    *member_name,
+                    self.duplicate_type(member_types, type_scope)
+                )).collect()
+            ),
+            Type::Closure(parameter_types, return_types, captured) => Type::Closure(
+                parameter_types.iter().map(|p| self.duplicate(*p, type_scope)).collect(),
+                self.duplicate(*return_types, type_scope),
+                captured.as_ref().map(|captured| captured.iter().map(|(capture_name, capture_types)| (
+                    *capture_name,
+                    self.duplicate(*capture_types, type_scope)
+                )).collect::<HashMap<StringIdx, VarTypeIdx>>())
+            ),
+            Type::Variants(variant_types, fixed) => Type::Variants(
+                variant_types.iter().map(|(variant_name, variant_types)| (
+                    *variant_name,
+                    self.duplicate(*variant_types, type_scope)
+                )).collect(),
+                *fixed
+            )
+        }
     }
 
     pub fn apply(&self, group: VarTypeIdx) -> VarTypeIdx {

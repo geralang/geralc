@@ -11,6 +11,7 @@ pub enum TokenType {
     Equals,
     Dot,
     DoubleDot,
+    DoubleDotEquals,
     Plus,
     Minus,
     Asterisk,
