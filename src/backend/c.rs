@@ -871,6 +871,9 @@ fn emit_variable_poly(
             return;
         }
     }
+    println!("types = {:?}", types);
+    println!("from = {:?}", from_type);
+    println!("to = {:?}", to_type);
     panic!("unexpected implicit conversion!");
 }
 

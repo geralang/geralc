@@ -113,14 +113,14 @@ impl TypeScope {
         let a_group_idx = self.get_group_internal_index(a);
         let b_group_idx = self.get_group_internal_index(b);
         if a_group_idx != b_group_idx {
-            self.type_groups.remove(b_group_idx);
+            //self.type_groups.remove(b_group_idx);
             for var_idx in &mut self.var_type_groups {
                 if *var_idx == b_group_idx {
                     *var_idx = a_group_idx;
                 }
-                if *var_idx > b_group_idx {
-                    *var_idx -= 1;
-                }
+                //if *var_idx > b_group_idx {
+                //    *var_idx -= 1;
+                //}
             }
         }
         Some(a)

@@ -1,0 +1,42 @@
+
+mod std::vec
+
+use std::iter
+
+pub proc from_values(values) {
+    return {
+        content = values,
+        alloc_size = length(values),
+        size = length(values)
+    }
+}
+
+proc grow(vector, new_alloc_size) {
+    var new_content = array(vector.content[0], new_alloc_size)
+    0..length(vector.content)
+        |> iter::map(|i| {
+            new_content[i] = vector.content[i]
+        })
+        |> exhaust()
+    vector.content = new_content
+    vector.alloc_size = new_alloc_size
+}
+
+pub proc push(vector, item) {
+    var new_size = vector.size + 1
+    case new_size >= vector.alloc_size ->
+        vector |> grow(vector.alloc_size * 2)
+    vector.content[vector.size] = item
+    vector.size = new_size
+    return vector
+}
+
+pub proc pop(vector) {
+    vector.size = vector.size - 1
+    return vector
+}
+
+pub proc iter(vector) {
+    return 0..vector.size
+        |> iter::map(|i| vector.content[i])
+}
