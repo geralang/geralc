@@ -1,12 +1,12 @@
 
 use std::collections::HashMap;
 
-use crate::{util::{
+use crate::util::{
     strings::StringIdx,
     error::{Error, ErrorSection, ErrorType},
     strings::StringMap,
     source::{SourceRange, HasSource}
-}, frontend::type_checking::display_types};
+};
 use crate::frontend::{
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
     types::{TypeScope, VarTypeIdx, Type},
@@ -677,11 +677,14 @@ impl IrGenerator {
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
-                        let return_ir_type = var_types_to_ir_type(
-                            &call_type_scope,
+                        let concrete_return_type = call_type_scope.limit_possible_types(
                             *returns,
-                            type_bank, strings, &mut HashMap::new()
-                        );    
+                            node.get_types()
+                        ).expect("should have a possible type");
+                        let return_ir_type = var_types_to_ir_type(
+                            &call_type_scope, concrete_return_type, type_bank, strings,
+                            &mut HashMap::new()
+                        );
                         let proc_variant = IrGenerator::find_procedure(
                             path, &call_type_scope, original_type_scope, parameter_ir_types,
                             return_ir_type, parameter_names, body, captured, symbols, strings,

@@ -3,36 +3,85 @@ mod std::vec
 
 use std::iter
 
-pub proc from_values(values) {
+pub proc new() {
     return {
-        content = values,
-        alloc_size = length(values),
-        size = length(values)
+        content = [],
+        size = 0
     }
 }
 
 proc grow(vector, new_alloc_size) {
     var new_content = array(vector.content[0], new_alloc_size)
-    0..length(vector.content)
-        |> iter::map(|i| {
-            new_content[i] = vector.content[i]
-        })
-        |> exhaust()
+    0..length(vector.content) |> iter::for_each(|i| {
+        new_content[i] = vector.content[i]
+    })
     vector.content = new_content
-    vector.alloc_size = new_alloc_size
+}
+
+pub proc append_array(vector, appended_array) {
+    var new_size = vector.size + length(appended_array)
+    case new_size > length(vector.content) -> vector |> grow(new_size)
+    0..length(appended_array) |> iter::for_each(|i| {
+        vector.content[vector.size + i] = appended_array[i]
+    })
+    vector.size = new_size
+    return vector
+}
+
+pub proc append(vector, appended_vector) {
+    var new_size = vector.size + appended_vector.size
+    case new_size > length(vector.content) -> vector |> grow(new_size)
+    0..appended_vector.size |> iter::for_each(|i| {
+        vector.content[vector.size + i] = appended_vector.content[i]
+    })
+    vector.size = new_size
+    return vector
 }
 
 pub proc push(vector, item) {
     var new_size = vector.size + 1
-    case new_size >= vector.alloc_size ->
-        vector |> grow(vector.alloc_size * 2)
+    case new_size > length(vector.content) -> vector |> grow(length(vector.content) * 2)
     vector.content[vector.size] = item
+    vector.size = new_size
+    return vector
+}
+
+pub proc insert(vector, index, item) {
+    var new_size = vector.size + 1
+    case new_size > length(vector.content) -> vector |> grow(length(vector.content) * 2)
+    mut var idx = index
+    case index < 0 -> idx = index + vector.size
+    idx..vector.size |> iter::for_each(|i| {
+        vector.content[i + 1] = vector.content[i]
+    })
+    vector.content[idx] = item
     vector.size = new_size
     return vector
 }
 
 pub proc pop(vector) {
     vector.size = vector.size - 1
+    return vector
+}
+
+pub proc remove(vector, index) {
+    mut var idx = index
+    case index < 0 -> idx = index + vector.size
+    vector.size = vector.size - 1
+    idx..vector.size |> iter::for_each(|i| {
+        vector.content[i] = vector.content[i + 1]
+    })
+    return vector
+}
+
+pub proc get(vector, index) {
+    case index < 0 -> return vector.content[index + vector.size]
+    else return vector.content[index]
+}
+
+pub proc set(vector, index, value) {
+    case index < 0 -> vector.content[index + vector.size] = value
+    else vector.content[index] = value
     return vector
 }
 
