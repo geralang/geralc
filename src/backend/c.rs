@@ -1065,9 +1065,9 @@ fn emit_main_function(
 fn emit_type(t: IrType, types: &IrTypeBank, output: &mut String) {
     match t {
         IrType::Unit => output.push_str("void"),
-        IrType::Boolean => output.push_str("char"),
-        IrType::Integer => output.push_str("long long int"),
-        IrType::Float => output.push_str("double"),
+        IrType::Boolean => output.push_str("gbool"),
+        IrType::Integer => output.push_str("gint"),
+        IrType::Float => output.push_str("gfloat"),
         IrType::String => output.push_str("char*"),
         IrType::Array(_) => output.push_str("GeraArray"),
         IrType::Object(o) => emit_object_name(o.0, output),

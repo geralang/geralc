@@ -1,0 +1,12 @@
+
+proc std::bitwise::and(int, int) -> int = gera_std_bitwise_and
+
+proc std::bitwise::or(int, int) -> int = gera_std_bitwise_or
+
+proc std::bitwise::xor(int, int) -> int = gera_std_bitwise_xor
+
+proc std::bitwise::not(int) -> int = gera_std_bitwise_not
+
+proc std::bitwise::lshift(int, int) -> int = gera_std_bitwise_lshift
+
+proc std::bitwise::rshift(int, int) -> int = gera_std_bitwise_rshift
