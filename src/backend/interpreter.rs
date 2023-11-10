@@ -196,7 +196,7 @@ impl Interpreter {
             }
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                    if let Symbol::Procedure { parameter_names, parameter_types: _, returns: _, body }
+                    if let Symbol::Procedure { parameter_names, parameter_types: _, returns: _, body, source: _ }
                         = symbols.get(path).expect("symbol should exist") {
                         let mut parameter_values = HashMap::new();
                         for param_idx in 0..parameter_names.len() {
@@ -468,7 +468,7 @@ impl Interpreter {
                             value
                         }
                     }
-                    Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body: _ } => {
+                    Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body: _, source: _ } => {
                         Value::Unit
                     }
                 })

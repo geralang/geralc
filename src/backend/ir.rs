@@ -1,7 +1,10 @@
 
 use std::collections::HashMap;
 
-use crate::util::strings::StringIdx;
+use crate::util::{
+    source::SourceRange,
+    strings::StringIdx
+};
 use crate::frontend::modules::NamespacePath;
 use crate::backend::interpreter::Value;
 
@@ -13,7 +16,8 @@ pub enum IrSymbol {
         variant: usize,
         parameter_types: Vec<IrType>, return_type: IrType,
         variables: Vec<IrType>,
-        body: Vec<IrInstruction>
+        body: Vec<IrInstruction>,
+        source: SourceRange
     },
     ExternalProcedure {
         path: NamespacePath,
@@ -291,7 +295,7 @@ pub enum IrInstruction {
     LoadParameter { index: usize, into: IrVariable },
     LoadClosure {
         parameter_types: Vec<IrType>, return_type: IrType, captured: HashMap<StringIdx, IrVariable>,
-        variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable
+        variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable, source: SourceRange
     },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },

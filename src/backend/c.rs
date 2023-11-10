@@ -972,6 +972,11 @@ return param0.length;
 while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
 ", strings.insert("next").0)
     });
+    builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
+        String::from("
+gera___panic(param0);
+")
+    });
     return builtins;
 }
 
@@ -986,7 +991,7 @@ fn emit_procedure_impls(
     let builtin_bodies = get_builtin_bodies(strings);
     for symbol in symbols {
         match symbol {
-            IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body } => {
+            IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body, source } => {
                 emit_type(*return_type, types, output);
                 output.push_str(" ");
                 emit_procedure_name(path, *variant, strings, output);
@@ -998,6 +1003,15 @@ fn emit_procedure_impls(
                     output.push_str(&p.to_string());
                 }
                 output.push_str(") {\n");
+                output.push_str("    gera___st_push(");
+                emit_string_literal(&path.display(strings), output);
+                output.push_str(", ");
+                emit_string_literal(strings.get(source.file_name()), output);
+                output.push_str(", ");
+                let source_line = strings.get(source.file_content())[..source.start_position()]
+                    .lines().collect::<Vec<&str>>().len() + 1;
+                output.push_str(&source_line.to_string());
+                output.push_str(");\n");
                 for variable_idx in 0..variables.len() {
                     if let IrType::Unit = variables[variable_idx].direct(types) { continue; }
                     output.push_str("    ");
@@ -1023,6 +1037,7 @@ fn emit_procedure_impls(
                 body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
                 indent(&body_str, output);
+                output.push_str("    gera___st_pop();\n");
                 if let IrType::Unit = return_type.direct(types) {} else {
                     output.push_str("    return returned;\n");
                 }
@@ -1057,9 +1072,13 @@ fn emit_main_function(
     strings: &StringMap,
     output: &mut String
 ) {
-    output.push_str("int main(void) {\n    ");
+    output.push_str("int main(void) {\n");
+    output.push_str("    gera___st_init();\n");
+    output.push_str("    ");
     emit_procedure_name(main_procedure_path, 0, strings, output);
-    output.push_str("();\n    return 0;\n}\n");
+    output.push_str("();\n");
+    output.push_str("    return 0;\n");
+    output.push_str("}\n");
 }
 
 fn emit_type(t: IrType, types: &IrTypeBank, output: &mut String) {
@@ -1482,7 +1501,7 @@ fn emit_instruction(
             free.insert(into.index);
         }
         IrInstruction::LoadClosure {
-            parameter_types, return_type, captured, variables, body, into
+            parameter_types, return_type, captured, variables, body, into, source
         } => {
             fn emit_closure_captures_name(closure_idx: usize, variant: usize, output: &mut String) {
                 emit_closure_name(closure_idx, output);
@@ -1547,6 +1566,13 @@ fn emit_instruction(
                 closure_body.push_str(&param_idx.to_string());
             }
             closure_body.push_str(") {\n");
+            closure_body.push_str("    gera___st_push(\"<closure>\", ");
+            emit_string_literal(strings.get(source.file_name()), &mut closure_body);
+            closure_body.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len() + 1;
+            closure_body.push_str(&source_line.to_string());
+            closure_body.push_str(");\n");
             closure_body.push_str("    ");
             emit_closure_captures_name(closure_idx, variant, &mut closure_body);
             closure_body.push_str("* captures = (");
@@ -1577,6 +1603,7 @@ fn emit_instruction(
             body_str.push_str("\nret:\n");
             emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
             indent(&body_str, &mut closure_body);
+            closure_body.push_str("    gera___st_pop();\n");
             if let IrType::Unit = return_type.direct(types) {} else {
                 closure_body.push_str("    return returned;\n");
             }
@@ -1679,15 +1706,24 @@ fn emit_instruction(
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
             emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
+            let mut accessed_str = String::new();
+            emit_variable(*accessed, &mut accessed_str);
+            let mut index_str = String::new();
+            emit_variable(*index, &mut index_str);
+            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(", ");
+            output.push_str(&accessed_str);
+            output.push_str(".length);\n");
             output.push_str(&into_str);
             output.push_str(" = ");
             let mut access_str = String::new();
             access_str.push_str("((");
             emit_type(element_type, types, &mut access_str);
             access_str.push_str("*) ");
-            emit_variable(*accessed, &mut access_str);
+            access_str.push_str(&accessed_str);
             access_str.push_str(".data)[");
-            emit_variable(*index, &mut access_str);
+            access_str.push_str(&index_str);
             access_str.push_str("]");
             emit_variable_poly(
                 &mut access_str, element_type, variable_types[into.index], types, output
@@ -1703,13 +1739,22 @@ fn emit_instruction(
                 .direct(types) {
                 *types.get_array(array_idx)
             } else { panic!("should be an array"); };
+            let mut accessed_str = String::new();
+            emit_variable(*accessed, &mut accessed_str);
+            let mut index_str = String::new();
+            emit_variable(*index, &mut index_str);
+            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(", ");
+            output.push_str(&accessed_str);
+            output.push_str(".length);\n");
             let mut element_str = String::new();
             element_str.push_str("((");
             emit_type(element_type, types, &mut element_str);
             element_str.push_str("*) ");
-            emit_variable(*accessed, &mut element_str);
+            element_str.push_str(&accessed_str);
             element_str.push_str(".data)[");
-            emit_variable(*index, &mut element_str);
+            element_str.push_str(&index_str);
             element_str.push_str("]");
             emit_rc_decr(&element_str, element_type, types, strings, output);
             output.push_str(&element_str);
@@ -1785,26 +1830,40 @@ fn emit_instruction(
             output.push_str(";\n");
         }
         IrInstruction::Divide { a, b, into } => {
+            let mut divisor = String::new();
+            emit_variable(*b, &mut divisor);
+            if let IrType::Integer = variable_types[a.index].direct(types) {
+                output.push_str("gera___verify_integer_divisor(");
+                output.push_str(&divisor);
+                output.push_str(");\n");
+            }
             emit_variable(*into, output);
             output.push_str(" = ");
             emit_variable(*a, output);
             output.push_str(" / ");
-            emit_variable(*b, output);
+            output.push_str(&divisor);
             output.push_str(";\n");
         }
         IrInstruction::Modulo { a, b, into } => {
+            let mut divisor = String::new();
+            emit_variable(*b, &mut divisor);
+            if let IrType::Integer = variable_types[a.index].direct(types) {
+                output.push_str("gera___verify_integer_divisor(");
+                output.push_str(&divisor);
+                output.push_str(");\n");
+            }
             emit_variable(*into, output);
             output.push_str(" = ");
             if let IrType::Float = variable_types[a.index].direct(types) {
                 output.push_str("gera___float_mod(");
                 emit_variable(*a, output);
                 output.push_str(", ");
-                emit_variable(*b, output);
+                output.push_str(&divisor);
                 output.push_str(")");
             } else {
                 emit_variable(*a, output);
                 output.push_str(" % ");
-                emit_variable(*b, output);
+                output.push_str(&divisor);
             }
             output.push_str(";\n");
         }

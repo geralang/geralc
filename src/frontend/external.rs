@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 
-use crate::frontend::{
+use crate::{frontend::{
     tokens::Token,
     lexer::Lexer,
     ast::{AstNode, TypedAstNode},
@@ -9,7 +9,7 @@ use crate::frontend::{
     type_checking::Symbol,
     tokens::TokenType,
     types::{Type, TypeScope}
-};
+}, util::source::SourceRange};
 use crate::util::{
     strings::{StringMap, StringIdx},
     error::{Error, ErrorSection, ErrorType}
@@ -142,11 +142,13 @@ impl ExternalMappingParser {
                         );
                         modules.insert(procedure_module_path, module);
                     }
+                    let external_str = strings.insert("<external>");
                     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
                         parameter_names: parameters.iter().enumerate().map(|(i, _)| strings.insert(&i.to_string())).collect(),
                         parameter_types: parameters,
                         returns: return_type_group,
-                        body: None
+                        body: None,
+                        source: SourceRange::new(external_str, external_str, 0, 0)
                     });
                     external_backings.insert(procedure_path, backing);
                 }

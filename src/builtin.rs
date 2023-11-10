@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::process_file;
-use crate::util::strings::{StringMap, StringIdx};
+use crate::util::{
+    strings::{StringMap, StringIdx},
+    source::SourceRange
+};
 use crate::frontend::{
     modules::{NamespacePath, Module},
     ast::{AstNode, TypedAstNode},
@@ -34,11 +37,13 @@ fn register_foreign_builtin(
         );
         modules.insert(procedure_module_path, module);
     }
+    let builtin_str = strings.insert("<builtin>");
     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
         parameter_names: parameter_names.iter().map(|p| strings.insert(p)).collect(),
         parameter_types: parameter_types,
         returns: return_type,
-        body: None
+        body: None,
+        source: SourceRange::new(builtin_str, builtin_str, 0, 0)
     });
 }
 
@@ -140,6 +145,17 @@ fn load_foreign_builtins(
                         None
                     )
                 ]))
+            ],
+            type_scope.register_with_types(Some(vec![Type::Unit])),
+            strings, modules, typed_symbols
+        );
+    }
+    {
+        register_foreign_builtin(
+            path_from(&["core", "panic"], strings),
+            &["message"],
+            vec![
+                type_scope.register_with_types(Some(vec![Type::String]))
             ],
             type_scope.register_with_types(Some(vec![Type::Unit])),
             strings, modules, typed_symbols

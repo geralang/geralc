@@ -17,7 +17,7 @@ use crate::frontend::{
 #[derive(Debug, Clone)]
 pub enum Symbol<T: Clone + HasSource + HasAstNodeVariant<T>> {
     Constant { value: Option<T>, value_types: VarTypeIdx },
-    Procedure { parameter_names: Vec<StringIdx>, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Option<Vec<T>> }
+    Procedure { parameter_names: Vec<StringIdx>, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Option<Vec<T>>, source: SourceRange }
 }
 
 pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap, type_scope: &mut TypeScope, typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>) -> Result<(), Vec<Error>> {
@@ -307,7 +307,8 @@ fn type_check_symbol<'s>(
                     parameter_names: arguments.iter().map(|p| p.0).collect(),
                     parameter_types: argument_vars,
                     returns: return_types,
-                    body: Some(Vec::new())
+                    body: Some(Vec::new()),
+                    source: symbol_source
                 } );
                 procedure_names.push(name.clone());
                 let (typed_body, returns) = match type_check_nodes(
@@ -328,7 +329,7 @@ fn type_check_symbol<'s>(
                     Err(error) => return Err(error),
                 };
                 procedure_names.pop();
-                if let Some(Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body }) = symbols.get_mut(name) {
+                if let Some(Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body, source: _ }) = symbols.get_mut(name) {
                     if match type_scope.get_group_types(return_types) {
                         Some(types) => types.len() == 1 && match &types[0] {
                             Type::Unit => false,
@@ -745,7 +746,7 @@ fn type_check_node(
         AstNodeVariant::Call { called, mut arguments } => {
             if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                 match type_check_symbol(strings, type_scope, procedure_names, untyped_symbols, symbols, &path).map(|s| s.clone()) {
-                    Ok(Symbol::Procedure { parameter_names, parameter_types, returns, body: _ }) => {
+                    Ok(Symbol::Procedure { parameter_names, parameter_types, returns, body: _, source: _ }) => {
                         if arguments.len() != parameter_types.len() { return Err(Error::new([
                             ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
@@ -1296,7 +1297,7 @@ fn type_check_node(
                         path
                     }, value_types.clone(), node_source), (false, false)))
                 }
-                Ok(Symbol::Procedure { parameter_names: _, parameter_types, returns, body: _ }) => {
+                Ok(Symbol::Procedure { parameter_names: _, parameter_types, returns, body: _, source: _ }) => {
                     let mut duplications = TypeGroupDuplications::new();
                     let closure_param_types = parameter_types.iter().map(|t| duplications.duplicate(*t, type_scope)).collect();
                     let closure_return_type = duplications.duplicate(*returns, type_scope);

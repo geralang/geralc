@@ -127,7 +127,7 @@ pub fn lower_typed_ast(
     if let Symbol::Procedure {
         parameter_names: _,
         parameter_types: _, returns,
-        body
+        body, source
     } = main_procedure.1 {
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
@@ -150,7 +150,8 @@ pub fn lower_typed_ast(
             variables: generator.variables.into_iter()
                 .map(|v| v.1)
                 .collect(),
-            body
+            body,
+            source: *source
         });
     } else { panic!("should be a procedure"); }
     for (symbol_path, typed_symbol) in typed_symbols {
@@ -317,6 +318,7 @@ impl IrGenerator {
         return_ir_type: IrType,
         parameter_names: &Vec<StringIdx>,
         body: &Option<Vec<TypedAstNode>>,
+        source: &SourceRange,
         captured: &HashMap<StringIdx, IrType>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -375,7 +377,8 @@ impl IrGenerator {
                         parameter_types: parameter_ir_types,
                         return_type: return_ir_type,
                         variables: Vec::new(),
-                        body: Vec::new()
+                        body: Vec::new(),
+                        source: *source
                     });
                     let new_body = generator.lower_nodes(
                         body, captured,
@@ -509,7 +512,8 @@ impl IrGenerator {
                         .map(|v| v.1)
                         .collect(),
                     body,
-                    into
+                    into,
+                    source: node.source()
                 });
                 Ok(Some(into))
             }
@@ -657,7 +661,7 @@ impl IrGenerator {
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure {
-                        parameter_names, parameter_types, returns, body
+                        parameter_names, parameter_types, returns, body, source
                     } = symbols.get(path).expect("symbol should exist") {
                         //let mut call_type_scope = original_type_scope.clone();
                         let mut call_type_scope = current_type_scope.clone();
@@ -687,7 +691,7 @@ impl IrGenerator {
                         );
                         let proc_variant = IrGenerator::find_procedure(
                             path, &call_type_scope, original_type_scope, parameter_ir_types,
-                            return_ir_type, parameter_names, body, captured, symbols, strings,
+                            return_ir_type, parameter_names, body, &source, captured, symbols, strings,
                             external_backings, interpreter, type_bank, ir_symbols
                         )?;
                         let into = into_given_or_alloc!(node_type!());
@@ -959,7 +963,7 @@ impl IrGenerator {
             AstNodeVariant::ModuleAccess { path } => {
                 match symbols.get(path).expect("should exist") {
                     Symbol::Constant { .. } => {}
-                    Symbol::Procedure { parameter_names, body, .. } => {
+                    Symbol::Procedure { parameter_names, body, source, .. } => {
                         let (parameter_types, return_type) =
                             if let IrType::Closure(closure_idx) = node_type!().direct(type_bank) {
                                 type_bank.get_closure(closure_idx)
@@ -967,7 +971,7 @@ impl IrGenerator {
                         //let mut call_type_scope = type_scope.clone();
                         IrGenerator::find_procedure(
                             path, current_type_scope, original_type_scope, parameter_types.clone(),
-                            *return_type, parameter_names, body, captured, symbols, strings,
+                            *return_type, parameter_names, body, source, captured, symbols, strings,
                             external_backings, interpreter, type_bank, ir_symbols
                         )?;
                     }
