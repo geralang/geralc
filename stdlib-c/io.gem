@@ -1,0 +1,2 @@
+
+proc std::internal::io::print(str) = gera_std_io_print

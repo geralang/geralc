@@ -1394,7 +1394,8 @@ pub fn display_types(
             Type::Boolean |
             Type::Integer |
             Type::Float |
-            Type::String => {}
+            Type::String |
+            Type::Panic => {}
             Type::Array(element_types) => collect_letters(letters, *element_types, type_scope),
             Type::Object(member_types, _) => {
                 for (_, member_types) in member_types {
@@ -1427,9 +1428,15 @@ pub fn display_types(
     ) -> String {
         if let Some(possible_types) = group_types {
             let mut result = String::new();
+            if possible_types.len() > 1 { 
+                result.push_str("(");
+            }
             for i in 0..possible_types.len() {
                 if i > 0 { result.push_str(" | "); }
                 result.push_str(&display_type(strings, type_scope, &possible_types[i], letters));
+            }
+            if possible_types.len() > 1 { 
+                result.push_str(")");
             }
             result
         } else {
@@ -1448,6 +1455,7 @@ pub fn display_types(
             Type::Integer => String::from("integer"),
             Type::Float => String::from("float"),
             Type::String => String::from("string"),
+            Type::Panic => String::from("panic"),
             Type::Array(element_type) => format!(
                 "[{}]",
                 display_types_internal(strings, type_scope, *element_type, letters)
@@ -1480,12 +1488,14 @@ pub fn display_types(
                 result
             },
             Type::Variants(variant_types, fixed) => format!(
-                "{}{}",
-                variant_types.iter().map(|(variant_name, variant_type)| { format!(
-                    "#{} {}",
-                    strings.get(*variant_name),
-                    display_types_internal(strings, type_scope, *variant_type, letters)
-                ) }).collect::<Vec<String>>().join(" | "),
+                "({}{})",
+                variant_types.iter().map(|(variant_name, variant_type)| {
+                    format!(
+                        "#{} {}",
+                        strings.get(*variant_name),
+                        display_types_internal(strings, type_scope, *variant_type, letters)
+                    )
+                }).collect::<Vec<String>>().join(" | "),
                 if *fixed { "" } else { " | ..." }
             ),
         }

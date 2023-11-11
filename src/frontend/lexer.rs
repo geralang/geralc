@@ -157,7 +157,6 @@ impl Lexer {
                         if escaped {
                             match self.current() {
                                 '\n' => {}
-                                '\\' => content.push('\\'),
                                 'n' => content.push('\n'),
                                 'r' => content.push('\r'),
                                 other => content.push(other)

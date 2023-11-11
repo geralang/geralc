@@ -76,51 +76,6 @@ pub proc chain(iter_a, iter_b) {
     }
 }
 
-pub proc any(iter, condition) {
-    var found = { val = false }
-    exhaust(|| {
-        case iter() {
-            #end -> return #end unit
-            #next n -> case condition(n) -> {
-                found.val = true
-                return #end unit
-            }
-        }
-        return #next unit
-    })
-    return found.val
-}
-
-pub proc all(iter, condition) {
-    var found = { val = false }
-    exhaust(|| {
-        case iter() {
-            #end -> return #end unit
-            #next n -> case condition(n) -> {} else {
-                found.val = true
-                return #end unit
-            }
-        }
-        return #next unit
-    })
-    return !found.val
-}
-
-pub proc find(iter, condition) {
-    var found = { val = #none unit }
-    exhaust(|| {
-        case iter() {
-            #end -> return #end unit
-            #next n -> case condition(n) -> {
-                found.val = #some n
-                return #end unit
-            }
-        }
-        return #next unit
-    })
-    return found.val
-}
-
 pub proc count(iter, condition) {
     var found = { count = 0 }
     exhaust(|| {
@@ -133,4 +88,28 @@ pub proc count(iter, condition) {
         return #next unit
     })
     return found.count
+}
+
+pub proc first(iter) {
+    case iter() {
+        #end -> return #none unit
+        #next v -> return #some v
+    }
+}
+
+pub proc last(iter) {
+    var result = { value = #none unit }
+    iter |> for_each(|v| {
+        result.value = #some v
+    })
+    return result.value
+}
+
+pub proc from_value(value) {
+    mut var done = false
+    return || {
+        case done -> return #end unit
+        done = true
+        return #next value
+    }
 }

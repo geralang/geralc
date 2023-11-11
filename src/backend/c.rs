@@ -229,7 +229,7 @@ fn emit_rc_incr(
         IrType::Boolean => {}
         IrType::Integer => {}
         IrType::Float => {}
-        IrType::String => {}
+        IrType::String |
         IrType::Array(_) |
         IrType::Object(_) => {
             output.push_str("gera___rc_incr(");
@@ -281,7 +281,7 @@ fn emit_rc_decr(
         IrType::Boolean => {}
         IrType::Integer => {}
         IrType::Float => {}
-        IrType::String => {}
+        IrType::String |
         IrType::Array(_) |
         IrType::Object(_) => {
             output.push_str("gera___rc_decr(");
@@ -871,9 +871,9 @@ fn emit_variable_poly(
             return;
         }
     }
-    println!("types = {:?}", types);
-    println!("from = {:?}", from_type);
-    println!("to = {:?}", to_type);
+    //println!("types = {:?}", types);
+    //println!("from = {:?}", from_type);
+    //println!("to = {:?}", to_type);
     panic!("unexpected implicit conversion!");
 }
 
@@ -927,18 +927,10 @@ return param0.allocation == param1.allocation;
 return param0.tag == param1.tag;
 ")
     });
-    builtins.insert(path_from(&["core", "length"], strings), |param_types, _, types, _| {
-        if let IrType::String = param_types[0].direct(types) {
-            String::from("
-for(size_t c = 0;; c += 1) {
-    if(param0[c] == '\\0') { return c; }
-}
-")
-        } else {
-            String::from("
+    builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _| {
+        String::from("
 return param0.length;
 ")
-        }
     });
     builtins.insert(path_from(&["core", "array"], strings), |param_types, return_type, types, strings| {
         let array_idx = if let IrType::Array(array_idx) = return_type.direct(types) {
@@ -974,7 +966,81 @@ while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
     });
     builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
         String::from("
-gera___panic(param0);
+GERA_STRING_NULL_TERM(param0, message_nt);
+gera___panic(message_nt);
+")
+    });
+    builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
+        match param_types[0].direct(types) {
+            IrType::Unit => String::from("
+return gera___alloc_string(\"<unit>\");
+"),
+            IrType::Boolean => String::from("
+return gera___alloc_string(param0? \"true\" : \"false\");
+"),
+            IrType::Integer => String::from("
+size_t result_length = snprintf(NULL, 0, \"%lld\", param0);
+char result[result_length + 1];
+sprintf(result, \"%lld\", param0);
+return gera___alloc_string(result);
+"),
+            IrType::Float => String::from("
+size_t result_length = snprintf(NULL, 0, \"%f\", param0);
+char result[result_length + 1];
+sprintf(result, \"%f\", param0);
+return gera___alloc_string(result);
+"),
+            IrType::String => {
+                let mut result = String::new();
+                emit_rc_incr("param0", param_types[0], types, strings, &mut result);
+                result.push_str("return param0;\n");
+                result
+            }
+            IrType::Array(_) => String::from("
+size_t result_length = snprintf(NULL, 0, \"<array %p>\", param0.allocation);
+char result[result_length + 1];
+sprintf(result, \"<array %p>\", param0.allocation);
+return gera___alloc_string(result);
+"),
+            IrType::Object(_) => String::from("
+size_t result_length = snprintf(NULL, 0, \"<object %p>\", param0.allocation);
+char result[result_length + 1];
+sprintf(result, \"<object %p>\", param0.allocation);
+return gera___alloc_string(result);
+"),
+            IrType::ConcreteObject(_) => String::from("
+return gera___alloc_string(\"<object>\");
+"),
+            IrType::Variants(variant_idx) => {
+                let variant_types = types.get_variants(variant_idx);
+                let mut result = String::from("switch(param0.tag) {\n");
+                for (variant_name, _) in variant_types {
+                    result.push_str("    case ");
+                    result.push_str(&variant_name.0.to_string());
+                    result.push_str(": return gera___alloc_string(\"#");
+                    result.push_str(strings.get(*variant_name));
+                    result.push_str(" <...>\");\n");
+                }
+                result.push_str("}\n");
+                result
+            }
+            IrType::Closure(_) => String::from("
+size_t result_length = snprintf(NULL, 0, \"<closure %p>\", param0.allocation);
+char result[result_length + 1];
+sprintf(result, \"<closure %p>\", param0.allocation);
+return gera___alloc_string(result);
+"),
+            IrType::Indirect(_) => panic!("should be direct"),
+        }
+    });
+    builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _| {
+        String::from("
+return (gint) param0;
+")
+    });
+    builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, _, _| {
+        String::from("
+return (gfloat) param0;
 ")
     });
     return builtins;
@@ -1087,7 +1153,7 @@ fn emit_type(t: IrType, types: &IrTypeBank, output: &mut String) {
         IrType::Boolean => output.push_str("gbool"),
         IrType::Integer => output.push_str("gint"),
         IrType::Float => output.push_str("gfloat"),
-        IrType::String => output.push_str("char*"),
+        IrType::String => output.push_str("GeraString"),
         IrType::Array(_) => output.push_str("GeraArray"),
         IrType::Object(o) => emit_object_name(o.0, output),
         IrType::ConcreteObject(o) => emit_concrete_object_name(o.0, output),
@@ -1122,7 +1188,8 @@ fn emit_procedure_name(
 fn emit_string_literal(value: &str, output: &mut String) {
     output.push('"');
     output.push_str(
-        &value.replace("\n", "\\n")
+        &value.replace("\\", "\\\\")
+            .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\"", "\\\"")
     );
@@ -1246,10 +1313,13 @@ fn emit_instruction(
             output.push_str(";\n");
         }
         IrInstruction::LoadString { value, into } => {
-            emit_variable(*into, output);
-            output.push_str(" = ");
+            let mut into_str = String::new();
+            emit_variable(*into, &mut into_str);
+            emit_conditional_decr(*into, variable_types[into.index], types, strings, output);
+            output.push_str(&into_str);
+            output.push_str(" = gera___alloc_string(");
             emit_string_literal(strings.get(*value), output);
-            output.push_str(";\n");
+            output.push_str(");\n");
         }
         IrInstruction::LoadObject { member_values, into } => {
             let object_idx = if let IrType::Object(object_idx) = variable_types[into.index]

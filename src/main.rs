@@ -9,6 +9,7 @@ mod backend;
 
 use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
 use cli::{CliArgs, CliArg};
+use builtin::load_builtins;
 use frontend::{
     lexer::Lexer,
     parser::Parser,
@@ -27,10 +28,8 @@ use backend::{
 
 use std::{fs, env, collections::HashMap};
 
-use crate::builtin::load_builtins;
-
 fn main() {
-    if cfg!(target_os = "windows") {
+    #[cfg(target_os = "windows")] {
         use windows::Win32::System::Console;
         unsafe {
             let output = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE)

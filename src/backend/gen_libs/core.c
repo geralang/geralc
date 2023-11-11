@@ -66,28 +66,36 @@ double gera___float_mod(double x, double div) {
     return x - (int) (x / div) * div;
 }
 
-char gera___string_eq(char* a, char* b) {
-    char eq = 0;
-    for(unsigned long long int i = 0;; i += 1) {
-        if(a[i] != b[i]) { return 0; }
-        if(a[i] != '\0') { continue; }
-        return 1;
+char gera___string_eq(GeraString a, GeraString b) {
+    if(a.allocation->size != b.allocation->size) { return 0; }
+    for(size_t i = 0; i < a.allocation->size; i += 1) {
+        if(a.data[i] != b.data[i]) { return 0; }
     }
+    return 1;
 }
 
 void gera___free_nothing(char* data, size_t size) {}
 
-#define ERROR_NOTE_COLOR "\033[0;90m"
-#define ERROR_MESSAGE_COLOR "\033[0;91m"
-#define ERROR_INDEX_COLOR "\033[0;90m"
-#define ERROR_PROCEDURE_COLOR "\033[0;32;1m"
-#define ERROR_FILE_NAME_COLOR "\033[0;37m"
-#define ERROR_RESET_COLOR "\033[0m"
+#ifndef _WIN32
+    #define ERROR_NOTE_COLOR "\033[0;90m"
+    #define ERROR_MESSAGE_COLOR "\033[0;91m"
+    #define ERROR_INDEX_COLOR "\033[0;90m"
+    #define ERROR_PROCEDURE_COLOR "\033[0;32;1m"
+    #define ERROR_FILE_NAME_COLOR "\033[0;37m"
+    #define ERROR_RESET_COLOR "\033[0m"
+#else
+    #define ERROR_NOTE_COLOR ""
+    #define ERROR_MESSAGE_COLOR ""
+    #define ERROR_INDEX_COLOR ""
+    #define ERROR_PROCEDURE_COLOR ""
+    #define ERROR_FILE_NAME_COLOR ""
+    #define ERROR_RESET_COLOR ""
+#endif
 
-void gera___panic(char* message) {
-    printf(ERROR_NOTE_COLOR "The program panicked: " ERROR_MESSAGE_COLOR "%s\n", message);
-    printf(ERROR_NOTE_COLOR "Stack trace (latest call last):\n");
-    for(size_t i = 0; i < stack_trace_size; i += 1) {
+void gera___panic(const char* message) {
+    printf("The program panicked: " ERROR_MESSAGE_COLOR "%s\n", message);
+    printf(ERROR_NOTE_COLOR "Stack trace (latest call first):\n");
+    for(size_t i = stack_trace_size - 1;;) {
         GeraStackItem* si = &stack_trace[i];
         printf(
             ERROR_INDEX_COLOR " %lld " ERROR_PROCEDURE_COLOR "%s",
@@ -98,6 +106,8 @@ void gera___panic(char* message) {
             si->file,
             si->line
         );
+        if(i == 0) { break; }
+        i -= 1;
     }
     printf(ERROR_RESET_COLOR);
     exit(1);
@@ -118,4 +128,25 @@ void gera___verify_index(gint index, size_t size) {
 void gera___verify_integer_divisor(gint d) {
     if(d != 0) { return; }
     gera___panic(INVALID_INTEGER_DIVISOR);
+}
+
+GeraString gera___alloc_string(const char* data) {
+    size_t size = 0;
+    for(;;size += 1) {
+        if(data[size] == '\0') { break; }
+    }
+    GeraString result;
+    GeraAllocation* allocation = gera___rc_alloc(size, &gera___free_nothing);
+    result.allocation = allocation;
+    result.length = 0;
+    result.data = allocation->data;
+    for(size_t c = 0; c < size; c += 1) {
+        char cu = data[c];
+        if((cu & 0b10000000) == 0b00000000
+        || (cu & 0b11000000) == 0b11000000) {
+            result.length += 1;
+        }
+        result.data[c] = cu;
+    }
+    return result;
 }

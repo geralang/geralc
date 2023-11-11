@@ -12,28 +12,29 @@ use crate::frontend::{
 };
 
 
-const PREFIX_MINUS_PRECEDENCE: Option<usize> = Some(0);
-const HASHTAG_PRECEDENCE: Option<usize> = Some(7);
+const PREFIX_MINUS_PRECEDENCE: Option<usize> = Some(1);
 
 fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
     match token_type {
-        TokenType::ParenOpen |
-        TokenType::ExclamationMark => Some(0),
+        TokenType::ParenOpen => Some(0),
+        TokenType::ExclamationMark => Some(1),
         TokenType::Asterisk |
         TokenType::Slash |
-        TokenType::Percent => Some(1),
+        TokenType::Percent => Some(2),
         TokenType::Plus |
-        TokenType::Minus => Some(2),
+        TokenType::Minus => Some(3),
         TokenType::LessThan |
         TokenType::GreaterThan |
         TokenType::LessThanEqual |
-        TokenType::GreaterThanEqual => Some(3),
+        TokenType::GreaterThanEqual => Some(4),
         TokenType::DoubleEquals |
-        TokenType::NotEquals => Some(4),
-        TokenType::DoubleAmpersand => Some(5),
-        TokenType::DoublePipe => Some(6),
-        TokenType::DoubleDot => Some(7),
-        TokenType::FunctionPipe => Some(8),
+        TokenType::NotEquals => Some(5),
+        TokenType::DoubleAmpersand => Some(6),
+        TokenType::DoublePipe => Some(7),
+        TokenType::DoubleDot |
+        TokenType::DoubleDotEquals => Some(8),
+        TokenType::Hashtag => Some(9),
+        TokenType::FunctionPipe => Some(10),
         _ => None
     }
 }
@@ -316,7 +317,7 @@ impl Parser {
                     let start = enforce_previous!("the start of the range");
                     let start_source = start.source();
                     enforce_next!("the end of the range");
-                    let end = enforce_expression!(&[], get_operator_precedence(TokenType::DoubleDot), "the end of the range");
+                    let end = enforce_expression!(&[], get_operator_precedence(TokenType::DoubleDotEquals), "the end of the range");
                     let end_source = end.source();
                     previous = Some(AstNode::new(
                         AstNodeVariant::Call {
@@ -914,7 +915,7 @@ impl Parser {
                     enforce_current_type!(&[TokenType::Identifier], "the variant's name");
                     let name = self.current.token_content;
                     enforce_next!("the variant's value");
-                    let value = enforce_expression!(&[], HASHTAG_PRECEDENCE, "the variant's value");
+                    let value = enforce_expression!(&[], get_operator_precedence(TokenType::Hashtag), "the variant's value");
                     let value_source = value.source();
                     previous = Some(AstNode::new(
                         AstNodeVariant::Variant {

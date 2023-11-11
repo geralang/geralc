@@ -1,0 +1,169 @@
+
+mod std::str
+
+use std::iter
+use std::opt
+
+pub proc substring(string, start_index, end_index) {
+    mut var start_idx = start_index
+    case start_index < 0 -> start_idx = length(string) + start_index
+    case start_idx > length(string) -> panic("start index is out of bounds")
+    mut var end_idx = end_index
+    case end_index < 0 -> end_idx = length(string) + end_index
+    case end_idx > length(string) -> panic("end index is out of bounds")
+    case start_idx > end_idx -> panic("the start index is greater than the end index")
+    return std::internal::str::substring(string, start_idx, end_idx)
+}
+
+pub proc substring_until(string, end_index) {
+    return string |> substring(0, end_index)
+}
+
+pub proc substring_after(string, start_index) {
+    return string |> substring(start_index, length(string))
+}
+
+pub proc at(string, index) {
+    return string |> substring(index, index + 1)
+}
+
+pub proc concat(string_a, string_b) {
+    return std::internal::str::concat(string_a, string_b)
+}
+
+pub proc starts_with(string, prefix) {
+    var compared_prefix = string
+        |> substring_until(length(prefix))
+    return compared_prefix == prefix
+}
+
+pub proc ends_with(string, suffix) {
+    var compared_suffix = string
+        |> substring_after(-length(suffix))
+    return compared_suffix == suffix
+}
+
+pub proc find(string, sub) {
+    var current = { index = 0 }
+    return || {
+        mut var found = { value = #end unit }
+        exhaust(|| {
+            case current.index > length(string) - length(sub) -> return #end unit
+            var c = current.index
+            current.index = current.index + 1
+            var compared_sub = string |> substring(c, c + length(sub))
+            case compared_sub == sub -> {
+                found.value = #next c
+                return #end unit
+            }
+            return #next unit
+        })
+        return found.value
+    }
+}
+
+pub proc repeat(string, times) {
+    mut var result = { value = "" }
+    0..times |> iter::for_each(|i| {
+        result.value = concat(result.value, string)
+    })
+    return result.value
+}
+
+pub proc pad_left(string, target_length, padding) {
+    return padding
+        |> repeat((target_length - length(string)) / length(padding))
+        |> concat(string)
+}
+
+pub proc pad_right(string, target_length, padding) {
+    return string
+        |> concat(padding |> repeat((target_length - length(string)) / length(padding)))
+}
+
+pub proc format(string, value) {
+    mut var result = { value = #none unit }
+    mut var i = 0
+    exhaust(|| {
+        case i >= length(string) -> return #end unit
+        var ci = i
+        i = i + 1
+        var c = string |> at(ci)
+        case c == "_" -> {
+            var r = string
+                |> substring_until(ci)
+                |> concat(value)
+                |> concat(string |> substring_after(ci + 1))
+            result.value = #some r
+            return #end unit
+        }
+        return #next unit
+    })
+    return result.value |> opt::expect("the format string does not contain any underscores")
+}
+
+pub proc split(string, separator) {
+    var current = {
+        start = 0,
+        index = 0,
+        done = false
+    }
+    return || {
+        case current.done -> return #end unit
+        mut var found = { value = #end unit }
+        exhaust(|| {
+            case current.index > length(string) - length(separator) -> {
+                var part = string |> substring_after(current.start)
+                found.value = #next part
+                current.done = true
+                return #end unit
+            }
+            var c = current.index
+            current.index = current.index + 1
+            var compared_sub = string |> substring(c, c + length(separator))
+            case compared_sub == separator -> {
+                var part = string |> substring(current.start, current.index)
+                current.index = c + length(separator)
+                current.start = current.index
+                found.value = #next part
+                return #end unit
+            }
+            return #next unit
+        })
+        return found.value
+    }
+}
+
+pub proc join(strings, separator) {
+    mut var result = { value = "" }
+    strings |> iter::for_each(|string| {
+        case length(result.value) > 0 -> result.value = result.value |> concat(separator)
+        result.value = result.value |> concat(string)
+    })
+    return result.value
+}
+
+pub proc iter(string) {
+    return 0..length(string)
+        |> iter::map(|i| string |> at(i))
+}
+
+pub proc parse_flt(string) {
+    var parsed = std::internal::str::parse_flt(string)
+    case std::internal::str::parse_success() -> {
+        return #some parsed
+    }
+    return #none unit
+}
+
+pub proc parse_int(string) {
+    var parsed = std::internal::str::parse_int(string)
+    case std::internal::str::parse_success() -> {
+        return #some parsed
+    }
+    return #none unit
+}
+
+// some procedure(s) for converting to upper- / lowercase?
+
+// some procedure(s) for trimming start, end and both

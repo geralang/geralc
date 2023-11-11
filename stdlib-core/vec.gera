@@ -20,7 +20,8 @@ proc grow(vector, default_value, new_alloc_size) {
 
 pub proc push(vector, item) {
     var new_size = vector.size + 1
-    case new_size > length(vector.content) -> vector |> grow(item, length(vector.content) * 2)
+    case length(vector.content) == 0 -> vector |> grow(item, 16)
+    else case new_size > length(vector.content) -> vector |> grow(item, length(vector.content) * 2)
     vector.content[vector.size] = item
     vector.size = new_size
     return vector
@@ -62,14 +63,6 @@ pub proc insert(vector, index, item) {
     return vector
 }
 
-pub proc insert_array(vector, index, inserted_array) {
-    panic("not yet implemented!") // todo!
-}
-
-pub proc insert_vector(vector, index, inserted_vector) {
-    panic("not yet implemented!") // todo!
-}
-
 pub proc pop(vector) {
     vector.size = vector.size - 1
     return vector
@@ -85,19 +78,12 @@ pub proc remove(vector, index) {
     })
     return vector
 }
-pub proc remove_range(vector, start, end) {
-    panic("not yet implemented!") // todo!
-}
 
 pub proc get(vector, index) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
     case idx >= vector.size -> panic("index is out of bounds")
     return vector.content[idx]
-}
-
-pub proc copy_range(vector, start, end) {
-    panic("not yet implemented!") // todo!
 }
 
 pub proc set(vector, index, value) {

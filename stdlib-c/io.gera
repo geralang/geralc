@@ -1,0 +1,12 @@
+
+mod std::io
+
+pub proc println(line) {
+    line |> print()
+    std::internal::io::print("\n")
+}
+
+pub proc print(line) {
+    line |> as_str()
+        |> std::internal::io::print()
+}

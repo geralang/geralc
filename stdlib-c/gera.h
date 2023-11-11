@@ -19,8 +19,27 @@ typedef struct GeraArray {
     char* data;
 } GeraArray;
 
+typedef struct GeraString {
+    GeraAllocation* allocation;
+    size_t length;
+    char* data;
+} GeraString;
+
 typedef double gfloat;
 typedef long long int gint;
 typedef char gbool;
+
+#define GERA_STRING_NULL_TERM(s_name, d_name) \
+    char d_name[s_name.allocation->size + 1]; \
+    for(size_t c = 0; c < s_name.allocation->size; c += 1) { \
+        d_name[c] = s_name.data[c]; \
+    } \
+    d_name[s_name.allocation->size] = '\0';
+
+GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh);
+void gera___rc_incr(GeraAllocation* a);
+void gera___rc_decr(GeraAllocation* a);
+
+void gera___free_nothing(char* data, size_t size);
 
 #endif

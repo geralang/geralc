@@ -1,0 +1,65 @@
+
+mod std::opt
+
+pub proc is_some(optional) {
+    case optional {
+        #some -> return true
+        #none -> return false
+    }
+}
+
+pub proc is_none(optional) {
+    case optional {
+        #some -> return false
+        #none -> return true
+    }
+}
+
+pub proc map(optional, mapping) {
+    case optional {
+        #some value -> return #some mapping(value)
+        #none -> return #none unit
+    }
+}
+
+pub proc unwrap_or(optional, default) {
+    case optional {
+        #some value -> return value
+        #none -> return default
+    }
+}
+
+pub proc unwrap_or_else(optional, f) {
+    case optional {
+        #some value -> return value
+        #none -> return f()
+    }
+}
+
+pub proc expect(optional, reason) {
+    case optional {
+        #some value -> return value
+        #none -> return panic(reason)
+    }
+}
+
+pub proc iter(optional) {
+    mut var done = false
+    return || {
+        case done -> return #end unit
+        done = true
+        return optional
+            |> map(|v| #next v)
+            |> unwrap_or(#end unit)
+    }
+}
+
+pub proc flatten(optional) {
+    case optional {
+        #none -> return #none unit
+        #some nested_optional -> case nested_optional {
+            #none -> return #none unit
+            #some value -> return #some value
+        }
+    }
+}

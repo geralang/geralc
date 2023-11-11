@@ -22,6 +22,7 @@ pub enum Type {
     Integer,
     Float,
     String,
+    Panic,
     Array(VarTypeIdx),
     Object(HashMap<StringIdx, VarTypeIdx>, bool),
     ConcreteObject(Vec<(StringIdx, Type)>),
@@ -133,6 +134,8 @@ impl TypeScope {
         encountered: Vec<usize>
     ) -> Option<Type> {
         match (a, b) {
+            (Type::Panic, b) => Some(b.clone()),
+            (a, Type::Panic) => Some(a.clone()),
             (Type::ConcreteObject(member_types), b) => {
                 let object_type = Type::Object(member_types.iter().map(|(member_name, member_type)|
                     (*member_name, self.register_with_types(Some(vec![member_type.clone()])))
@@ -202,35 +205,21 @@ impl TypeScope {
                 Type::Closure(b_param_groups, b_returned_group, b_captures)
             ) => {
                 if a_param_groups.len() != b_param_groups.len() { return None; }
-                let mut n_param_groups = Vec::new();
-                let n_returned_group = self.register_variable();
                 for p in 0..a_param_groups.len() {
-                    let n_param_group = self.register_variable();
                     if let None = self.limit_possible_types_internal(
-                        n_param_group,
                         a_param_groups[p],
-                        encountered.clone()
-                    ) { return None; }
-                    if let None = self.limit_possible_types_internal(
-                        n_param_group,
                         b_param_groups[p],
                         encountered.clone()
                     ) { return None; }
-                    n_param_groups.push(n_param_group);
                 }
                 if let None = self.limit_possible_types_internal(
-                    n_returned_group,
                     *a_returned_group,
+                    *b_returned_group,
                     encountered.clone()
                 ) { return None; }
-                if let None = self.limit_possible_types_internal(
-                    n_returned_group,
-                    *b_returned_group,
-                    encountered
-                ) { return None; }
                 Some(Type::Closure(
-                    n_param_groups,
-                    n_returned_group,
+                    a_param_groups.clone(),
+                    *a_returned_group,
                     if let Some(_) = a_captures { a_captures.clone() }
                     else if let Some(_) = b_captures {b_captures.clone() }
                     else { None }
@@ -309,7 +298,8 @@ impl TypeGroupDuplications {
             Type::Boolean |
             Type::Integer |
             Type::Float |
-            Type::String => duplicated_type.clone(),
+            Type::String |
+            Type::Panic => duplicated_type.clone(),
             Type::Array(element_types) => Type::Array(self.duplicate(*element_types, type_scope)),
             Type::Object(member_types, fixed) => Type::Object(
                 member_types.iter().map(|(member_name, member_types)| (
