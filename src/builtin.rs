@@ -194,6 +194,71 @@ fn load_foreign_builtins(
             strings, modules, typed_symbols
         );
     }
+    {
+        let s = type_scope.register_with_types(Some(vec![Type::String]));
+        let i = type_scope.register_with_types(Some(vec![Type::Integer]));
+        register_foreign_builtin(
+            path_from(&["core", "substring"], strings),
+            &["source", "start", "end"],
+            vec![s, i, i],
+            s,
+            strings, modules, typed_symbols
+        );
+    }
+    {
+        let s = type_scope.register_with_types(Some(vec![Type::String]));
+        register_foreign_builtin(
+            path_from(&["core", "concat"], strings),
+            &["string_a", "string_b"],
+            vec![s, s],
+            s,
+            strings, modules, typed_symbols
+        );
+    }
+    {
+        let i = type_scope.register_with_types(Some(vec![Type::Integer]));
+        let u = type_scope.register_with_types(Some(vec![Type::Unit]));
+        register_foreign_builtin(
+            path_from(&["core", "parse_int"], strings),
+            &["source"],
+            vec![
+                type_scope.register_with_types(Some(vec![Type::String]))
+            ],
+            type_scope.register_with_types(Some(vec![Type::Variants([
+                (strings.insert("some"), i),
+                (strings.insert("none"), u)
+            ].into(), true)])),
+            strings, modules, typed_symbols
+        );
+    }
+    {
+        let f = type_scope.register_with_types(Some(vec![Type::Float]));
+        let u = type_scope.register_with_types(Some(vec![Type::Unit]));
+        register_foreign_builtin(
+            path_from(&["core", "parse_flt"], strings),
+            &["source"],
+            vec![
+                type_scope.register_with_types(Some(vec![Type::String]))
+            ],
+            type_scope.register_with_types(Some(vec![Type::Variants([
+                (strings.insert("some"), f),
+                (strings.insert("none"), u)
+            ].into(), true)])),
+            strings, modules, typed_symbols
+        );
+    }
+    {
+        register_foreign_builtin(
+            path_from(&["core", "string"], strings),
+            &["repeated", "times"],
+            vec![
+                type_scope.register_with_types(Some(vec![Type::String])),
+                type_scope.register_with_types(Some(vec![Type::Integer]))
+            ],
+            type_scope.register_with_types(Some(vec![Type::String])),
+            strings, modules, typed_symbols
+        );
+    }
 }
 
 fn load_native_builtins(

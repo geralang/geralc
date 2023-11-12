@@ -1,0 +1,130 @@
+
+mod std::str
+
+use std::iter
+use std::opt
+
+pub proc substring_until(s, end_index) {
+    return s |> substring(0, end_index)
+}
+
+pub proc substring_after(s, start_index) {
+    return s |> substring(start_index, length(s))
+}
+
+pub proc at(s, index) {
+    return s |> substring(index, index + 1)
+}
+
+pub proc starts_with(s, prefix) {
+    var compared_prefix = s
+        |> substring_until(length(prefix))
+    return compared_prefix == prefix
+}
+
+pub proc ends_with(s, suffix) {
+    var compared_suffix = s
+        |> substring_after(-length(suffix))
+    return compared_suffix == suffix
+}
+
+pub proc find(s, sub) {
+    var current = { index = 0 }
+    return || {
+        mut var found = { value = #end unit }
+        exhaust(|| {
+            case current.index > length(s) - length(sub) -> return #end unit
+            var c = current.index
+            current.index = current.index + 1
+            var compared_sub = s |> substring(c, c + length(sub))
+            case compared_sub == sub -> {
+                found.value = #next c
+                return #end unit
+            }
+            return #next unit
+        })
+        return found.value
+    }
+}
+
+pub proc pad_left(s, target_length, padding) {
+    var fill_length = target_length - length(s)
+    return padding
+        |> string(fill_length / length(padding))
+        |> concat(padding |> substring_until(fill_length % length(padding)))
+        |> concat(s)
+}
+
+pub proc pad_right(s, target_length, padding) {
+    var fill_length = target_length - length(s)
+    return s
+        |> concat(padding |> string(fill_length / length(padding)))
+        |> concat(padding |> substring_until(fill_length % length(padding)))
+}
+
+pub proc format(s, value) {
+    mut var result = { value = #none unit }
+    mut var i = 0
+    exhaust(|| {
+        case i >= length(s) -> return #end unit
+        var ci = i
+        i = i + 1
+        var c = s |> at(ci)
+        case c == "_" -> {
+            var r = s
+                |> substring_until(ci)
+                |> concat(value |> as_str())
+                |> concat(s |> substring_after(ci + 1))
+            result.value = #some r
+            return #end unit
+        }
+        return #next unit
+    })
+    return result.value |> opt::expect("the format s does not contain any underscores")
+}
+
+pub proc split(s, separator) {
+    var current = {
+        start = 0,
+        index = 0,
+        done = false
+    }
+    return || {
+        case current.done -> return #end unit
+        mut var found = { value = #end unit }
+        exhaust(|| {
+            case current.index > length(s) - length(separator) -> {
+                var part = s |> substring_after(current.start)
+                found.value = #next part
+                current.done = true
+                return #end unit
+            }
+            var c = current.index
+            current.index = current.index + 1
+            var compared_sub = s |> substring(c, c + length(separator))
+            case compared_sub == separator -> {
+                var part = s |> substring(current.start, current.index)
+                current.index = c + length(separator)
+                current.start = current.index
+                found.value = #next part
+                return #end unit
+            }
+            return #next unit
+        })
+        return found.value
+    }
+}
+
+pub proc join(strings, separator) {
+    mut var result = { value = "" }
+    strings |> iter::for_each(|s| {
+        case length(result.value) > 0 -> result.value = result.value |> concat(separator)
+        result.value = result.value |> concat(s)
+    })
+    return result.value
+}
+
+pub proc iter(s) {
+    return 0..length(s)
+        |> iter::map(|i| s |> at(i))
+}

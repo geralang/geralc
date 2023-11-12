@@ -279,9 +279,6 @@ impl TypeGroupDuplications {
         let group_idx = type_scope.get_group_internal_index(var);
         if self.mapped.contains(&group_idx) { return self.apply(var); }
         let new_var_idx = type_scope.register_variable();
-        let original_group_types = type_scope.get_group_types(var).clone();
-        let new_group_types = original_group_types.map(|possible_types| possible_types.iter().map(|t| self.duplicate_type(t, type_scope)).collect());
-        *type_scope.get_group_types_mut(new_var_idx) = new_group_types;
         for var_idx in 0..type_scope.var_type_groups.len() {
             let var_idx = VarTypeIdx(var_idx);
             if type_scope.get_group_internal_index(var_idx) == group_idx {
@@ -289,6 +286,9 @@ impl TypeGroupDuplications {
             }
         }
         self.mapped.insert(group_idx);
+        let original_group_types = type_scope.get_group_types(var).clone();
+        let new_group_types = original_group_types.map(|possible_types| possible_types.iter().map(|t| self.duplicate_type(t, type_scope)).collect());
+        *type_scope.get_group_types_mut(new_var_idx) = new_group_types;
         return new_var_idx;
     }
 

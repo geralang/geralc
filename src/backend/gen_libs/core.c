@@ -4,9 +4,14 @@
 #endif
 
 #include <stdio.h>
+#include <errno.h>
+#include <locale.h>
+
+void gera___panic(const char* message);
 
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
     GeraAllocation* a = (GeraAllocation*) malloc(sizeof(GeraAllocation) + size);
+    if(a == NULL) { gera___panic("unable to allocate memory for object, array or closure"); }
     a->rc = 1;
     a->size = size;
     a->fh = fh;
@@ -67,8 +72,8 @@ double gera___float_mod(double x, double div) {
 }
 
 char gera___string_eq(GeraString a, GeraString b) {
-    if(a.allocation->size != b.allocation->size) { return 0; }
-    for(size_t i = 0; i < a.allocation->size; i += 1) {
+    if(a.length_bytes != b.length_bytes) { return 0; }
+    for(size_t i = 0; i < a.length_bytes; i += 1) {
         if(a.data[i] != b.data[i]) { return 0; }
     }
     return 1;
@@ -140,6 +145,7 @@ GeraString gera___alloc_string(const char* data) {
     result.allocation = allocation;
     result.length = 0;
     result.data = allocation->data;
+    result.length_bytes = size;
     for(size_t c = 0; c < size; c += 1) {
         char cu = data[c];
         if((cu & 0b10000000) == 0b00000000
@@ -148,5 +154,73 @@ GeraString gera___alloc_string(const char* data) {
         }
         result.data[c] = cu;
     }
+    return result;
+}
+
+size_t gera___codepoint_size(char fb) {
+    if((fb & 0b10000000) == 0b00000000) { return 1; }
+    if((fb & 0b11100000) == 0b11000000) { return 2; }
+    if((fb & 0b11110000) == 0b11100000) { return 3; }
+    if((fb & 0b11111000) == 0b11110000) { return 4; }
+    return 0;
+}
+
+GeraString gera___substring(GeraString src, gint start, gint end) {
+    size_t start_idx = (size_t) start;
+    size_t end_idx = (size_t) end;
+    size_t start_offset = 0;
+    for(size_t i = 0; i < start_idx; i += 1) {
+        start_offset += gera___codepoint_size(src.data[start_offset]);
+    }
+    size_t length_bytes = 0;
+    for(size_t c = start_idx; c < end_idx; c += 1) {
+        length_bytes += gera___codepoint_size(src.data[start_offset + length_bytes]);
+    }
+    gera___rc_incr(src.allocation);
+    GeraString result;
+    result.allocation = src.allocation;
+    result.length = end_idx - start_idx;
+    result.length_bytes = length_bytes;
+    result.data = src.allocation->data + start_offset;
+    return result;
+}
+
+GeraString gera___concat(GeraString a, GeraString b) {
+    GeraString result;
+    GeraAllocation* allocation = gera___rc_alloc(
+        a.length_bytes + b.length_bytes, &gera___free_nothing
+    );
+    result.allocation = allocation;
+    result.length = a.length + b.length;
+    result.length_bytes = a.length_bytes + b.length_bytes;
+    result.data = allocation->data;
+    for(size_t i = 0; i < a.length_bytes; i += 1) {
+        result.data[i] = a.data[i];
+    }
+    for(size_t i = 0; i < b.length_bytes; i += 1) {
+        result.data[a.length_bytes + i] = b.data[i];
+    }
+    return result;
+}
+
+gbool gera___parse_success = 0;
+
+gfloat gera___parse_flt(GeraString parsed) {
+    setlocale(LC_NUMERIC, "C");
+    GERA_STRING_NULL_TERM(parsed, parsed_nt);
+    errno = 0;
+    char* end_ptr;
+    gfloat result = strtod(parsed_nt, &end_ptr);
+    gera___parse_success = errno == 0 && end_ptr == parsed_nt + parsed.length_bytes;
+    return result;
+}
+
+gint gera___parse_int(GeraString parsed) {
+    setlocale(LC_NUMERIC, "C");
+    GERA_STRING_NULL_TERM(parsed, parsed_nt);
+    errno = 0;
+    char* end_ptr;
+    gint result = strtoll(parsed_nt, &end_ptr, 10);
+    gera___parse_success = errno == 0 && end_ptr == parsed_nt + parsed.length_bytes;
     return result;
 }

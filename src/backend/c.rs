@@ -122,6 +122,36 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
 }
 
 fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut String) {
+    for object_idx in 0..types.get_all_objects().len() {
+        output.push_str("typedef struct ");
+        emit_object_name(object_idx, output);
+        output.push_str(" {\n    GeraAllocation* allocation;");
+        for (member_name, member_type) in &types.get_all_objects()[object_idx] {
+            output.push_str("\n    ");
+            emit_type(*member_type, types, output);
+            output.push_str("* member");
+            output.push_str(&member_name.0.to_string());
+            output.push_str(";");
+        }
+        output.push_str("\n} ");
+        emit_object_name(object_idx, output);
+        output.push_str(";\n");
+    }
+    for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
+        output.push_str("typedef struct ");
+        emit_concrete_object_name(concrete_object_idx, output);
+        output.push_str(" {");
+        for (member_name, member_type) in &types.get_all_concrete_objects()[concrete_object_idx] {
+            output.push_str("\n    ");
+            emit_type(*member_type, types, output);
+            output.push_str(" ");
+            output.push_str(strings.get(*member_name));
+            output.push_str(";");
+        }
+        output.push_str("\n} ");
+        emit_concrete_object_name(concrete_object_idx, output);
+        output.push_str(";\n");
+    }
     for variants_idx in 0..types.get_all_variants().len() {
         let has_values = types.get_all_variants()[variants_idx].iter().filter(|(_, vt)|
                 if let IrType::Unit = vt.direct(types) { false } else { true }
@@ -154,49 +184,6 @@ fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut Strin
         emit_variants_name(variants_idx, output);
         output.push_str(";\n");
     }
-    for object_idx in 0..types.get_all_objects().len() {
-        output.push_str("typedef struct ");
-        emit_object_name(object_idx, output);
-        output.push_str(" {\n    GeraAllocation* allocation;");
-        for (member_name, member_type) in &types.get_all_objects()[object_idx] {
-            output.push_str("\n    ");
-            emit_type(*member_type, types, output);
-            output.push_str("* member");
-            output.push_str(&member_name.0.to_string());
-            output.push_str(";");
-        }
-        output.push_str("\n} ");
-        emit_object_name(object_idx, output);
-        output.push_str(";\n");
-        output.push_str("typedef struct ");
-        emit_object_alloc_name(object_idx, output);
-        output.push_str(" {");
-        for (member_name, member_type) in &types.get_all_objects()[object_idx] {
-            output.push_str("\n    ");
-            emit_type(*member_type, types, output);
-            output.push_str(" member");
-            output.push_str(&member_name.0.to_string());
-            output.push_str(";");
-        }
-        output.push_str("\n} ");
-        emit_object_alloc_name(object_idx, output);
-        output.push_str(";\n");
-    }
-    for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
-        output.push_str("typedef struct ");
-        emit_concrete_object_name(concrete_object_idx, output);
-        output.push_str(" {");
-        for (member_name, member_type) in &types.get_all_concrete_objects()[concrete_object_idx] {
-            output.push_str("\n    ");
-            emit_type(*member_type, types, output);
-            output.push_str(" ");
-            output.push_str(strings.get(*member_name));
-            output.push_str(";");
-        }
-        output.push_str("\n} ");
-        emit_concrete_object_name(concrete_object_idx, output);
-        output.push_str(";\n");
-    }
     for closure_idx in 0..types.get_all_closures().len() {
         output.push_str("typedef struct ");
         emit_closure_name(closure_idx, output);
@@ -213,6 +200,21 @@ fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut Strin
         output.push_str(");\n");
         output.push_str("} ");
         emit_closure_name(closure_idx, output);
+        output.push_str(";\n");
+    }
+    for object_idx in 0..types.get_all_objects().len() {
+        output.push_str("typedef struct ");
+        emit_object_alloc_name(object_idx, output);
+        output.push_str(" {");
+        for (member_name, member_type) in &types.get_all_objects()[object_idx] {
+            output.push_str("\n    ");
+            emit_type(*member_type, types, output);
+            output.push_str(" member");
+            output.push_str(&member_name.0.to_string());
+            output.push_str(";");
+        }
+        output.push_str("\n} ");
+        emit_object_alloc_name(object_idx, output);
         output.push_str(";\n");
     }
 }
@@ -408,7 +410,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         if major == minor { return false; }
         for (variant_name, variant_type) in &types.get_all_variants()[minor] {
             if let Some(major_variant_type) = types.get_all_variants()[major].get(variant_name) {
-                if !variant_type.eq(major_variant_type, types, &mut Vec::new()) { return false; }
+                if !variant_type.eq(major_variant_type, types, &mut HashMap::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -442,7 +444,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         if major == minor { return false; }
         for (member_name, member_type) in &types.get_all_objects()[minor] {
             if let Some(major_member_type) = types.get_all_objects()[major].get(member_name) {
-                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
+                if !member_type.eq(major_member_type, types, &mut HashMap::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -451,7 +453,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
         for (member_name, member_type) in &types.get_all_objects()[minor] {
             if let Some((_, major_member_type)) = types.get_all_concrete_objects()[major].iter()
                 .filter(|(mn, _)| *mn == *member_name).next() {
-                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
+                if !member_type.eq(major_member_type, types, &mut HashMap::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -536,7 +538,7 @@ fn emit_conversion_functions(types: &IrTypeBank, strings: &StringMap, output: &m
     fn concrete_object_is_object_subset(major: usize, minor: usize, types: &IrTypeBank) -> bool {
         for (member_name, member_type) in &types.get_all_concrete_objects()[minor] {
             if let Some(major_member_type) = types.get_all_objects()[major].get(member_name) {
-                if !member_type.eq(major_member_type, types, &mut Vec::new()) { return false; }
+                if !member_type.eq(major_member_type, types, &mut HashMap::new()) { return false; }
             } else { return false; }
         }
         return true;
@@ -829,7 +831,7 @@ fn emit_variable_poly(
 ) {
     from_type = from_type.direct(types);
     to_type = to_type.direct(types);
-    if from_type.eq(&to_type, types, &mut Vec::new()) {
+    if from_type.eq(&to_type, types, &mut HashMap::new()) {
         output.push_str(variable);
         return;
     }
@@ -918,25 +920,33 @@ fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec
     }
     let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> = HashMap::new();
     builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 return param0.allocation == param1.allocation;
-")
+"#)
     });
     builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 return param0.tag == param1.tag;
-")
+"#)
     });
     builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 return param0.length;
-")
+"#)
     });
     builtins.insert(path_from(&["core", "array"], strings), |param_types, return_type, types, strings| {
         let array_idx = if let IrType::Array(array_idx) = return_type.direct(types) {
             array_idx.0
         } else { panic!("should be an array!"); };
         let mut result = String::new();
+        result.push_str(r#"
+if(param1 < 0) {
+    gera___st_push("core::array", "<builtin>/core.gera", 0);
+    size_t error_message_length = snprintf(NULL, 0, "the array length %lld is not valid", param1);
+    char error_message[error_message_length + 1];
+    sprintf(error_message, "the array length %lld is not valid", param1);
+    gera___panic(error_message);
+}"#);
         result.push_str("GeraArray result;\n");
         result.push_str("GeraAllocation* allocation = gera___rc_alloc(sizeof(");
         emit_type(param_types[0], types, &mut result);
@@ -965,52 +975,52 @@ while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
 ", strings.insert("next").0)
     });
     builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 GERA_STRING_NULL_TERM(param0, message_nt);
 gera___panic(message_nt);
-")
+"#)
     });
     builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
         match param_types[0].direct(types) {
-            IrType::Unit => String::from("
-return gera___alloc_string(\"<unit>\");
-"),
-            IrType::Boolean => String::from("
-return gera___alloc_string(param0? \"true\" : \"false\");
-"),
-            IrType::Integer => String::from("
-size_t result_length = snprintf(NULL, 0, \"%lld\", param0);
+            IrType::Unit => String::from(r#"
+return gera___alloc_string("<unit>");
+"#),
+            IrType::Boolean => String::from(r#"
+return gera___alloc_string(param0? "true" : "false");
+"#),
+            IrType::Integer => String::from(r#"
+size_t result_length = snprintf(NULL, 0, "%lld", param0);
 char result[result_length + 1];
-sprintf(result, \"%lld\", param0);
+sprintf(result, "%lld", param0);
 return gera___alloc_string(result);
-"),
-            IrType::Float => String::from("
-size_t result_length = snprintf(NULL, 0, \"%f\", param0);
+"#),
+            IrType::Float => String::from(r#"
+size_t result_length = snprintf(NULL, 0, "%f", param0);
 char result[result_length + 1];
-sprintf(result, \"%f\", param0);
+sprintf(result, "%f", param0);
 return gera___alloc_string(result);
-"),
+"#),
             IrType::String => {
                 let mut result = String::new();
                 emit_rc_incr("param0", param_types[0], types, strings, &mut result);
                 result.push_str("return param0;\n");
                 result
             }
-            IrType::Array(_) => String::from("
-size_t result_length = snprintf(NULL, 0, \"<array %p>\", param0.allocation);
+            IrType::Array(_) => String::from(r#"
+size_t result_length = snprintf(NULL, 0, "<array %p>", param0.allocation);
 char result[result_length + 1];
-sprintf(result, \"<array %p>\", param0.allocation);
+sprintf(result, "<array %p>", param0.allocation);
 return gera___alloc_string(result);
-"),
-            IrType::Object(_) => String::from("
-size_t result_length = snprintf(NULL, 0, \"<object %p>\", param0.allocation);
+"#),
+            IrType::Object(_) => String::from(r#"
+size_t result_length = snprintf(NULL, 0, "<object %p>", param0.allocation);
 char result[result_length + 1];
-sprintf(result, \"<object %p>\", param0.allocation);
+sprintf(result, "<object %p>", param0.allocation);
 return gera___alloc_string(result);
-"),
-            IrType::ConcreteObject(_) => String::from("
-return gera___alloc_string(\"<object>\");
-"),
+"#),
+            IrType::ConcreteObject(_) => String::from(r#"
+return gera___alloc_string("<object>");
+"#),
             IrType::Variants(variant_idx) => {
                 let variant_types = types.get_variants(variant_idx);
                 let mut result = String::from("switch(param0.tag) {\n");
@@ -1024,24 +1034,114 @@ return gera___alloc_string(\"<object>\");
                 result.push_str("}\n");
                 result
             }
-            IrType::Closure(_) => String::from("
-size_t result_length = snprintf(NULL, 0, \"<closure %p>\", param0.allocation);
+            IrType::Closure(_) => String::from(r#"
+size_t result_length = snprintf(NULL, 0, "<closure %p>", param0.allocation);
 char result[result_length + 1];
-sprintf(result, \"<closure %p>\", param0.allocation);
+sprintf(result, "<closure %p>", param0.allocation);
 return gera___alloc_string(result);
-"),
+"#),
             IrType::Indirect(_) => panic!("should be direct"),
         }
     });
     builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 return (gint) param0;
-")
+"#)
     });
     builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, _, _| {
-        String::from("
+        String::from(r#"
 return (gfloat) param0;
-")
+"#)
+    });
+    builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _| {
+        String::from(r#"
+gint start_idx = param1;
+if(param1 < 0) { start_idx = param0.length + param1; }
+if(param1 > param0.length) { 
+    gera___st_push("core::substring", "<builtin>/core.gera", 0);
+    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
+    char error_message[error_message_length + 1];
+    sprintf(error_message, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
+    gera___panic(error_message);
+}
+gint end_idx = param2;
+if(param2 < 0) { end_idx = param0.length + param2; }
+if(param2 > param0.length) {
+    gera___st_push("core::substring", "<builtin>/core.gera", 0);
+    size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
+    char error_message[error_message_length + 1];
+    sprintf(error_message, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
+    gera___panic(error_message);
+}
+if(start_idx > end_idx) {
+    gera___st_push("core::substring", "<builtin>/core.gera", 0);
+    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of array is %lld)", param1, param2, param0.length);
+    char error_message[error_message_length + 1];
+    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of array is %lld)", param1, param2, param0.length);
+    gera___panic(error_message);
+}
+return gera___substring(param0, param1, param2);
+"#)
+    });
+    builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _| {
+        String::from(r#"
+return gera___concat(param0, param1);
+"#)
+    });
+    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, return_type, types, strings| {
+        let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
+        else { panic!("should be variants"); };
+        let mut result = String::new();
+        result.push_str("gfloat value = gera___parse_flt(param0);\n");
+        result.push_str("if(gera___parse_success) { return (");
+        emit_variants_name(variant_idx.0, &mut result);
+        result.push_str(") { .tag = ");
+        result.push_str(&strings.insert("some").0.to_string());
+        result.push_str(", .value = { .some = value } }; }\n");
+        result.push_str("return (");
+        emit_variants_name(variant_idx.0, &mut result);
+        result.push_str(") { .tag = ");
+        result.push_str(&strings.insert("none").0.to_string());
+        result.push_str(" };\n");
+        result
+    });
+    builtins.insert(path_from(&["core", "parse_int"], strings), |_, return_type, types, strings| {
+        let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
+        else { panic!("should be variants"); };
+        let mut result = String::new();
+        result.push_str("gint value = gera___parse_int(param0);\n");
+        result.push_str("if(gera___parse_success) { return (");
+        emit_variants_name(variant_idx.0, &mut result);
+        result.push_str(") { .tag = ");
+        result.push_str(&strings.insert("some").0.to_string());
+        result.push_str(", .value = { .some = value } }; }\n");
+        result.push_str("return (");
+        emit_variants_name(variant_idx.0, &mut result);
+        result.push_str(") { .tag = ");
+        result.push_str(&strings.insert("none").0.to_string());
+        result.push_str(" };\n");
+        result
+    });
+    builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
+        String::from(r#"
+if(param1 < 0) {
+    gera___st_push("core::array", "<builtin>/core.gera", 0);
+    size_t error_message_length = snprintf(NULL, 0, "the string repetition count %lld is not valid", param1);
+    char error_message[error_message_length + 1];
+    sprintf(error_message, "the string repetition count %lld is not valid", param1);
+    gera___panic(error_message);
+}
+GeraAllocation* allocation = gera___rc_alloc(param0.length_bytes * param1, &gera___free_nothing);
+GeraString result;
+result.allocation = allocation;
+result.data = allocation->data;
+result.length = param0.length * param1;
+result.length_bytes = allocation->size;
+for(size_t i = 0; i < allocation->size; i += 1) {
+    result.data[i] = param0.data[i % param0.length_bytes];
+}
+return result;
+"#)
     });
     return builtins;
 }
@@ -1472,14 +1572,14 @@ fn emit_instruction(
                                 for param_idx in 0..parameter_types.len() {
                                     if !parameter_types[param_idx].eq(
                                         &expected_parameter_types[param_idx], types,
-                                        &mut Vec::new()
+                                        &mut HashMap::new()
                                     ) {
                                         params_match = false;
                                         break;
                                     }
                                 }
                                 if !params_match { continue; }
-                                if !return_type.eq(expected_return_type, types, &mut Vec::new()) {
+                                if !return_type.eq(expected_return_type, types, &mut HashMap::new()) {
                                     continue;
                                 }
                                 found_variant = *variant;

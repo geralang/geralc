@@ -2,6 +2,7 @@
 mod std::vec
 
 use std::iter
+use std::str
 
 pub proc new() {
     return {
@@ -54,7 +55,11 @@ pub proc insert(vector, index, item) {
     case new_size > length(vector.content) -> vector |> grow(item, length(vector.content) * 2)
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx > vector.size -> panic("index is out of bounds")
+    case idx > vector.size -> panic(
+        "the insertion index _ is out of bounds for a vector of length _"
+            |> str::format(idx)
+            |> str::format(vector.size)
+    )
     idx..vector.size |> iter::for_each(|i| {
         vector.content[i + 1] = vector.content[i]
     })
@@ -71,7 +76,11 @@ pub proc pop(vector) {
 pub proc remove(vector, index) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic("index is out of bounds")
+    case idx >= vector.size -> panic(
+        "the index _ is out of bounds for a vector of length _"
+            |> str::format(idx)
+            |> str::format(vector.size)
+    )
     vector.size = vector.size - 1
     idx..vector.size |> iter::for_each(|i| {
         vector.content[i] = vector.content[i + 1]
@@ -82,14 +91,22 @@ pub proc remove(vector, index) {
 pub proc get(vector, index) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic("index is out of bounds")
+    case idx >= vector.size -> panic(
+        "the index _ is out of bounds for a vector of length _"
+            |> str::format(idx)
+            |> str::format(vector.size)
+    )
     return vector.content[idx]
 }
 
 pub proc set(vector, index, value) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic("index is out of bounds")
+    case idx >= vector.size -> panic(
+        "the index _ is out of bounds for a vector of length _"
+            |> str::format(idx)
+            |> str::format(vector.size)
+    )
     vector.content[idx] = value
     return vector
 }

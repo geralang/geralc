@@ -22,6 +22,7 @@ typedef struct GeraArray {
 typedef struct GeraString {
     GeraAllocation* allocation;
     size_t length;
+    size_t length_bytes;
     char* data;
 } GeraString;
 
@@ -30,11 +31,11 @@ typedef long long int gint;
 typedef char gbool;
 
 #define GERA_STRING_NULL_TERM(s_name, d_name) \
-    char d_name[s_name.allocation->size + 1]; \
-    for(size_t c = 0; c < s_name.allocation->size; c += 1) { \
+    char d_name[s_name.length_bytes + 1]; \
+    for(size_t c = 0; c < s_name.length_bytes; c += 1) { \
         d_name[c] = s_name.data[c]; \
     } \
-    d_name[s_name.allocation->size] = '\0';
+    d_name[s_name.length_bytes] = '\0';
 
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh);
 void gera___rc_incr(GeraAllocation* a);

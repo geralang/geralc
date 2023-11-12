@@ -26,11 +26,27 @@ fn var_types_to_ir_type(
     strings: &mut StringMap,
     encountered: &mut HashMap<usize, Option<IrIndirectTypeIdx>>
 ) -> IrType {
+    if let Some(ind_idx) = encountered.get_mut(&type_scope.get_group_internal_index(converted)) {
+        if let Some(ind_idx) = ind_idx {
+            return IrType::Indirect(*ind_idx);
+        }
+        let new_idx = type_bank.insert_indirect(IrType::Unit);
+        *ind_idx = Some(new_idx);
+        return IrType::Indirect(new_idx);
+    }
     if let Some(group_types) = type_scope.get_group_types(converted) {
         // if group_types.len() != 1 {
         //     panic!("possible types should be concrete!");
         // }
-        type_to_ir_type(type_scope, &group_types[0], type_bank, strings, encountered)
+        let converted_int_idx = type_scope.get_group_internal_index(converted);
+        encountered.insert(converted_int_idx, None);
+        let result = type_to_ir_type(type_scope, &group_types[0], type_bank, strings, encountered);
+        if let Some(indirect_idx) = encountered.remove(&converted_int_idx).expect("inserted above") {
+            type_bank.overwrite_indirect(indirect_idx, result);
+            IrType::Indirect(indirect_idx)
+        } else {
+            result
+        }        
     } else {
         IrType::Unit // If "any type" has reached this point, it's unused.
     }
@@ -189,6 +205,7 @@ pub fn lower_typed_ast(
             }
         }
     }
+    type_bank.collapse();
     Ok((ir_symbols, type_bank))
 }
 
@@ -345,14 +362,14 @@ impl IrGenerator {
                     if parameter_types.len() != parameter_ir_types.len() { continue; }
                     let mut params_eq = true;
                     for param_idx in 0..parameter_types.len() {
-                        if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank, &mut Vec::new()) {
+                        if parameter_types[param_idx].eq(&parameter_ir_types[param_idx], type_bank, &mut HashMap::new()) {
                             continue;
                         }
                         params_eq = false;
                         break;
                     }
                     if !params_eq { continue; }
-                    if !return_type.eq(&return_ir_type, type_bank, &mut Vec::new()) { continue; } 
+                    if !return_type.eq(&return_ir_type, type_bank, &mut HashMap::new()) { continue; } 
                     proc_variant = *variant;
                     exists = true;
                     break;
@@ -518,7 +535,8 @@ impl IrGenerator {
             AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
                 if let Some(value) = value {
                     let var = self.allocate(var_types_to_ir_type(
-                        current_type_scope, value.get_types(), type_bank, strings, &mut HashMap::new()
+                        current_type_scope, value.get_types(), type_bank, strings,
+                        &mut HashMap::new()
                     ));
                     lower_node!(&*value, Some(var));
                     named_variables.insert(*name, var.index);
