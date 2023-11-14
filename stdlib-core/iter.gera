@@ -90,7 +90,7 @@ pub proc count(iter, condition) {
     return found.count
 }
 
-pub proc first(iter) {
+pub proc next(iter) {
     case iter() {
         #end -> return #none unit
         #next v -> return #some v
@@ -112,4 +112,8 @@ pub proc from_value(value) {
         done = true
         return #next value
     }
+}
+
+pub proc find(iter, condition) {
+    return iter |> filter(condition) |> next()
 }

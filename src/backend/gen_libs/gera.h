@@ -3,6 +3,7 @@
 #define GERA_H
 
 #include <stdlib.h>
+#include <stdint.h>
 
 typedef void (*GeraFreeHandler)(char* data, size_t size);
 
@@ -27,7 +28,7 @@ typedef struct GeraString {
 } GeraString;
 
 typedef double gfloat;
-typedef long long int gint;
+typedef int64_t gint;
 typedef char gbool;
 
 #define GERA_STRING_NULL_TERM(s_name, d_name) \

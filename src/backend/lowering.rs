@@ -43,9 +43,9 @@ fn var_types_to_ir_type(
         let result = type_to_ir_type(type_scope, &group_types[0], type_bank, strings, encountered);
         if let Some(indirect_idx) = encountered.remove(&converted_int_idx).expect("inserted above") {
             type_bank.overwrite_indirect(indirect_idx, result);
-            IrType::Indirect(indirect_idx)
+            IrType::Indirect(indirect_idx)//.reinsert(type_bank, strings)
         } else {
-            result
+            result//.reinsert(type_bank, strings)
         }        
     } else {
         IrType::Unit // If "any type" has reached this point, it's unused.
@@ -205,7 +205,6 @@ pub fn lower_typed_ast(
             }
         }
     }
-    type_bank.collapse();
     Ok((ir_symbols, type_bank))
 }
 
