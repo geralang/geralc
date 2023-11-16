@@ -144,6 +144,7 @@ fn main() {
         }
     };
     let ir_type_deduplication = ir_types.deduplicate();
+    println!("{:?}", ir_type_deduplication);
     //println!("lowering done");
     // generate file content based on format
     let targets: HashMap<String, CompileTarget> = HashMap::from([

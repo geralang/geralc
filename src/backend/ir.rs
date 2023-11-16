@@ -341,6 +341,33 @@ impl IrTypeBankMapping {
     pub fn indirect_is_mapped(&self, i: usize) -> bool { self.indirects.contains_key(&i) }
 }
 
+impl std::fmt::Debug for IrTypeBankMapping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "IrTypeBankMapping {{
+    arrays: [{}
+    ]
+    objects: [{}
+    ]
+    concrete_objects: [{}
+    ]
+    variants: [{}
+    ]
+    closures: [{}
+    ]
+    indirects: [{}
+    ]
+}}",    
+            self.arrays.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
+            self.objects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
+            self.concrete_objects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
+            self.variants.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
+            self.closures.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
+            self.indirects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join("")
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IrType {
     Unit,

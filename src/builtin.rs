@@ -259,6 +259,18 @@ fn load_foreign_builtins(
             strings, modules, typed_symbols
         );
     }
+    {
+        register_foreign_builtin(
+            path_from(&["core", "hash"], strings),
+            &["value"],
+            vec![
+                type_scope.register_variable(),
+
+            ],
+            type_scope.register_with_types(Some(vec![Type::Integer])),
+            strings, modules, typed_symbols
+        );
+    }
 }
 
 fn load_native_builtins(

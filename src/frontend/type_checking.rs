@@ -1364,19 +1364,17 @@ pub fn display_types(
         r
     }
     fn collect_letters(
-        letters: &mut HashMap<usize, (String, bool)>,
+        letters: &mut HashMap<usize, (String, usize)>,
         types: VarTypeIdx,
         type_scope: &TypeScope
     ) {
         let group_internal_idx = type_scope.get_group_internal_index(types);
-        if let Some((_, used_elsewhere)) = letters.get_mut(&group_internal_idx) {
-            if *used_elsewhere {
-                return;
-            }
-            *used_elsewhere = true;
+        if let Some((_, usages)) = letters.get_mut(&group_internal_idx) {
+            *usages += 1;
+            if *usages >= 2 { return; }
         } else {
             let letter = choose_letter(letters.len());
-            letters.insert(group_internal_idx, (letter, false));
+            letters.insert(group_internal_idx, (letter, 1));
         }
         if let Some(possible_types) = type_scope.get_group_types(types) {
             for possible_type in possible_types {
@@ -1385,7 +1383,7 @@ pub fn display_types(
         }
     }
     fn collect_type_letters(
-        letters: &mut HashMap<usize, (String, bool)>,
+        letters: &mut HashMap<usize, (String, usize)>,
         collected_type: &Type,
         type_scope: &TypeScope
     ) {
@@ -1424,7 +1422,7 @@ pub fn display_types(
         group_types: &Option<Vec<Type>>,
         strings: &StringMap,
         type_scope: &TypeScope,
-        letters: &HashMap<usize, (String, bool)>
+        letters: &HashMap<usize, (String, usize)>
     ) -> String {
         if let Some(possible_types) = group_types {
             let mut result = String::new();
@@ -1447,7 +1445,7 @@ pub fn display_types(
         strings: &StringMap,
         type_scope: &TypeScope,
         displayed_type: &Type,
-        letters: &HashMap<usize, (String, bool)>
+        letters: &HashMap<usize, (String, usize)>
     ) -> String {
         match displayed_type {
             Type::Unit => String::from("unit"),
@@ -1504,11 +1502,11 @@ pub fn display_types(
         strings: &StringMap,
         type_scope: &TypeScope,
         types: VarTypeIdx,
-        letters: &HashMap<usize, (String, bool)>
+        letters: &HashMap<usize, (String, usize)>
     ) -> String {
         let group_internal_idx = type_scope.get_group_internal_index(types);
-        if let Some((letter, used_elsewhere)) = letters.get(&group_internal_idx) {
-            if *used_elsewhere {
+        if let Some((letter, usage_count)) = letters.get(&group_internal_idx) {
+            if *usage_count >= 2 {
                 return letter.clone();
             }
         }
@@ -1518,17 +1516,16 @@ pub fn display_types(
     collect_letters(&mut letters, types, type_scope);
     let mut result = display_types_internal(strings, type_scope, types, &letters);
     let mut letter_types = String::new();
-    for (internal_group_idx, (letter, used)) in &letters {
-        if !used { continue; }
+    for (internal_group_idx, (letter, usage_count)) in &letters {
+        if *usage_count < 2 { continue; }
         if letter_types.len() > 0 { letter_types.push_str(", "); }
         letter_types.push_str(letter);
         letter_types.push_str(" = ");
         letter_types.push_str(&display_group_types(type_scope.get_group_types_from_internal_index(*internal_group_idx), strings, type_scope, &letters));
     }   
     if letter_types.len() > 0 {
-        result.push_str(" (");
+        result.push_str(" where ");
         result.push_str(&letter_types);
-        result.push_str(")");
     }
     format!(
         concat!(crate::style_cyan!(), "{}", crate::style_reset!()),

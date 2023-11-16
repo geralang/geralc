@@ -1171,6 +1171,31 @@ for(size_t i = 0; i < allocation->size; i += 1) {
 return result;
 "#)
     });
+    builtins.insert(path_from(&["core", "hash"], strings), |param_types, _, types, type_dedup, _| {
+        match param_types[0].direct(types).apply_mapping(type_dedup) {
+            IrType::Unit => String::from(r#"
+return 0;
+"#),
+            IrType::Boolean |
+            IrType::Integer |
+            IrType::Float |
+            IrType::Array(_) |
+            IrType::Object(_) |
+            IrType::ConcreteObject(_) |
+            IrType::Variants(_) |
+            IrType::Closure(_) => {
+                let mut result = String::new();
+                result.push_str("return gera___hash((unsigned char*) &param0, sizeof(");
+                emit_type(param_types[0], types, type_dedup, &mut result);
+                result.push_str("));\n");
+                result
+            }
+            IrType::String => String::from(r#"
+return gera___hash((unsigned char*) param0.data, param0.length_bytes);
+"#),
+            IrType::Indirect(_) => panic!("should be direct")
+        }
+    });
     return builtins;
 }
 

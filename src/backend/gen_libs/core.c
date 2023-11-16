@@ -224,3 +224,11 @@ gint gera___parse_int(GeraString parsed) {
     gera___parse_success = errno == 0 && end_ptr == parsed_nt + parsed.length_bytes;
     return result;
 }
+
+gint gera___hash(unsigned char* data, size_t data_len) {
+    size_t hash = 0;
+    for(size_t i = 0; i < data_len; i += 1) {
+        hash = data[i] + (hash << 6) + (hash << 16) - hash;
+    }
+    return *((gint*) &hash);
+}

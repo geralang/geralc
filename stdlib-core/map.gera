@@ -1,0 +1,109 @@
+
+mod map
+
+use std::opt
+use std::iter
+
+pub proc new() {
+    return {
+        buckets = [],
+        load_factor = 0.75,
+        size = 0
+    } |> set_capacity(16)
+}
+
+pub proc set_capacity(m, new_minimum_capacity) {
+    case length(m.buckets) >= new_minimum_capacity -> return m
+    var old_buckets = m.buckets
+    m.buckets = array(#none unit, new_minimum_capacity)
+    0..length(old_buckets) |> iter::for_each(|bucket_idx|
+        old_buckets[bucket_idx] |> opt::map(|n| {
+            var current = { node = n }
+            exhaust(|| {
+                m |> set_h(current.node.h, current.node.value)
+                case current.node.next {
+                    #none -> return #end unit
+                    #some n -> {
+                        current.node = n
+                        return #next unit
+                    }
+                }
+            })
+        })
+    )
+    return m
+}
+
+pub proc set_load_factor(m, new_load_factor) {
+    m.load_factor = new_load_factor
+    return m
+}
+
+pub proc set(m, key, value) {
+    return set_h(m, hash(key), value)
+}
+
+pub proc set_h(m, h, value) {
+    var bucket_idx = h % length(m.buckets)
+    m.buckets[bucket_idx] = m.buckets[bucket_idx]
+        |> opt::map(|n| {
+            var start = n
+            var current = {
+                node = n,
+                replaced = false
+            }
+            exhaust(|| {
+                case current.node.h == h -> {
+                    current.node.value = value
+                    current.replaced = true
+                    return #end unit
+                }
+                case current.node.next {
+                    #none -> return #end unit
+                    #some n -> {
+                        current.node = n
+                        return #next unit
+                    }
+                } 
+            })
+            case current.replaced -> return #some start
+            current.node.next = #some { h = h, value = value, next = #none unit }
+            m.size = m.size + 1
+            case m.size > as_int(as_flt(length(m.buckets)) * m.load_factor) -> m
+                |> set_capacity(length(m.buckets) * 2)
+            return #some start
+        })
+        |> opt::unwrap_or_else(|| {
+            m.size = m.size + 1
+            return #some { h = h, value = value, next = #none unit }
+        })
+    return m
+}
+
+pub proc get(m, key) {
+    return get_h(m, hash(key))
+}
+
+pub proc get_h(m, h) {
+    return m.buckets[h % length(m.buckets)]
+        |> opt::map(|n| {
+            var current = {
+                node = n,
+                result = #none unit
+            }
+            exhaust(|| {
+                case current.node.h == h -> {
+                    current.result = #some current.node.value
+                    return #end unit
+                }
+                case current.node.next {
+                    #none -> return #end unit
+                    #some n -> {
+                        current.node = n
+                        return #next unit
+                    }
+                } 
+            })
+            return current.result
+        })
+}
