@@ -1,7 +1,0 @@
-
-
-proc std::internal::str::parse_success() -> bool = gera_std_str_parse_success
-
-proc std::internal::str::parse_flt(str) -> float = gera_std_str_parse_flt
-
-proc std::internal::str::parse_int(str) -> int = gera_std_str_parse_int
