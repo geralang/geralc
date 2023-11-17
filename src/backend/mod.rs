@@ -4,4 +4,4 @@ pub mod ir;
 pub mod lowering;
 pub mod target;
 pub mod c;
-pub mod wasm;
+pub mod javascript;

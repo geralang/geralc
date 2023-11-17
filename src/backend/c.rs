@@ -19,7 +19,7 @@ pub fn generate_c(
     let mut external = HashMap::new();
     emit_core_library(&mut output);
     output.push_str("\n");
-    emit_type_declarations(&types, &mut output);
+    emit_type_declarations(&types, &type_dedup, &mut output);
     output.push_str("\n");
     emit_type_members(&types, &type_dedup, strings, &mut output);
     output.push_str("\n");
@@ -80,9 +80,10 @@ fn emit_closure_name(index: usize, output: &mut String) {
     output.push_str(&index.to_string());
 } 
 
-fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
+fn emit_type_declarations(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, output: &mut String) {
     // arrays are not needed
     for object_idx in 0..types.get_all_objects().len() {
+        if type_dedup.object_is_mapped(object_idx) { continue; }
         output.push_str("typedef struct ");
         emit_object_name(object_idx, output);
         output.push_str(" ");
@@ -95,6 +96,7 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
         output.push_str(";\n");
     }
     for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
+        if type_dedup.concrete_object_is_mapped(concrete_object_idx) { continue; }
         output.push_str("typedef struct ");
         emit_concrete_object_name(concrete_object_idx, output);
         output.push_str(" ");
@@ -102,6 +104,7 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
         output.push_str(";\n");
     }
     for variants_idx in 0..types.get_all_variants().len() {
+        if type_dedup.variant_is_mapped(variants_idx) { continue; }
         output.push_str("typedef struct ");
         emit_variants_name(variants_idx, output);
         output.push_str(" ");
@@ -114,6 +117,7 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
         output.push_str("Value;\n");
     }
     for closure_idx in 0..types.get_all_closures().len() {
+        if type_dedup.closure_is_mapped(closure_idx) { continue; }
         output.push_str("typedef struct ");
         emit_closure_name(closure_idx, output);
         output.push_str(" ");
@@ -124,6 +128,7 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
 
 fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings: &StringMap, output: &mut String) {
     for object_idx in 0..types.get_all_objects().len() {
+        if type_dedup.object_is_mapped(object_idx) { continue; }
         output.push_str("typedef struct ");
         emit_object_name(object_idx, output);
         output.push_str(" {\n    GeraAllocation* allocation;");
@@ -139,6 +144,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         output.push_str(";\n");
     }
     for concrete_object_idx in 0..types.get_all_concrete_objects().len() {
+        if type_dedup.concrete_object_is_mapped(concrete_object_idx) { continue; }
         output.push_str("typedef struct ");
         emit_concrete_object_name(concrete_object_idx, output);
         output.push_str(" {");
@@ -154,6 +160,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         output.push_str(";\n");
     }
     for variants_idx in 0..types.get_all_variants().len() {
+        if type_dedup.variant_is_mapped(variants_idx) { continue; }
         let has_values = types.get_all_variants()[variants_idx].iter().filter(|(_, vt)|
                 if let IrType::Unit = vt.direct(types) { false } else { true }
             ).next().is_some();
@@ -186,6 +193,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         output.push_str(";\n");
     }
     for closure_idx in 0..types.get_all_closures().len() {
+        if type_dedup.closure_is_mapped(closure_idx) { continue; }
         output.push_str("typedef struct ");
         emit_closure_name(closure_idx, output);
         output.push_str(" {\n");
@@ -204,6 +212,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         output.push_str(";\n");
     }
     for object_idx in 0..types.get_all_objects().len() {
+        if type_dedup.object_is_mapped(object_idx) { continue; }
         output.push_str("typedef struct ");
         emit_object_alloc_name(object_idx, output);
         output.push_str(" {");
@@ -338,6 +347,7 @@ fn emit_object_free_handler_name(object_idx: usize, output: &mut String) {
 
 fn emit_free_handler_functions(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings: &StringMap, output: &mut String) {
     for array_idx in 0..types.get_all_arrays().len() {
+        if type_dedup.array_is_mapped(array_idx) { continue; }
         let element_type = types.get_all_arrays()[array_idx];
         if let IrType::Unit = element_type.direct(types) {} else {
             output.push_str("void ");
@@ -360,6 +370,7 @@ fn emit_free_handler_functions(types: &IrTypeBank, type_dedup: &IrTypeBankMappin
         }
     }
     for object_idx in 0..types.get_all_objects().len() {
+        if type_dedup.object_is_mapped(object_idx) { continue; }
         output.push_str("void ");
         emit_object_free_handler_name(object_idx, output);
         output.push_str("(char* data, size_t size) {");

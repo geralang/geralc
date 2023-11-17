@@ -23,7 +23,7 @@ use backend::{
     lowering::lower_typed_ast,
     target::CompileTarget,
     c::generate_c,
-    wasm::generate_wasm
+    javascript::generate_javascript
 };
 
 use std::{fs, env, collections::HashMap};
@@ -144,12 +144,13 @@ fn main() {
         }
     };
     let ir_type_deduplication = ir_types.deduplicate();
+    println!("{}", ir_types.display(&strings));
     println!("{:?}", ir_type_deduplication);
     //println!("lowering done");
     // generate file content based on format
     let targets: HashMap<String, CompileTarget> = HashMap::from([
         ("c".into(), CompileTarget(generate_c)),
-        ("wasm".into(), CompileTarget(generate_wasm))
+        ("js".into(), CompileTarget(generate_javascript))
     ]);
     let selected_target = args.values(CLI_ARG_TARGET)
         .expect("is required")

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StringIdx(pub usize);
 
+#[derive(Debug, Clone)]
 pub struct StringMap {
     indices: HashMap<Box<str>, StringIdx>,
     strings: Vec<Box<str>>
