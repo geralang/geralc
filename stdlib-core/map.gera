@@ -44,7 +44,8 @@ pub proc set(m, key, value) {
 }
 
 pub proc set_h(m, h, value) {
-    var bucket_idx = h % length(m.buckets)
+    mut var bucket_idx = h % length(m.buckets)
+    case bucket_idx < 0 -> bucket_idx = length(m.buckets) + bucket_idx
     m.buckets[bucket_idx] = m.buckets[bucket_idx]
         |> opt::map(|n| {
             var start = n
@@ -85,7 +86,9 @@ pub proc get(m, key) {
 }
 
 pub proc get_h(m, h) {
-    return m.buckets[h % length(m.buckets)]
+    mut var bucket_idx = h % length(m.buckets)
+    case bucket_idx < 0 -> bucket_idx = length(m.buckets) + bucket_idx
+    return m.buckets[bucket_idx]
         |> opt::map(|n| {
             var current = {
                 node = n,
@@ -106,4 +109,5 @@ pub proc get_h(m, h) {
             })
             return current.result
         })
+        |> opt::flatten()
 }

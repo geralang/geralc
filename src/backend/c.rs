@@ -1114,9 +1114,9 @@ if(param2 > param0.length) {
 }
 if(start_idx > end_idx) {
     gera___st_push("core::substring", "<builtin>/core.gera", 0);
-    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of array is %lld)", param1, param2, param0.length);
+    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of array is %lld)", param1, param2, param0.length);
+    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
     gera___panic(error_message);
 }
 return gera___substring(param0, param1, param2);

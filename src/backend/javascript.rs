@@ -84,21 +84,34 @@ fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec
     }
     let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &IrTypeBankMapping, &mut StringMap) -> String> = HashMap::new();
     builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return param0 === param1;
+"#)
     });
     builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return param0.tag === param1.tag;
+"#)
     });
     builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return BigInt(param0.length);
+"#)
     });
     builtins.insert(path_from(&["core", "array"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return new Array(Number(param1)).fill(param0);
+"#)
     });
     builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, _, strings| {
         format!("
 while(param0.call().tag == {}) {{}}
 ", strings.insert("next").0)
+    });
+    builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _, _| {
+        String::from(r#"
+throw param0;
+"#)
     });
     builtins.insert(path_from(&["core", "as_str"], strings), |_, _, _, _, _| {
         String::from(r#"
@@ -106,28 +119,61 @@ return param0.toString();
 "#)
     });
     builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return BigInt(Math.floor(param0));
+"#)
     });
     builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return Number(param0);
+"#)
     });
     builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+let start_idx = param1;
+if(param1 < 0) { start_idx = param0.length + param1; }
+if(param1 > param0.length) {
+    throw `the start index ${param1} is out of bounds for a string of length ${param0.length}`;
+}
+let end_idx = param2;
+if(param2 < 0) { end_idx = param0.length + param2; }
+if(param2 > param0.length) {
+    throw `the end index ${param2} is out of bounds for a string of length ${param0.length}`;
+}
+if(start_idx > end_idx) {
+    throw `the start index ${param1} is larger than the end index ${param2} (length of string is ${param0.length})`;
+}
+return param0.substring(Number(param0), Number(param1));
+"#)
     });
     builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return param0 + param1;
+"#)
     });
-    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, _, _, _| {
-        todo!()
+    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, _, _, strings| {
+        format!("
+const r = parseFloat(param0);
+if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
+return {{ tag: {}, value: r }};
+", strings.insert("none").0, strings.insert("some").0)
     });
-    builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, _, _, _| {
-        todo!()
+    builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, _, _, strings| {
+        format!("
+const r = parseInt(param0);
+if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
+return {{ tag: {}, value: BigInt(r) }};
+", strings.insert("none").0, strings.insert("some").0)
     });
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return param0.repeat(Number(param1));
+"#)
     });
     builtins.insert(path_from(&["core", "hash"], strings), |_, _, _, _, _| {
-        todo!()
+        String::from(r#"
+return hash(param0);
+"#)
     });
     return builtins;
 }
