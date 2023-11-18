@@ -1,6 +1,6 @@
 # Gera
 
-*The compiler for Gera, a satically typed and garbage collected programming language.* Currently WIP (Work in progress).
+*The compiler for Gera, a statically typed and garbage collected programming language without type annotations.*
 
 # Progress
 
@@ -15,9 +15,9 @@
 - [x] Interpreter for constants
 - [x] Headers for external procedures
 - [x] Lowering of AST into SSA IR
-- [ ] Code generation from IR
-    - [x] C
-    - [ ] WebAssembly
-    - [ ] JVM byte code?
-- [ ] Standard library
+- [x] C code generation
+- [ ] Standard library (core)
+- [ ] Standard library (target = C)
+- [x] Javascript code generation
+- [ ] Standard library (target = Javascript)
 - [ ] Optimizations on IR
