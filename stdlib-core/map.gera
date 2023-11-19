@@ -68,10 +68,12 @@ pub proc set_h(m, h, value) {
                 } 
             })
             case current.replaced -> return #some start
-            current.node.next = #some { h = h, value = value, next = #none unit }
+            current.node.next = #some {
+                h = h, value = value, next = #none unit
+            }
             m.size = m.size + 1
-            case m.size > as_int(as_flt(length(m.buckets)) * m.load_factor) -> m
-                |> set_capacity(length(m.buckets) * 2)
+            case m.size > as_int(as_flt(length(m.buckets)) * m.load_factor) ->
+                m |> set_capacity(length(m.buckets) * 2)
             return #some start
         })
         |> opt::unwrap_or_else(|| {

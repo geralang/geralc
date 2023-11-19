@@ -90,7 +90,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_max_scope!("'func'", ScopeType::Statement, ScopeType::Expression);
             check_grammar(body, ScopeType::Statement, errors);
         },
-        AstNodeVariant::Variable { public, mutable, name: _, value } => {
+        AstNodeVariant::Variable { public, mutable, name: _, value_types: _, value } => {
             enforce_min_scope!(match (*public, *mutable) {
                 (true, true) => "'pub mut var'",
                 (true, false) => "'pub var'",

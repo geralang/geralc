@@ -22,7 +22,8 @@ proc grow(vector, default_value, new_alloc_size) {
 pub proc push(vector, item) {
     var new_size = vector.size + 1
     case length(vector.content) == 0 -> vector |> grow(item, 16)
-    else case new_size > length(vector.content) -> vector |> grow(item, length(vector.content) * 2)
+    else case new_size > length(vector.content) ->
+        vector |> grow(item, length(vector.content) * 2)
     vector.content[vector.size] = item
     vector.size = new_size
     return vector
@@ -31,7 +32,8 @@ pub proc push(vector, item) {
 pub proc append_array(vector, appended_array) {
     case length(appended_array) == 0 -> return vector
     var new_size = vector.size + length(appended_array)
-    case new_size > length(vector.content) -> vector |> grow(appended_array[0], new_size)
+    case new_size > length(vector.content) ->
+        vector |> grow(appended_array[0], new_size)
     0..length(appended_array) |> iter::for_each(|i| {
         vector.content[vector.size + i] = appended_array[i]
     })
@@ -42,7 +44,8 @@ pub proc append_array(vector, appended_array) {
 pub proc append_vector(vector, appended_vector) {
     case appended_vector.size == 0 -> return vector
     var new_size = vector.size + appended_vector.size
-    case new_size > length(vector.content) -> vector |> grow(appended_vector.content[0], new_size)
+    case new_size > length(vector.content) ->
+        vector |> grow(appended_vector.content[0], new_size)
     0..appended_vector.size |> iter::for_each(|i| {
         vector.content[vector.size + i] = appended_vector.content[i]
     })
@@ -52,7 +55,8 @@ pub proc append_vector(vector, appended_vector) {
 
 pub proc insert(vector, index, item) {
     var new_size = vector.size + 1
-    case new_size > length(vector.content) -> vector |> grow(item, length(vector.content) * 2)
+    case new_size > length(vector.content) ->
+        vector |> grow(item, length(vector.content) * 2)
     mut var idx = index
     case index < 0 -> idx = index + vector.size
     case idx > vector.size -> panic(

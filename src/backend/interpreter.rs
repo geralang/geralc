@@ -113,7 +113,7 @@ impl Interpreter {
                     node.source().file_name(), node.source().start_position()
                 ))
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
+            AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
                 if let Some(value) = value {
                     let value = self.evaluate_node(value, symbols, strings)?;
                     let stack_size = self.stack.len();

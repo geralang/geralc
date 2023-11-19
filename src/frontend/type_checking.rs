@@ -347,7 +347,7 @@ fn type_check_symbol<'s>(
                     *body = Some(typed_body);
                 } else { panic!("procedure was illegally modified!"); }
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name: _, value } => {
+            AstNodeVariant::Variable { public: _, mutable: _, name: _, value_types: _, value } => {
                 let return_types = type_scope.register_variable();
                 let value_typed = if let Some(value) = value {
                     match type_check_node(
@@ -465,7 +465,8 @@ fn initalize_variables(
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     uninitialized_variables: &mut HashMap<StringIdx, (bool, SourceRange)>,
     scopes_variables: &[HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>],
-    scopes_uninitialized_variables: &[HashMap<StringIdx, (bool, SourceRange)>]
+    scopes_uninitialized_variables: &[HashMap<StringIdx, (bool, SourceRange)>],
+    scopes_returns: &[(SometimesReturns, AlwaysReturns)],
 ) -> Result<(), Error> {
     for variable_name in uninitialized_variables.keys().map(|s| *s).collect::<Vec<StringIdx>>() {
         let variable_source = uninitialized_variables.get(&variable_name).expect("should exist").1;
@@ -473,8 +474,12 @@ fn initalize_variables(
         let variable_types = type_scope.register_variable();
         for scope_i in 0..scopes_uninitialized_variables.len() {
             if let Some(_) = scopes_uninitialized_variables[scope_i].get(&variable_name) {
-                always_has_value = false;
-                break;
+                let branch_always_returns = scopes_returns[scope_i].1;
+                if !branch_always_returns {
+                    always_has_value = false;
+                    break;
+                }
+                continue;
             }
             if let Some((scope_variable_types, _, scope_variable_source)) = scopes_variables[scope_i].get(&variable_name) {
                 assert_types(
@@ -605,10 +610,11 @@ fn type_check_node(
                 node_source
             ), (false, false)))
         }
-        AstNodeVariant::Variable { public, mutable, name, value } => {
+        AstNodeVariant::Variable { public, mutable, name, value_types: _, value } => {
+            let value_types = type_scope.register_variable();
             let typed_value = if let Some(value) = value {
-                let typed_value = type_check_node!(*value, None).0;
-                variables.insert(name, (typed_value.get_types(), mutable, node_source));
+                let typed_value = type_check_node!(*value, Some(TypeAssertion::unexplained(value_types))).0;
+                variables.insert(name, (value_types, mutable, node_source));
                 Some(Box::new(typed_value))
             } else {
                 uninitialized_variables.insert(name, (mutable, node_source));
@@ -619,21 +625,21 @@ fn type_check_node(
                 public,
                 mutable,
                 name,
+                value_types: Some(value_types),
                 value: typed_value
             }, type_scope.register_with_types(Some(vec![Type::Unit])), node_source), (false, false)))
         }
         AstNodeVariant::CaseBranches { value, branches, else_body } => {
             let typed_value = type_check_node!(*value, None).0;
             let mut typed_branches = Vec::new();
-            let mut branches_return = (false, branches.len() != 0);
+            let mut branches_return = Vec::new();
             let mut branches_variables = Vec::new();
             let mut branches_uninitialized_variables = Vec::new();
             for (branch_value, branch_body) in branches {
                 let mut branch_variables = variables.clone();
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
                 let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut scope_variables.clone(), &mut branch_uninitialized_variables);
-                if branch_returns.0 { branches_return.0 = true; }
-                if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
+                branches_return.push(branch_returns);
                 typed_branches.push((type_check_node!(branch_value, Some(TypeAssertion::matched_value(node_source, typed_value.get_types(), type_scope, strings)), false, &mut HashMap::new()).0, branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
@@ -641,18 +647,24 @@ fn type_check_node(
             let mut else_body_variables = variables.clone();
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
             let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
+            branches_return.push(else_returns);
             branches_variables.push(else_body_variables);
             branches_uninitialized_variables.push(else_body_uninitialized_variables);
             initalize_variables(
                 strings, type_scope, variables, uninitialized_variables,
                 &branches_variables,
-                &branches_uninitialized_variables
+                &branches_uninitialized_variables,
+                &branches_return
             )?;
-            Ok((TypedAstNode::new(AstNodeVariant::CaseBranches {
-                value: Box::new(typed_value),
-                branches: typed_branches,
-                else_body: typed_else_body
-            }, type_scope.register_with_types(Some(vec![Type::Unit])), node_source), (branches_return.0 || else_returns.0, branches_return.1 && else_returns.1)))
+            Ok((
+                TypedAstNode::new(AstNodeVariant::CaseBranches {
+                    value: Box::new(typed_value),
+                    branches: typed_branches,
+                    else_body: typed_else_body
+                },
+                type_scope.register_with_types(Some(vec![Type::Unit])), node_source),
+                (branches_return.iter().find(|r| r.0).is_some(), branches_return.iter().find(|r| !r.1).is_none())
+            ))
         }
         AstNodeVariant::CaseConditon { condition, body, else_body } => {
             let boolean = type_scope.register_with_types(Some(vec![Type::Boolean]));
@@ -666,7 +678,8 @@ fn type_check_node(
             initalize_variables(
                 strings, type_scope, variables, uninitialized_variables,
                 &[body_variables, else_body_variables],
-                &[body_uninitialized_variables, else_body_uninitialized_variables]
+                &[body_uninitialized_variables, else_body_uninitialized_variables],
+                &[body_returns, else_returns]
             )?;
             Ok((TypedAstNode::new(AstNodeVariant::CaseConditon {
                 condition: Box::new(typed_condition),
@@ -676,7 +689,7 @@ fn type_check_node(
         }
         AstNodeVariant::CaseVariant { value, branches, else_body } => {
             let mut typed_branches = Vec::new();
-            let mut branches_return = (false, branches.len() != 0);
+            let mut branches_return = Vec::new();
             let mut branches_variables = Vec::new();
             let mut branches_uninitialized_variables = Vec::new();
             let mut variant_types = HashMap::new();
@@ -690,8 +703,7 @@ fn type_check_node(
                 }
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
                 let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut branch_scope_variables, &mut branch_uninitialized_variables);
-                if branch_returns.0 { branches_return.0 = true; }
-                if branches_return.1 && !branch_returns.1 { branches_return.1 = false; }
+                branches_return.push(branch_returns);
                 typed_branches.push((branch_variant_name, branch_variant_variable.map(|v| (v.0, v.1, Some(branch_variant_variable_types))), branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
@@ -705,20 +717,24 @@ fn type_check_node(
                 let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
                 branches_variables.push(else_body_variables);
                 branches_uninitialized_variables.push(else_body_uninitialized_variables);
-                if else_returns.0 { branches_return.0 = true; }
-                if branches_return.1 && !else_returns.1 { branches_return.1 = false; }
+                branches_return.push(else_returns);
                 Some(typed_else_body)
             } else { None };
             initalize_variables(
                 strings, type_scope, variables, uninitialized_variables,
                 &branches_variables,
-                &branches_uninitialized_variables
+                &branches_uninitialized_variables,
+                &branches_return
             )?;
-            Ok((TypedAstNode::new(AstNodeVariant::CaseVariant {
-                value: Box::new(typed_value),
-                branches: typed_branches,
-                else_body: typed_else_body
-            }, type_scope.register_with_types(Some(vec![Type::Unit])), node_source), branches_return))
+            Ok((
+                TypedAstNode::new(AstNodeVariant::CaseVariant {
+                    value: Box::new(typed_value),
+                    branches: typed_branches,
+                    else_body: typed_else_body
+                },
+                type_scope.register_with_types(Some(vec![Type::Unit])), node_source),
+                (branches_return.iter().find(|r| r.0).is_some(), branches_return.iter().find(|r| !r.1).is_none())
+            ))
         }
         AstNodeVariant::Assignment { variable, value } => {
             let typed_value = type_check_node!(*value, None).0;

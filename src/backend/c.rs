@@ -133,6 +133,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         emit_object_name(object_idx, output);
         output.push_str(" {\n    GeraAllocation* allocation;");
         for (member_name, member_type) in &types.get_all_objects()[object_idx] {
+            if let IrType::Unit = member_type.direct(types) { continue; }
             output.push_str("\n    ");
             emit_type(*member_type, types, type_dedup, output);
             output.push_str("* member");
@@ -149,6 +150,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         emit_concrete_object_name(concrete_object_idx, output);
         output.push_str(" {");
         for (member_name, member_type) in &types.get_all_concrete_objects()[concrete_object_idx] {
+            if let IrType::Unit = member_type.direct(types) { continue; }
             output.push_str("\n    ");
             emit_type(*member_type, types, type_dedup, output);
             output.push_str(" ");
@@ -203,6 +205,7 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         emit_type(*return_type, types, type_dedup, output);
         output.push_str(" (*procedure)(GeraAllocation*");
         for parameter_type in parameter_types {
+            if let IrType::Unit = parameter_type.direct(types) { continue; }
             output.push_str(", ");
             emit_type(*parameter_type, types, type_dedup, output);
         }
@@ -216,12 +219,18 @@ fn emit_type_members(types: &IrTypeBank, type_dedup: &IrTypeBankMapping, strings
         output.push_str("typedef struct ");
         emit_object_alloc_name(object_idx, output);
         output.push_str(" {");
+        let mut had_member = false;
         for (member_name, member_type) in &types.get_all_objects()[object_idx] {
+            if let IrType::Unit = member_type.direct(types) { continue; }
             output.push_str("\n    ");
             emit_type(*member_type, types, type_dedup, output);
             output.push_str(" member");
             output.push_str(&member_name.0.to_string());
             output.push_str(";");
+            had_member = true;
+        }
+        if !had_member {
+            output.push_str("\n    char empty;");
         }
         output.push_str("\n} ");
         emit_object_alloc_name(object_idx, output);
@@ -987,24 +996,31 @@ if(param1 < 0) {
     gera___panic(error_message);
 }"#);
         result.push_str("GeraArray result;\n");
-        result.push_str("GeraAllocation* allocation = gera___rc_alloc(sizeof(");
-        emit_type(param_types[0], types, type_dedup, &mut result);
-        result.push_str(") * param1, &");
-        emit_array_free_handler_name(array_idx, &mut result);
+        result.push_str("GeraAllocation* allocation = gera___rc_alloc(");
+        if let IrType::Unit = param_types[0].direct(types) {
+            result.push_str("1, &gera___free_nothing");
+        } else {
+            result.push_str("param1 == 0? 1 : sizeof(");
+            emit_type(param_types[0], types, type_dedup, &mut result);
+            result.push_str(") * param1, &");
+            emit_array_free_handler_name(array_idx, &mut result);
+        }
         result.push_str(");\n");
         result.push_str("result.allocation = allocation;\n");
         result.push_str("result.data = allocation->data;\n");
         result.push_str("result.length = param1;\n");
-        emit_type(param_types[0], types, type_dedup, &mut result);
-        result.push_str("* elements = (");
-        emit_type(param_types[0], types, type_dedup, &mut result);
-        result.push_str("*) allocation->data;\n");
-        result.push_str("for(size_t i = 0; i < param1; i += 1) {\n");
-        result.push_str("    elements[i] = param0;\n");
-        let mut value_rc_incr = String::new();
-        emit_rc_incr("param0", param_types[0], types, type_dedup, strings, &mut value_rc_incr);
-        indent(&value_rc_incr, &mut result);
-        result.push_str("}\n");
+        if let IrType::Unit = param_types[0].direct(types) {} else {
+            emit_type(param_types[0], types, type_dedup, &mut result);
+            result.push_str("* elements = (");
+            emit_type(param_types[0], types, type_dedup, &mut result);
+            result.push_str("*) allocation->data;\n");
+            result.push_str("for(size_t i = 0; i < param1; i += 1) {\n");
+            result.push_str("    elements[i] = param0;\n");
+            let mut value_rc_incr = String::new();
+            emit_rc_incr("param0", param_types[0], types, type_dedup, strings, &mut value_rc_incr);
+            indent(&value_rc_incr, &mut result);
+            result.push_str("}\n");
+        }
         result.push_str("return result;\n");
         result
     });
@@ -1170,13 +1186,13 @@ if(param1 < 0) {
     sprintf(error_message, "the string repetition count %lld is not valid", param1);
     gera___panic(error_message);
 }
-GeraAllocation* allocation = gera___rc_alloc(param0.length_bytes * param1, &gera___free_nothing);
+GeraAllocation* allocation = gera___rc_alloc(param1 == 0? 1 : param0.length_bytes * param1, &gera___free_nothing);
 GeraString result;
 result.allocation = allocation;
 result.data = allocation->data;
 result.length = param0.length * param1;
-result.length_bytes = allocation->size;
-for(size_t i = 0; i < allocation->size; i += 1) {
+result.length_bytes = param0.length_bytes * param1;
+for(size_t i = 0; i < result.length_bytes; i += 1) {
     result.data[i] = param0.data[i % param0.length_bytes];
 }
 return result;
@@ -1514,6 +1530,7 @@ fn emit_instruction(
             emit_object_alloc_name(object_idx, output);
             output.push_str("*) allocation->data;\n");
             for (member_name, member_value) in member_values {
+                if let IrType::Unit = variable_types[member_value.index].direct(types) { continue; }
                 let member_type = *types.get_all_objects()[object_idx].get(member_name)
                     .expect("member should exist");
                 output.push_str("    object->member");
@@ -1551,44 +1568,58 @@ fn emit_instruction(
             } else { panic!("should be an array"); };
             emit_conditional_decr(*into, variable_types[into.index], types, type_dedup, strings, output);
             let element_type = types.get_all_arrays()[array_idx];
-            output.push_str("{\n    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
-            emit_type(element_type, types, type_dedup, output);
-            output.push_str(") * ");
-            output.push_str(&element_values.len().to_string());
-            output.push_str(", &");
-            emit_array_free_handler_name(array_idx, output);
-            output.push_str(");\n    ");
+            output.push_str("{\n");
+            output.push_str("    GeraAllocation* allocation = gera___rc_alloc(");
+            if let IrType::Unit = element_type.direct(types) {
+                output.push_str("1, &gera___free_nothing");
+            } else if element_values.len() == 0 {
+                output.push_str("1, &gera___free_nothing");
+            } else {
+                output.push_str("sizeof(");
+                emit_type(element_type, types, type_dedup, output);
+                output.push_str(") * ");
+                output.push_str(&element_values.len().to_string());
+                output.push_str(", &");
+                emit_array_free_handler_name(array_idx, output);
+            }
+            output.push_str(");\n");
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
+            output.push_str("    ");
             output.push_str(&into_str);
-            output.push_str(".allocation = allocation;\n    ");
+            output.push_str(".allocation = allocation;\n");
+            output.push_str("    ");
             output.push_str(&into_str);
-            output.push_str(".data = allocation->data;\n    ");
+            output.push_str(".data = allocation->data;\n");
+            output.push_str("    ");
             output.push_str(&into_str);
             output.push_str(".length = ");
             output.push_str(&element_values.len().to_string());
-            output.push_str(";\n    ");
-            emit_type(element_type, types, type_dedup, output);
-            output.push_str("* elements = (");
-            emit_type(element_type, types, type_dedup, output);
-            output.push_str("*) allocation->data;\n");
-            for value_idx in 0..element_values.len() {
-                output.push_str("    elements[");
-                output.push_str(&value_idx.to_string());
-                output.push_str("] = ");
-                let mut element_value_str = String::new();
-                emit_variable(element_values[value_idx], &mut element_value_str);
-                emit_variable_poly(
-                    &element_value_str, variable_types[element_values[value_idx].index],
-                    element_type, types, type_dedup, output
-                );
-                output.push_str(";\n");
-                let mut element_value_incr_str = String::new();
-                emit_rc_incr(
-                    &element_value_str, variable_types[element_values[value_idx].index], types,
-                    type_dedup, strings, &mut element_value_incr_str
-                );
-                indent(&element_value_incr_str, output);
+            output.push_str(";\n");
+            if let IrType::Unit = element_type.direct(types) {} else {
+                output.push_str("    ");
+                emit_type(element_type, types, type_dedup, output);
+                output.push_str("* elements = (");
+                emit_type(element_type, types, type_dedup, output);
+                output.push_str("*) allocation->data;\n");
+                for value_idx in 0..element_values.len() {
+                    output.push_str("    elements[");
+                    output.push_str(&value_idx.to_string());
+                    output.push_str("] = ");
+                    let mut element_value_str = String::new();
+                    emit_variable(element_values[value_idx], &mut element_value_str);
+                    emit_variable_poly(
+                        &element_value_str, variable_types[element_values[value_idx].index],
+                        element_type, types, type_dedup, output
+                    );
+                    output.push_str(";\n");
+                    let mut element_value_incr_str = String::new();
+                    emit_rc_incr(
+                        &element_value_str, variable_types[element_values[value_idx].index], types,
+                        type_dedup, strings, &mut element_value_incr_str
+                    );
+                    indent(&element_value_incr_str, output);
+                }
             }
             output.push_str("}\n");
             mark_as_assigned(*into, variable_types[into.index], types, output);
@@ -1778,6 +1809,7 @@ fn emit_instruction(
             closure_body.push_str(" {\n");
             for (capture_name, capture_variable) in captured {
                 let capture_type = variable_types[capture_variable.index];
+                if let IrType::Unit = capture_type.direct(types) { continue; }
                 closure_body.push_str("    ");
                 emit_type(capture_type, types, type_dedup, &mut closure_body);
                 closure_body.push_str(" ");
@@ -1798,6 +1830,7 @@ fn emit_instruction(
             closure_body.push_str("*) data;\n");
             for (capture_name, capture_variable) in captured {
                 let capture_type = variable_types[capture_variable.index];
+                if let IrType::Unit = capture_type.direct(types) { continue; }
                 let mut capture_rc_decr = String::new();
                 emit_rc_decr(
                     &format!("captures->{}", strings.get(*capture_name)),
@@ -1812,6 +1845,7 @@ fn emit_instruction(
             emit_closure_body_name(closure_idx, variant, &mut closure_body);
             closure_body.push_str("(GeraAllocation* allocation");
             for param_idx in 0..parameter_types.len() {
+                if let IrType::Unit = parameter_types[param_idx].direct(types) { continue; }
                 closure_body.push_str(", ");
                 emit_type(parameter_types[param_idx], types, type_dedup, &mut closure_body);
                 closure_body.push_str(" param");
@@ -1879,6 +1913,9 @@ fn emit_instruction(
             emit_closure_captures_name(closure_idx, variant, output);
             output.push_str("*) allocation->data;\n");
             for (capture_name, capture_value) in captured {
+                if let IrType::Unit = variable_types[capture_value.index].direct(types) {
+                    continue;
+                }
                 output.push_str("    captures->");
                 output.push_str(strings.get(*capture_name));
                 output.push_str(" = ");

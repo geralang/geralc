@@ -88,7 +88,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             let node_source = node.source();
             match node.node_variant_mut() {
                 AstNodeVariant::Procedure { public, name, arguments: _, body: _ } |
-                AstNodeVariant::Variable { public, mutable: _, name, value: _ } => {
+                AstNodeVariant::Variable { public, mutable: _, name, value_types: _, value: _ } => {
                     let mut new_path_segments = self.path.get_segments().clone();
                     new_path_segments.push(*name);
                     let new_path = NamespacePath::new(new_path_segments);
@@ -196,7 +196,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::Function { arguments: _, body } => {
                 visit_nodes!(body);
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
+            AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
                 if let Some(value) = value {
                     visit_node!(&mut **value);
                 }

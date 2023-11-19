@@ -588,12 +588,12 @@ impl Parser {
                         let value = enforce_expression!(&[], None, "the variable's value");
                         let value_source = value.source();
                         Some(AstNode::new(
-                            AstNodeVariant::Variable { public: false, mutable, name, value: Some(Box::new(value)) },
+                            AstNodeVariant::Variable { public: false, mutable, name, value_types: None, value: Some(Box::new(value)) },
                             (&source_start..&value_source).into()
                         ))
                     } else {
                         Some(AstNode::new(
-                            AstNodeVariant::Variable { public: false, mutable, name, value: None },
+                            AstNodeVariant::Variable { public: false, mutable, name, value_types: None, value: None },
                             (&source_start..&name_source).into()
                         ))
                     }
@@ -801,7 +801,7 @@ impl Parser {
                     let mut thing = enforce_expression!(&[], None, "the thing to be public");
                     match thing.node_variant_mut() {
                         AstNodeVariant::Procedure { public, name: _, arguments: _, body: _ } |
-                        AstNodeVariant::Variable { public, mutable: _, name: _, value: _ } => if !*public {
+                        AstNodeVariant::Variable { public, mutable: _, name: _, value_types: _, value: _ } => if !*public {
                             *public = true;
                             thing.replace_source((&start_source..&thing.source()).into());
                             previous = Some(thing);

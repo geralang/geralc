@@ -531,14 +531,14 @@ impl IrGenerator {
                 });
                 Ok(Some(into))
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name, value } => {
+            AstNodeVariant::Variable { public: _, mutable: _, name, value_types, value } => {
+                let var = self.allocate(var_types_to_ir_type(
+                    current_type_scope, value_types.expect("should have type info"), type_bank, strings,
+                    &mut HashMap::new()
+                ));
+                named_variables.insert(*name, var.index);
                 if let Some(value) = value {
-                    let var = self.allocate(var_types_to_ir_type(
-                        current_type_scope, value.get_types(), type_bank, strings,
-                        &mut HashMap::new()
-                    ));
                     lower_node!(&*value, Some(var));
-                    named_variables.insert(*name, var.index);
                     Ok(Some(var))
                 } else {
                     Ok(None)
@@ -768,11 +768,6 @@ impl IrGenerator {
                 Ok(Some(into))
             }
             AstNodeVariant::VariableAccess { name } => {
-                if let Some(parameter_index) = call_parameters.0.get(name) {
-                    let into = into_given_or_alloc!(call_parameters.1[*parameter_index]);
-                    self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
-                    return Ok(Some(into));
-                }
                 if let Some(var_idx) = named_variables.get(name) {
                     let var = &self.variables[*var_idx];
                     if let Some(into) = into {
@@ -790,6 +785,10 @@ impl IrGenerator {
                             version: var.0
                         }))
                     }
+                } else if let Some(parameter_index) = call_parameters.0.get(name) {
+                    let into = into_given_or_alloc!(call_parameters.1[*parameter_index]);
+                    self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
+                    Ok(Some(into))
                 } else {
                     let into = into_given_or_alloc!(
                         *captured.get(name)

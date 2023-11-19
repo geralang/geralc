@@ -14,16 +14,16 @@ pub proc filter(iter, condition) {
     return || {
         var result = { val = #end unit }
         exhaust(|| {
+            var current
             case iter() {
                 #end -> return #end unit
-                #next n -> {
-                    case condition(n) -> {
-                        result.val = #next n
-                        return #end unit
-                    }
-                    return #next unit
-                }
+                #next n -> current = n
             }
+            case condition(current) -> {
+                result.val = #next current
+                return #end unit
+            }
+            return #next unit
         })
         return result.val
     }
@@ -57,13 +57,17 @@ pub proc for_each(iter, action) {
 
 pub proc zip(iter_a, iter_b, combinator) {
     return || {
+        var val_a
         case iter_a() {
             #end -> return #end unit
-            #next a -> case iter_b() {
-                #end -> return #end unit
-                #next b -> return #next combinator(a, b)
-            }
+            #next v -> val_a = v
         }
+        var val_b
+        case iter_b() {
+            #end -> return #end unit
+            #next v -> val_b = v
+        }
+        return #next combinator(val_a, val_b)
     }
 }
 
@@ -71,7 +75,8 @@ pub proc chain(iter_a, iter_b) {
     return || {
         case iter_a() {
             #next n -> return #next n
-        } else {}
+            #end -> {}
+        }
         return iter_b()
     }
 }

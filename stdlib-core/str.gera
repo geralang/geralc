@@ -80,7 +80,11 @@ pub proc format(s, value) {
         }
         return #next unit
     })
-    return result.value |> opt::expect("the format s does not contain any underscores")
+    return result.value |> opt::unwrap_or_else(|| panic(
+        "the format string '"
+            |> concat(s)
+            |> concat("' does not contain any underscores")
+    ))
 }
 
 pub proc split(s, separator) {
@@ -118,7 +122,8 @@ pub proc split(s, separator) {
 pub proc join(strings, separator) {
     mut var result = { value = "" }
     strings |> iter::for_each(|s| {
-        case length(result.value) > 0 -> result.value = result.value |> concat(separator)
+        case length(result.value) > 0 ->
+            result.value = result.value |> concat(separator)
         result.value = result.value |> concat(s)
     })
     return result.value

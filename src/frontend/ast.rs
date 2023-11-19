@@ -73,7 +73,7 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
     Function { arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
-    Variable { public: bool, mutable: bool, name: StringIdx, value: Option<Box<T>> },
+    Variable { public: bool, mutable: bool, name: StringIdx, value_types: Option<VarTypeIdx>, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
     CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, SourceRange, Option<VarTypeIdx>)>, Vec<T>)>, else_body: Option<Vec<T>> },
@@ -130,7 +130,7 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                     arguments.iter().map(|s| strings.get(s.0).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
-            AstNodeVariant::Variable { public, mutable, name, value } => 
+            AstNodeVariant::Variable { public, mutable, name, value_types: _, value } => 
                 format!("Variable\n  public = {}\n  mutable = {}\n  name = '{}'\n  value = \n    {}",
                     public,
                     mutable,
