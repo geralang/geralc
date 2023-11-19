@@ -190,11 +190,19 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
         let node_source = node.source();
         let node_variant = node.node_variant_mut();
         match node_variant {
-            AstNodeVariant::Procedure { public: _, name: _, arguments: _, body } => {
-                visit_nodes!(body);
+            AstNodeVariant::Procedure { public: _, name: _, arguments, body } => {
+                let mut variables = variables.clone();
+                for (argument_name, _) in arguments {
+                    variables.insert(*argument_name);
+                }
+                visit_nodes!(body, &mut variables);
             }
-            AstNodeVariant::Function { arguments: _, body } => {
-                visit_nodes!(body);
+            AstNodeVariant::Function { arguments, body } => {
+                let mut variables = variables.clone();
+                for (argument_name, _) in arguments {
+                    variables.insert(*argument_name);
+                }
+                visit_nodes!(body, &mut variables);
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
                 if let Some(value) = value {

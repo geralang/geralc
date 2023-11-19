@@ -1,0 +1,35 @@
+
+proc std::math::exp(float) -> float = exp
+proc std::math::expm1(float) -> float = expm1
+proc std::math::log(float) -> float = log
+proc std::math::log10(float) -> float = log10
+proc std::math::log2(float) -> float = log2
+proc std::math::log1p(float) -> float = log1p
+
+proc std::math::pow(float, float) -> float = pow
+proc std::math::sqrt(float) -> float = sqrt
+proc std::math::cbrt(float) -> float = cbrt
+proc std::math::hypot(float, float) -> float = hypot
+
+proc std::math::sin(float) -> float = sin
+proc std::math::cos(float) -> float = cos
+proc std::math::tan(float) -> float = tan
+proc std::math::asin(float) -> float = asin
+proc std::math::acos(float) -> float = acos
+proc std::math::atan(float) -> float = atan
+proc std::math::atan2(float, float) -> float = atan2
+
+proc std::math::sinh(float) -> float = sinh
+proc std::math::cosh(float) -> float = cosh
+proc std::math::tanh(float) -> float = tanh
+proc std::math::asinh(float) -> float = asinh
+proc std::math::acosh(float) -> float = acosh
+proc std::math::atanh(float) -> float = atanh
+
+proc std::math::ceil(float) -> float = ceil
+proc std::math::floor(float) -> float = floor
+proc std::math::trunc(float) -> float = trunc
+proc std::math::round(float) -> float = round
+
+
+

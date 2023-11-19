@@ -1,0 +1,32 @@
+
+proc std::math::exp(float) -> float = gera_std_math_exp
+proc std::math::expm1(float) -> float = gera_std_math_expm1
+proc std::math::log(float) -> float = gera_std_math_log
+proc std::math::log10(float) -> float = gera_std_math_log10
+proc std::math::log2(float) -> float = gera_std_math_log2
+proc std::math::log1p(float) -> float = gera_std_math_log1p
+
+proc std::math::pow(float, float) -> float = gera_std_math_pow
+proc std::math::sqrt(float) -> float = gera_std_math_sqrt
+proc std::math::cbrt(float) -> float = gera_std_math_cbrt
+proc std::math::hypot(float, float) -> float = gera_std_math_hypot
+
+proc std::math::sin(float) -> float = gera_std_math_sin
+proc std::math::cos(float) -> float = gera_std_math_cos
+proc std::math::tan(float) -> float = gera_std_math_tan
+proc std::math::asin(float) -> float = gera_std_math_asin
+proc std::math::acos(float) -> float = gera_std_math_acos
+proc std::math::atan(float) -> float = gera_std_math_atan
+proc std::math::atan2(float, float) -> float = gera_std_math_atan2
+
+proc std::math::sinh(float) -> float = gera_std_math_sinh
+proc std::math::cosh(float) -> float = gera_std_math_cosh
+proc std::math::tanh(float) -> float = gera_std_math_tanh
+proc std::math::asinh(float) -> float = gera_std_math_asinh
+proc std::math::acosh(float) -> float = gera_std_math_acosh
+proc std::math::atanh(float) -> float = gera_std_math_atanh
+
+proc std::math::ceil(float) -> float = gera_std_math_ceil
+proc std::math::floor(float) -> float = gera_std_math_floor
+proc std::math::trunc(float) -> float = gera_std_math_trunc
+proc std::math::round(float) -> float = gera_std_math_round

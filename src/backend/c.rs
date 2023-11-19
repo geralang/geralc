@@ -1389,8 +1389,17 @@ fn emit_value(
     match value {
         Value::Unit => panic!("should not have to emit unit value!"),
         Value::Boolean(b) => output.push_str(if *b { "1" } else { "0" }),
-        Value::Integer(i) => output.push_str(&i.to_string()),
-        Value::Float(f) => output.push_str(&format!("{:.}", *f)),
+        Value::Integer(i) => {
+            if *i == i64::MIN {
+                output.push_str(&format!("-{} - 1", i64::MAX));
+            } else { output.push_str(&i.to_string()) }
+        }
+        Value::Float(f) => {
+            if *f == f64::INFINITY { output.push_str("(1.0 / 0.0)"); }
+            else if *f == f64::NEG_INFINITY { output.push_str("(-1.0 / 0.0)"); }
+            else if f.is_nan() { output.push_str("(0.0 / 0.0)"); }
+            else { output.push_str(&format!("{:.}", *f)); }
+        }
         Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),

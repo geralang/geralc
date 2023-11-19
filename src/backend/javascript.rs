@@ -289,7 +289,12 @@ fn emit_value(
             output.push_str(&i.to_string());
             output.push_str("n");
         }
-        Value::Float(f) => output.push_str(&format!("{:.}", *f)),
+        Value::Float(f) => {
+            if *f == f64::INFINITY { output.push_str("Infinity"); }
+            else if *f == f64::NEG_INFINITY { output.push_str("-Infinity"); }
+            else if f.is_nan() { output.push_str("NaN"); }
+            else { output.push_str(&format!("{:.}", *f)); }
+        }
         Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),

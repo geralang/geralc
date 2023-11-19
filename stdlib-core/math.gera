@@ -1,0 +1,34 @@
+
+mod std::math
+
+var INT_MIN = -INT_MAX - 1
+var INT_MAX = 9223372036854775807
+
+var INF = 1.0 / 0.0
+var NAN = 0.0 / 0.0
+
+var PI = 3.14159265358979323846264338327950288
+var TAU = 6.28318530717958647692528676655900577
+var E = 2.718281828459045
+
+pub proc abs(x) {
+    var z = x - x // z = 0
+    case x < z -> return z - x
+    return x
+}
+
+pub proc max(a, b) {
+    case a >= b -> return a
+    return b
+}
+
+pub proc min(a, b) {
+    case a <= b -> return a
+    return b
+}
+
+pub proc clamp(x, min, max) {
+    case x < min -> return min
+    case x > max -> return max
+    return x
+}

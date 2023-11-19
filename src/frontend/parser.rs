@@ -393,15 +393,27 @@ impl Parser {
                     next!();
                 }
                 TokenType::Integer => {
+                    let value = if let Ok(value) = strings.get(self.current.token_content).parse() {
+                        value
+                    } else { return Err(Error::new([
+                        ErrorSection::Error(ErrorType::IntLiteralOverflows(self.current.token_content)),
+                        ErrorSection::Code(self.current.source)
+                    ].into())); };
                     previous = Some(AstNode::new(
-                        AstNodeVariant::IntegerLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
+                        AstNodeVariant::IntegerLiteral { value },
                         self.current.source
                     ));
                     next!();
                 }
                 TokenType::Fraction => {
+                    let value = if let Ok(value) = strings.get(self.current.token_content).parse() {
+                        value
+                    } else { return Err(Error::new([
+                        ErrorSection::Error(ErrorType::FloatLiteralOverflows(self.current.token_content)),
+                        ErrorSection::Code(self.current.source)
+                    ].into())); };
                     previous = Some(AstNode::new(
-                        AstNodeVariant::FloatLiteral { value: strings.get(self.current.token_content).parse().expect("Lexer done messed up lmfao") },
+                        AstNodeVariant::FloatLiteral { value },
                         self.current.source
                     ));
                     next!();

@@ -6,10 +6,16 @@ use std::iter
 
 pub proc new() {
     return {
+        hasher = |v| hash(v),
         buckets = [],
         load_factor = 0.75,
         size = 0
     } |> set_capacity(16)
+}
+
+pub proc set_hasher(m, new_hasher) {
+    m.hasher = new_hasher
+    return m
 }
 
 pub proc set_capacity(m, new_minimum_capacity) {
@@ -20,7 +26,7 @@ pub proc set_capacity(m, new_minimum_capacity) {
         old_buckets[bucket_idx] |> opt::map(|n| {
             var current = { node = n }
             exhaust(|| {
-                m |> set_h(current.node.h, current.node.value)
+                m |> set_h(current.node.h, current.node.key, current.node.value)
                 case current.node.next {
                     #none -> return #end unit
                     #some n -> {
@@ -40,10 +46,12 @@ pub proc set_load_factor(m, new_load_factor) {
 }
 
 pub proc set(m, key, value) {
-    return set_h(m, hash(key), value)
+    var h = key |> m.hasher()
+    m |> set_h(h, key, value)
+    return m
 }
 
-pub proc set_h(m, h, value) {
+proc set_h(m, h, key, value) {
     mut var bucket_idx = h % length(m.buckets)
     case bucket_idx < 0 -> bucket_idx = length(m.buckets) + bucket_idx
     m.buckets[bucket_idx] = m.buckets[bucket_idx]
@@ -55,6 +63,7 @@ pub proc set_h(m, h, value) {
             }
             exhaust(|| {
                 case current.node.h == h -> {
+                    current.node.key = key
                     current.node.value = value
                     current.replaced = true
                     return #end unit
@@ -69,7 +78,7 @@ pub proc set_h(m, h, value) {
             })
             case current.replaced -> return #some start
             current.node.next = #some {
-                h = h, value = value, next = #none unit
+                h = h, key = key, value = value, next = #none unit
             }
             m.size = m.size + 1
             case m.size > as_int(as_flt(length(m.buckets)) * m.load_factor) ->
@@ -78,16 +87,17 @@ pub proc set_h(m, h, value) {
         })
         |> opt::unwrap_or_else(|| {
             m.size = m.size + 1
-            return #some { h = h, value = value, next = #none unit }
+            return #some { h = h, key = key, value = value, next = #none unit }
         })
     return m
 }
 
 pub proc get(m, key) {
-    return get_h(m, hash(key))
+    var h = key |> m.hasher()
+    return m |> get_h(h)
 }
 
-pub proc get_h(m, h) {
+proc get_h(m, h) {
     mut var bucket_idx = h % length(m.buckets)
     case bucket_idx < 0 -> bucket_idx = length(m.buckets) + bucket_idx
     return m.buckets[bucket_idx]
@@ -112,4 +122,63 @@ pub proc get_h(m, h) {
             return current.result
         })
         |> opt::flatten()
+}
+
+pub proc remove(m, key) {
+    var h = key |> m.hasher()
+    return m |> remove_h(h)
+}
+
+proc remove_h(m, h) {
+    mut var bucket_idx = h % length(m.buckets)
+    case bucket_idx < 0 -> bucket_idx = length(m.buckets) + bucket_idx
+    return m.buckets[bucket_idx]
+        |> opt::map(|n| {
+            var current = {
+                node = n,
+                last_node = #none unit,
+                result = #none unit
+            }
+            exhaust(|| {
+                case current.node.h == h -> {
+                    case current.last_node {
+                        #none -> m.buckets[bucket_idx] = current.node.next
+                        #some last_node -> last_node.next = current.node.next
+                    }
+                    current.result = #some current.node.value
+                    return #end unit
+                }
+                case current.node.next {
+                    #none -> return #end unit
+                    #some n -> {
+                        current.last_node = #some current.node
+                        current.node = n
+                        return #next unit
+                    }
+                } 
+            })
+            return current.result
+        })
+        |> opt::flatten()
+}
+
+pub proc iter(m) {
+    mut var next_bucket_idx = 0
+    mut var bucket_idx = 0
+    mut var current_node = #none unit
+    return || {
+        var node
+        case current_node {
+            #none -> {
+                case next_bucket_idx > length(m.buckets) -> return #end unit
+                bucket_idx = next_bucket_idx
+                next_bucket_idx = next_bucket_idx + 1
+                node = m.buckets[bucket_idx]
+            }
+            #some n -> node = n
+        }
+        var entry = { key = node.key, value = node.value }
+        current_node = node.next
+        return #next entry
+    }
 }

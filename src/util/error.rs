@@ -32,6 +32,8 @@ pub enum ErrorType {
 
     // lexer errors
     InvalidCharacter(char),
+    IntLiteralOverflows(StringIdx),
+    FloatLiteralOverflows(StringIdx),
 
     // external mappings parser errors
     TypeDoesNotExist(StringIdx),
@@ -109,6 +111,14 @@ impl ErrorType {
             ErrorType::InvalidCharacter(got) => format!(
                 concat!("Encountered ", style_red!(), "{}", style_dark_red!(), ", which is an invalid character"),
                 got
+            ),
+            ErrorType::IntLiteralOverflows(value) => format!(
+                concat!("The value ", style_red!(), "{}", style_dark_red!(), " does not fit into a single integer"),
+                strings.get(*value)
+            ),
+            ErrorType::FloatLiteralOverflows(value) => format!(
+                concat!("The value ", style_red!(), "{}", style_dark_red!(), " does not fit into a single floating point number"),
+                strings.get(*value)
             ),
 
             ErrorType::TypeDoesNotExist(name) => format!(
