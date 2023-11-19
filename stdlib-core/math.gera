@@ -30,5 +30,8 @@ pub proc min(a, b) {
 pub proc clamp(x, min, max) {
     case x < min -> return min
     case x > max -> return max
-    return x
+    return x    
 }
+
+
+

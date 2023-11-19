@@ -69,6 +69,9 @@ impl TypeScope {
     pub fn get_group_types_from_internal_index(&self, idx: usize) -> &Option<Vec<Type>> {
         &self.type_groups[idx]
     }
+    pub fn get_internal_group_count(&self) -> usize {
+        self.type_groups.len()
+    }
 
     pub fn limit_possible_types(&mut self, a: VarTypeIdx, b: VarTypeIdx) -> Option<VarTypeIdx> {
         self.limit_possible_types_internal(a, b, Vec::new())

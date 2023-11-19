@@ -23,10 +23,23 @@ use backend::{
     lowering::lower_typed_ast,
     target::CompileTarget,
     c::generate_c,
-    javascript::generate_javascript
+    javascript::generate_javascript,
+    symbols::generate_symbols
 };
 
 use std::{fs, env, collections::HashMap};
+
+fn handle_error(error: &Error, strings: &StringMap) -> ! {
+    println!("{}", error.display(strings));
+    std::process::exit(1);
+}
+
+fn handle_errors(errors: &[Error], strings: &StringMap) -> ! {
+    for error in errors {
+        println!("{}", error.display(strings));
+    }
+    std::process::exit(1);
+}
 
 fn main() {
     #[cfg(target_os = "windows")] {
@@ -44,7 +57,7 @@ fn main() {
     }
     let mut strings = StringMap::new();
     // parse cli args
-    const CLI_ARG_MAIN: CliArg = CliArg::required("m", "specifies the path of the main procedure", 1);
+    const CLI_ARG_MAIN: CliArg = CliArg::optional("m", "specifies the path of the main procedure", 1);
     const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", 1);
     const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", 1);
     let args = match CliArgs::parse(&[
@@ -53,29 +66,41 @@ fn main() {
         CLI_ARG_OUTPUT
     ], &env::args().collect::<Vec<String>>()[1..]) {
         Ok(args) => args,
-        Err(error) => {
-            println!("{}", error.display(&strings));
-            std::process::exit(1);
-        }
+        Err(error) => handle_error(&error, &strings)
     };
+    let target_str = args.values(CLI_ARG_TARGET)
+        .expect("is required")
+        .last()
+        .expect("is required to have one value")
+        .clone();
+    let targets: HashMap<String, CompileTarget> = HashMap::from([
+        ("c".into(), CompileTarget::IrConsumer(generate_c)),
+        ("js".into(), CompileTarget::IrConsumer(generate_javascript)),
+        ("symbols".into(), CompileTarget::TypedAstConsumer(generate_symbols))
+    ]);
+    let selected_target = targets.get(&target_str).unwrap_or_else(|| handle_error(&Error::new([
+        ErrorSection::Error(ErrorType::InvalidCompileTarget(target_str.clone())),
+        ErrorSection::Help(format!("List of available targets: {}", targets.iter().map(|t| format!("\n- {}", t.0)).collect::<Vec<String>>().join("")))
+    ].into()), &strings));
+    let output_file = args.values(CLI_ARG_OUTPUT)
+        .expect("is required")
+        .last()
+        .expect("is required to have one value");
     // load builtins
     let mut modules = HashMap::new();
-    let mut type_scope= TypeScope::new();
+    let mut type_scope = TypeScope::new();
     let mut typed_symbols = HashMap::new();
     let mut external_backings = HashMap::new();
     load_builtins(&mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings);
     // read all files
-    let mut errored = false;
+    let mut file_read_errors = Vec::new();
     for file_name in args.free_values() {
         match read_file(strings.insert(file_name), &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
             Ok(_) => {}
-            Err(errors) => {
-                for error in errors { println!("{}", error.display(&strings)); }
-                errored = true;
-            }
+            Err(mut errors) => file_read_errors.append(&mut errors)
         }
     }
-    if errored { std::process::exit(1); }
+    if file_read_errors.len() > 0 { handle_errors(&file_read_errors, &strings) }
     //println!("parsing done");
     // canonicalize modules
     let module_paths = modules.keys().map(|p| p.clone()).collect::<Vec<NamespacePath>>();
@@ -83,25 +108,31 @@ fn main() {
         let mut module = modules.remove(&module_path).expect("key must be valid");
         let canonicalization_errors = module.canonicalize(&modules, &mut strings);
         modules.insert(module_path, module);
-        if canonicalization_errors.len() > 0 {
-            for error in canonicalization_errors { println!("{}", error.display(&strings)); }
-            std::process::exit(1);
-        }
+        if canonicalization_errors.len() > 0 { handle_errors(&canonicalization_errors, &strings); }
     }
     //println!("canonicalization done");
+    // if target consumes AST, pass it the typed AST and write the result
+    if let CompileTarget::AstConsumer(generator) = selected_target {
+        write_file(output_file, (generator)(type_scope, modules, external_backings, &mut strings), &strings);
+        return;
+    }
     // type check
     match type_check_modules(modules, &strings, &mut type_scope, &mut typed_symbols) {
         Ok(_) => {}
-        Err(errors) => {
-            for error in errors { println!("{}", error.display(&strings)); }
-            std::process::exit(1);
-        }
+        Err(errors) => handle_errors(&errors, &strings)
     };
     //println!("type checking done");
+    // if target consumes typed AST, pass it the typed AST and write the result
+    if let CompileTarget::TypedAstConsumer(generator) = selected_target {
+        write_file(output_file, (generator)(type_scope, typed_symbols, external_backings, &mut strings), &strings);
+        return;
+    }
     // find main procedure
     let main_procedure_path = NamespacePath::new(
         args.values(CLI_ARG_MAIN)
-            .expect("is required")
+            .unwrap_or_else(|| handle_error(&Error::new([
+                ErrorSection::Error(ErrorType::NoMainProcedureDefined(target_str))
+            ].into()), &strings))
             .last()
             .expect("is required to have one value")
             .split("::")
@@ -125,13 +156,10 @@ fn main() {
             })
             .flatten() {
         symbol
-    } else {
-        println!("{}", Error::new([
-            ErrorSection::Error(ErrorType::InvalidMainProcedure(main_procedure_path.display(&strings))),
-            ErrorSection::Help(String::from("The main procedure needs to be a procedure without any arguments."))
-        ].into()).display(&strings));
-        std::process::exit(1);
-    };
+    } else { handle_error(&Error::new([
+        ErrorSection::Error(ErrorType::InvalidMainProcedure(main_procedure_path.display(&strings))),
+        ErrorSection::Help(String::from("The main procedure needs to be a procedure without any arguments."))
+    ].into()), &strings) };
     // lower typed AST
     let (ir_symbols, ir_types) = match lower_typed_ast(
          &mut strings, &mut type_scope, &typed_symbols, &external_backings,
@@ -147,36 +175,10 @@ fn main() {
     println!("{}", ir_types.display(&strings));
     println!("{:?}", ir_type_deduplication);
     //println!("lowering done");
-    // generate file content based on format
-    let targets: HashMap<String, CompileTarget> = HashMap::from([
-        ("c".into(), CompileTarget(generate_c)),
-        ("js".into(), CompileTarget(generate_javascript))
-    ]);
-    let selected_target = args.values(CLI_ARG_TARGET)
-        .expect("is required")
-        .last()
-        .expect("is required to have one value");
-    let output = if let Some(target) = targets.get(selected_target) {
-        (target.0)(ir_symbols, ir_types, ir_type_deduplication, main_procedure_path, &mut strings)
-    } else {
-        println!("{}", Error::new([
-            ErrorSection::Error(ErrorType::InvalidCompileTarget(selected_target.clone())),
-            ErrorSection::Help(format!("List of available targets: {}", targets.iter().map(|t| format!("\n- {}", t.0)).collect::<Vec<String>>().join("")))
-        ].into()).display(&strings));
-        std::process::exit(1);
-    };
-    //println!("emitting done");
-    // write to output file
-    let output_file_name = args.values(CLI_ARG_OUTPUT)
-        .expect("is required")
-        .last()
-        .expect("is required to have one value");
-    if let Err(error) = fs::write(output_file_name, output) {
-        println!("{}", Error::new([
-            ErrorSection::Error(ErrorType::FileSystemError(error.to_string())),
-            ErrorSection::Info(format!("While trying to write to '{}'", output_file_name))
-        ].into()).display(&strings));
-        std::process::exit(1);
+    // if target consumes IR, pass it the IR and write the result
+    if let CompileTarget::IrConsumer(generator) = selected_target {
+        write_file(output_file, (generator)(ir_symbols, ir_types, ir_type_deduplication, main_procedure_path, &mut strings), &strings);
+        return;
     }
     // done!
 }
@@ -277,4 +279,13 @@ pub fn process_file(
         ].into())])
     }
     
+}
+
+pub fn write_file(path: &String, content: String, strings: &StringMap) {
+    if let Err(error) = fs::write(path, content) {
+        handle_error(&Error::new([
+            ErrorSection::Error(ErrorType::FileSystemError(error.to_string())),
+            ErrorSection::Info(format!("While trying to write to '{}'", path))
+        ].into()), strings);
+    }
 }

@@ -5,3 +5,4 @@ pub mod lowering;
 pub mod target;
 pub mod c;
 pub mod javascript;
+pub mod symbols;

@@ -73,6 +73,7 @@ pub enum ErrorType {
     ConstantDependsOnExternal(String),
     
     // ir lowering errors
+    NoMainProcedureDefined(String),
     InvalidMainProcedure(String),
     ConstantHeapAllocation,
 
@@ -231,6 +232,10 @@ impl ErrorType {
                 path
             ),
 
+            ErrorType::NoMainProcedureDefined(target) => format!(
+                concat!("The target format ", style_red!(), "{}", style_dark_red!(), " requires a main procedure to be defined"),
+                target
+            ),
             ErrorType::InvalidMainProcedure(path) => format!(
                 concat!(style_red!(), "{}", style_dark_red!(), " is not the name of a valid main procedure"),
                 path
