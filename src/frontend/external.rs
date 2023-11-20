@@ -144,6 +144,7 @@ impl ExternalMappingParser {
                     }
                     let external_str = strings.insert("<external>");
                     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
+                        public: true,
                         parameter_names: parameters.iter().enumerate().map(|(i, _)| strings.insert(&i.to_string())).collect(),
                         parameter_types: parameters,
                         returns: return_type_group,
@@ -191,6 +192,7 @@ impl ExternalMappingParser {
                         modules.insert(variable_module_path, module);
                     }
                     typed_symbols.insert(variable_path.clone(), Symbol::Constant {
+                        public: true,
                         value: None,
                         value_types: type_scope.register_with_types(Some(vec![variable_type]))
                     });

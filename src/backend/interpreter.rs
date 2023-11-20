@@ -196,7 +196,7 @@ impl Interpreter {
             }
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                    if let Symbol::Procedure { parameter_names, parameter_types: _, returns: _, body, source: _ }
+                    if let Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body, source: _ }
                         = symbols.get(path).expect("symbol should exist") {
                         let mut parameter_values = HashMap::new();
                         for param_idx in 0..parameter_names.len() {
@@ -451,7 +451,7 @@ impl Interpreter {
             }
             AstNodeVariant::ModuleAccess { path } => {
                 Ok(match symbols.get(path).expect("symbol should exist") {
-                    Symbol::Constant { value, value_types: _ } => {
+                    Symbol::Constant { public: _, value, value_types: _ } => {
                         if let Some(value) = self.constants.get(path) {
                             value.clone()
                         } else {
@@ -468,7 +468,7 @@ impl Interpreter {
                             value
                         }
                     }
-                    Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body: _, source: _ } => {
+                    Symbol::Procedure { public: _, parameter_names: _, parameter_types: _, returns: _, body: _, source: _ } => {
                         Value::Unit
                     }
                 })

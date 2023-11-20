@@ -142,6 +142,7 @@ pub fn lower_typed_ast(
     let mut type_bank = IrTypeBank::new();
     let mut ir_symbols = Vec::new();
     if let Symbol::Procedure {
+        public: _,
         parameter_names: _,
         parameter_types: _, returns,
         body, source
@@ -173,7 +174,7 @@ pub fn lower_typed_ast(
     } else { panic!("should be a procedure"); }
     for (symbol_path, typed_symbol) in typed_symbols {
         match typed_symbol {
-            Symbol::Constant { value, value_types } => {
+            Symbol::Constant { public: _, value, value_types } => {
                 if let Some(value) = value {
                     let v = if let Some(value) = interpreter.get_constant_value(symbol_path) {
                         value.clone()
@@ -676,7 +677,7 @@ impl IrGenerator {
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure {
-                        parameter_names, parameter_types, returns, body, source
+                        public: _, parameter_names, parameter_types, returns, body, source
                     } = symbols.get(path).expect("symbol should exist") {
                         //let mut call_type_scope = original_type_scope.clone();
                         let mut call_type_scope = current_type_scope.clone();

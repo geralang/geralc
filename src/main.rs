@@ -7,7 +7,11 @@ mod util;
 mod frontend;
 mod backend;
 
-use util::{strings::{StringMap, StringIdx}, error::{Error, ErrorSection, ErrorType}, source::HasSource};
+use util::{
+    strings::{StringMap, StringIdx},
+    error::{Error, ErrorSection, ErrorType},
+    source::HasSource
+};
 use cli::{CliArgs, CliArg};
 use builtin::load_builtins;
 use frontend::{
@@ -171,9 +175,9 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let ir_type_deduplication = ir_types.deduplicate();
-    println!("{}", ir_types.display(&strings));
-    println!("{:?}", ir_type_deduplication);
+    let ir_type_deduplication = ir_types.deduplicate();//IrTypeBank::new().deduplicate();
+    //println!("{}", ir_types.display(&strings));
+    //println!("{:?}", ir_type_deduplication);
     //println!("lowering done");
     // if target consumes IR, pass it the IR and write the result
     if let CompileTarget::IrConsumer(generator) = selected_target {

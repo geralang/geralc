@@ -39,6 +39,7 @@ fn register_foreign_builtin(
     }
     let builtin_str = strings.insert("<builtin>");
     typed_symbols.insert(procedure_path.clone(), Symbol::Procedure {
+        public: true,
         parameter_names: parameter_names.iter().map(|p| strings.insert(p)).collect(),
         parameter_types: parameter_types,
         returns: return_type,

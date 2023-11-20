@@ -16,8 +16,8 @@ use crate::frontend::{
 
 #[derive(Debug, Clone)]
 pub enum Symbol<T: Clone + HasSource + HasAstNodeVariant<T>> {
-    Constant { value: Option<T>, value_types: VarTypeIdx },
-    Procedure { parameter_names: Vec<StringIdx>, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Option<Vec<T>>, source: SourceRange }
+    Constant { public: bool, value: Option<T>, value_types: VarTypeIdx },
+    Procedure { public: bool, parameter_names: Vec<StringIdx>, parameter_types: Vec<VarTypeIdx>, returns: VarTypeIdx, body: Option<Vec<T>>, source: SourceRange }
 }
 
 pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap, type_scope: &mut TypeScope, typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>) -> Result<(), Vec<Error>> {
@@ -291,7 +291,7 @@ fn type_check_symbol<'s>(
     if let Some(symbol) = untyped_symbols.remove(name) {
         let symbol_source = symbol.source();
         match symbol.move_node() {
-            AstNodeVariant::Procedure { public: _, name: _, arguments, body } => {
+            AstNodeVariant::Procedure { public, name: _, arguments, body } => {
                 let untyped_body = body;
                 let mut argument_vars = Vec::new();
                 let mut procedure_variables = HashMap::new();
@@ -304,6 +304,7 @@ fn type_check_symbol<'s>(
                 }
                 let return_types = type_scope.register_variable();
                 symbols.insert(name.clone(), Symbol::Procedure {
+                    public,
                     parameter_names: arguments.iter().map(|p| p.0).collect(),
                     parameter_types: argument_vars,
                     returns: return_types,
@@ -329,7 +330,7 @@ fn type_check_symbol<'s>(
                     Err(error) => return Err(error),
                 };
                 procedure_names.pop();
-                if let Some(Symbol::Procedure { parameter_names: _, parameter_types: _, returns: _, body, source: _ }) = symbols.get_mut(name) {
+                if let Some(Symbol::Procedure { public: _, parameter_names: _, parameter_types: _, returns: _, body, source: _ }) = symbols.get_mut(name) {
                     if match type_scope.get_group_types(return_types) {
                         Some(types) => types.len() == 1 && match &types[0] {
                             Type::Unit => false,
@@ -347,7 +348,7 @@ fn type_check_symbol<'s>(
                     *body = Some(typed_body);
                 } else { panic!("procedure was illegally modified!"); }
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name: _, value_types: _, value } => {
+            AstNodeVariant::Variable { public, mutable: _, name: _, value_types: _, value } => {
                 let return_types = type_scope.register_variable();
                 let value_typed = if let Some(value) = value {
                     match type_check_node(
@@ -372,6 +373,7 @@ fn type_check_symbol<'s>(
                 } else { panic!("grammar checker failed to see a constant without a value"); };
                 let variable_types = value_typed.get_types();
                 symbols.insert(name.clone(), Symbol::Constant {
+                    public,
                     value: Some(value_typed),
                     value_types: variable_types
                 });
@@ -762,7 +764,7 @@ fn type_check_node(
         AstNodeVariant::Call { called, mut arguments } => {
             if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                 match type_check_symbol(strings, type_scope, procedure_names, untyped_symbols, symbols, &path).map(|s| s.clone()) {
-                    Ok(Symbol::Procedure { parameter_names, parameter_types, returns, body: _, source: _ }) => {
+                    Ok(Symbol::Procedure { public: _, parameter_names, parameter_types, returns, body: _, source: _ }) => {
                         if arguments.len() != parameter_types.len() { return Err(Error::new([
                             ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
@@ -1302,7 +1304,7 @@ fn type_check_node(
         }
         AstNodeVariant::ModuleAccess { path } => {
             match type_check_symbol(strings, type_scope, procedure_names, untyped_symbols, symbols, &path) {
-                Ok(Symbol::Constant { value: _, value_types }) => {
+                Ok(Symbol::Constant { public: _, value: _, value_types }) => {
                     if let Some(limited_to) = limited_to {
                         assert_types(
                             TypeAssertion::constant(node_source, *value_types, type_scope, strings),
@@ -1313,7 +1315,7 @@ fn type_check_node(
                         path
                     }, value_types.clone(), node_source), (false, false)))
                 }
-                Ok(Symbol::Procedure { parameter_names: _, parameter_types, returns, body: _, source: _ }) => {
+                Ok(Symbol::Procedure { public: _, parameter_names: _, parameter_types, returns, body: _, source: _ }) => {
                     let mut duplications = TypeGroupDuplications::new();
                     let closure_param_types = parameter_types.iter().map(|t| duplications.duplicate(*t, type_scope)).collect();
                     let closure_return_type = duplications.duplicate(*returns, type_scope);

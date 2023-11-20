@@ -1,5 +1,5 @@
 
-mod map
+mod std::map
 
 use std::opt
 use std::iter

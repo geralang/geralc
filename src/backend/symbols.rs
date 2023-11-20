@@ -144,11 +144,12 @@ fn serialize_modules(
         // symbol is in this module
         let element_name = strings.get(element_name);
         match symbol {
-            Symbol::Procedure { parameter_names, parameter_types, returns, body, source: _ } => {
+            Symbol::Procedure { public, parameter_names, parameter_types, returns, body, source: _ } => {
                 let is_external = body.is_none() && external_backings.contains_key(symbol_path);
                 let mut procedure = json::object! {
-                    "name": element_name,
+                    "public": *public,
                     "external": is_external,
+                    "name": element_name,
                     "parameters": JsonValue::Array((0..parameter_names.len()).map(|p| json::object! {
                         "name": strings.get(parameter_names[p]),
                         "type": JsonValue::Number(
@@ -166,8 +167,9 @@ fn serialize_modules(
                 }
                 into["procedures"][element_name] = procedure;
             }
-            Symbol::Constant { value: _, value_types } => 
+            Symbol::Constant { public, value: _, value_types } => 
                 into["constants"][element_name] = json::object! {
+                    "public": *public,
                     "name": element_name,
                     "types": JsonValue::Number(
                         type_scope.get_group_internal_index(*value_types).into()
