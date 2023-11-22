@@ -21,7 +21,7 @@ pub enum Value {
     String(Rc<str>),
     Array(Rc<RefCell<Box<[Value]>>>),
     Object(Rc<RefCell<HashMap<StringIdx, Value>>>),
-    Closure(Vec<(StringIdx, SourceRange)>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>, StringIdx, usize),
+    Closure(Vec<(StringIdx, SourceRange)>, Vec<HashMap<StringIdx, Value>>, Vec<TypedAstNode>, Rc<()>),
     Variant(StringIdx, Box<Value>)
 }
 
@@ -41,9 +41,9 @@ impl PartialEq for Value {
                 Value::Object(b)
             ) => *a.borrow() == *b.borrow(),
             (
-                Value::Closure(_, _, _, a_file, a_pos),
-                Value::Closure(_, _, _, b_file, b_pos)
-            ) => a_file == b_file && a_pos == b_pos,
+                Value::Closure(_, _, _, a_ref),
+                Value::Closure(_, _, _, b_ref)
+            ) => Rc::ptr_eq(a_ref, b_ref),
             (
                 Value::Variant(a0, a1),
                 Value::Variant(b0, b1)
@@ -109,8 +109,7 @@ impl Interpreter {
             }
             AstNodeVariant::Function { arguments, body } => {
                 Ok(Value::Closure(
-                    arguments.clone(), self.stack.clone(), body.clone(),
-                    node.source().file_name(), node.source().start_position()
+                    arguments.clone(), self.stack.clone(), body.clone(), Rc::new(())
                 ))
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
@@ -224,7 +223,7 @@ impl Interpreter {
                 }
                 let called = self.evaluate_node(&*called, symbols, strings)?;
                 let (parameter_names, mut captured_stack, body) = if let Value::Closure(
-                    a, b, c, _, _
+                    a, b, c, _
                 ) = called { (a, b, c) } else { panic!("value should be a closure") };
                 let mut parameter_values = HashMap::new();
                 for param_idx in 0..parameter_names.len() {

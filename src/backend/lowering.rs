@@ -119,7 +119,7 @@ fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<()
         Value::String(_) => Ok(()),
         Value::Array(_) |
         Value::Object(_) |
-        Value::Closure(_, _, _, _, _) => Err(Error::new([
+        Value::Closure(_, _, _, _) => Err(Error::new([
             ErrorSection::Error(ErrorType::ConstantHeapAllocation),
             ErrorSection::Code(source),
             ErrorSection::Help(String::from("Objects, arrays and closures are stored in heap memory. Heap memory must be initialized when the program is executed. Therefore objects, arrays and closures may not be used as constants."))

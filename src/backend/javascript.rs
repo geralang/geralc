@@ -298,7 +298,7 @@ fn emit_value(
         Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _, _, _) => panic!("constant closures are forbidden!"),
+        Value::Closure(_, _, _, _) => panic!("constant closures are forbidden!"),
         Value::Variant(variant_name, variant_value) => {
             output.push_str("{ tag = ");
             output.push_str(&variant_name.0.to_string());

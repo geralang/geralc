@@ -665,6 +665,12 @@ fn emit_equality(
             output.push_str(b);
             output.push_str(")");
         }
+        IrType::Closure(_) => {
+            output.push_str(a);
+            output.push_str(".allocation == ");
+            output.push_str(b);
+            output.push_str(".allocation");
+        }
         IrType::Indirect(_) => panic!("should be direct"),
         _ => {
             output.push_str(a);
@@ -867,7 +873,7 @@ fn emit_variable(variable: IrVariable, output: &mut String) {
     output.push_str(&variable.index.to_string());
 }
 
-fn emit_variable_poly(
+fn emit_implicit_conversion(
     variable: &str,
     mut from_type: IrType,
     mut to_type: IrType,
@@ -1281,8 +1287,8 @@ fn emit_procedure_impls(
                 let mut body_str = String::new();
                 let mut body_free = HashSet::new();
                 emit_block(
-                    body, variables, &mut body_free, closure_bodies, types, type_dedup, external,
-                    symbols, strings, &mut body_str
+                    body, variables, *return_type, &mut body_free, closure_bodies, types, type_dedup,
+                    external, symbols, strings, &mut body_str
                 );
                 body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, type_dedup, strings, &mut body_str);
@@ -1403,7 +1409,7 @@ fn emit_value(
         Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _, _, _) => panic!("constant closures are forbidden!"),
+        Value::Closure(_, _, _, _) => panic!("constant closures are forbidden!"),
         Value::Variant(variant_name, variant_value) => {
             let variant_idx = if let IrType::Variants(variant_idx) = value_type.direct(types).apply_mapping(type_dedup) {
                 variant_idx.0
@@ -1438,6 +1444,7 @@ fn indent(indent: &str, output: &mut String) {
 fn emit_block(
     instructions: &Vec<IrInstruction>,
     variable_types: &Vec<IrType>,
+    return_type: IrType,
     free: &mut HashSet<usize>,
     closure_bodies: &mut Vec<String>,
     types: &IrTypeBank,
@@ -1451,8 +1458,8 @@ fn emit_block(
     for instruction in instructions {
         let mut o = String::new();
         emit_instruction(
-            instruction, variable_types, free, closure_bodies, types, type_dedup, external, symbols,
-            strings, &mut o
+            instruction, variable_types, return_type, free, closure_bodies, types, type_dedup,
+            external, symbols, strings, &mut o
         );
         indent(&o, output);
     }
@@ -1481,6 +1488,7 @@ fn emit_closure_body_name(closure_idx: usize, variant: usize, output: &mut Strin
 fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<IrType>,
+    return_type: IrType,
     free: &mut HashSet<usize>,
     closure_bodies: &mut Vec<String>,
     types: &IrTypeBank,
@@ -1547,7 +1555,7 @@ fn emit_instruction(
                 output.push_str(" = ");
                 let mut member_value_str = String::new();
                 emit_variable(*member_value, &mut member_value_str);
-                emit_variable_poly(
+                emit_implicit_conversion(
                     &member_value_str, variable_types[member_value.index], member_type, types,
                     type_dedup, output
                 );
@@ -1617,7 +1625,7 @@ fn emit_instruction(
                     output.push_str("] = ");
                     let mut element_value_str = String::new();
                     emit_variable(element_values[value_idx], &mut element_value_str);
-                    emit_variable_poly(
+                    emit_implicit_conversion(
                         &element_value_str, variable_types[element_values[value_idx].index],
                         element_type, types, type_dedup, output
                     );
@@ -1808,8 +1816,8 @@ fn emit_instruction(
             let mut body_str = String::new();
             let mut body_free = HashSet::new();
             emit_block(
-                body, variables, &mut body_free, closure_bodies, types, type_dedup, external, symbols, strings,
-                &mut body_str
+                body, variables, *return_type, &mut body_free, closure_bodies, types, type_dedup,
+                external, symbols, strings, &mut body_str
             );
             let variant = closure_bodies.len();
             // emit closure captures struct
@@ -1960,7 +1968,7 @@ fn emit_instruction(
             access_str.push_str(".member");
             access_str.push_str(&member.0.to_string());
             access_str.push_str(")");
-            emit_variable_poly(
+            emit_implicit_conversion(
                 &mut access_str, member_type, variable_types[into.index], types, type_dedup, output
             );
             output.push_str(";\n");
@@ -1985,7 +1993,7 @@ fn emit_instruction(
             output.push_str(" = ");
             let mut value_str = String::new();
             emit_variable(*value, &mut value_str);
-            emit_variable_poly(&value_str, variable_types[value.index], member_type, types, type_dedup, output);
+            emit_implicit_conversion(&value_str, variable_types[value.index], member_type, types, type_dedup, output);
             output.push_str(";\n");
             emit_rc_incr(&member_str, member_type, types, type_dedup, strings, output);
         }
@@ -2017,7 +2025,7 @@ fn emit_instruction(
             access_str.push_str(".data)[");
             access_str.push_str(&index_str);
             access_str.push_str("]");
-            emit_variable_poly(
+            emit_implicit_conversion(
                 &mut access_str, element_type, variable_types[into.index], types, type_dedup, output
             );
             output.push_str(";\n");
@@ -2053,7 +2061,7 @@ fn emit_instruction(
             output.push_str(" = ");
             let mut value_str = String::new();
             emit_variable(*value, &mut value_str);
-            emit_variable_poly(&value_str, variable_types[value.index], element_type, types, type_dedup, output);
+            emit_implicit_conversion(&value_str, variable_types[value.index], element_type, types, type_dedup, output);
             output.push_str(";\n");
             emit_rc_incr(&element_str, element_type, types, type_dedup, strings, output);
         }
@@ -2248,19 +2256,23 @@ fn emit_instruction(
                 emit_equality(&v_str, &b_str, variable_types[value.index], types, type_dedup, &mut branches_str);
                 branches_str.push_str(") ");
                 emit_block(
-                    &branches[branch_idx].1, variable_types, free, closure_bodies, types, type_dedup, external,
-                    symbols, strings, &mut branches_str
+                    &branches[branch_idx].1, variable_types, return_type, free, closure_bodies, types,
+                    type_dedup, external, symbols, strings, &mut branches_str
                 );
                 branches_str.push_str(" else ");
             }
             emit_block(
-                else_branch, variable_types, free, closure_bodies, types, type_dedup, external, symbols,
-                strings, &mut branches_str
+                else_branch, variable_types, return_type, free, closure_bodies, types, type_dedup,
+                external, symbols, strings, &mut branches_str
             );
             indent(&branches_str, output);
             output.push_str("\n}\n");
         }
         IrInstruction::BranchOnVariant { value, branches, else_branch } => {
+            let value_variant_types = if let IrType::Variants(variants_idx) =
+                variable_types[value.index].direct(types).apply_mapping(type_dedup) {
+                types.get_variants(variants_idx)
+            } else { panic!("Branch on variant should be on a variant?"); };
             output.push_str("switch(");
             emit_variable(*value, output);
             output.push_str(".tag) {");
@@ -2269,15 +2281,22 @@ fn emit_instruction(
                 output.push_str(&branch_variant.0.to_string());
                 output.push_str(":\n");
                 if let Some(branch_variable) = branch_variable {
-                    if let IrType::Unit = variable_types[branch_variable.index].direct(types) {} else {
+                    let branch_variable_type = variable_types[branch_variable.index];
+                    if let IrType::Unit = branch_variable_type.direct(types) {} else {
                         output.push_str("        ");
                         let mut branch_variable_str = String::new();
                         emit_variable(*branch_variable, &mut branch_variable_str);
                         output.push_str(&branch_variable_str);
                         output.push_str(" = ");
-                        emit_variable(*value, output);
-                        output.push_str(".value.");
-                        output.push_str(strings.get(*branch_variant));
+                        let mut branch_variable_value_str = String::new();
+                        emit_variable(*value, &mut branch_variable_value_str);
+                        branch_variable_value_str.push_str(".value.");
+                        branch_variable_value_str.push_str(strings.get(*branch_variant));
+                        emit_implicit_conversion(
+                            &branch_variable_value_str, *value_variant_types.get(branch_variant)
+                                .expect("should have variant"),
+                            branch_variable_type, types, type_dedup, output
+                        );
                         output.push_str(";\n");
                         let mut branch_variable_incr = String::new();
                         emit_rc_incr(
@@ -2293,8 +2312,8 @@ fn emit_instruction(
                 let mut branch = String::new();
                 for instruction in branch_body {
                     emit_instruction(
-                        instruction, variable_types, free, closure_bodies, types, type_dedup, external, symbols,
-                        strings, &mut branch
+                        instruction, variable_types, return_type, free, closure_bodies, types,
+                        type_dedup, external, symbols, strings, &mut branch
                     );
                 }
                 let mut branch_indented = String::new();
@@ -2307,8 +2326,8 @@ fn emit_instruction(
                 let mut branch = String::new();
                 for instruction in else_branch {
                     emit_instruction(
-                        instruction, variable_types, free, closure_bodies, types, type_dedup, external, symbols,
-                        strings, &mut branch
+                        instruction, variable_types, return_type, free, closure_bodies, types,
+                        type_dedup, external, symbols, strings, &mut branch
                     );
                 }
                 let mut branch_indented = String::new();
@@ -2349,7 +2368,7 @@ fn emit_instruction(
                 had_param = true;
                 let mut variable = String::new();
                 emit_variable(arguments[argument_idx], &mut variable);
-                emit_variable_poly(
+                emit_implicit_conversion(
                     &variable,
                     variable_types[arguments[argument_idx].index],
                     parameter_types[argument_idx],
@@ -2360,7 +2379,7 @@ fn emit_instruction(
             if returns_value {
                 emit_variable(*into, output);
                 output.push_str(" = ");
-                emit_variable_poly(
+                emit_implicit_conversion(
                     &value,
                     *return_type,
                     variable_types[into.index],
@@ -2393,7 +2412,7 @@ fn emit_instruction(
                 value.push_str(", ");
                 let mut variable = String::new();
                 emit_variable(arguments[argument_idx], &mut variable);
-                emit_variable_poly(
+                emit_implicit_conversion(
                     &variable,
                     variable_types[arguments[argument_idx].index],
                     parameter_types[argument_idx],
@@ -2404,7 +2423,7 @@ fn emit_instruction(
             if returns_value {
                 emit_variable(*into, output);
                 output.push_str(" = ");
-                emit_variable_poly(
+                emit_implicit_conversion(
                     &value,
                     *return_type,
                     variable_types[into.index],
@@ -2418,13 +2437,15 @@ fn emit_instruction(
             free.insert(into.index);
         }
         IrInstruction::Return { value } => {
-            let mut returned = String::new();
-            emit_variable(*value, &mut returned);
             if let IrType::Unit = variable_types[value.index].direct(types) {
                 output.push_str("goto ret;\n");
             } else {
                 output.push_str("returned = ");
-                output.push_str(&returned);
+                let mut returned = String::new();
+                emit_variable(*value, &mut returned);
+                emit_implicit_conversion(
+                    &returned, variable_types[value.index], return_type, types, type_dedup, output
+                );
                 output.push_str(";\n");
                 emit_rc_incr(&returned, variable_types[value.index], types, type_dedup, strings, output);
                 output.push_str("goto ret;\n");
