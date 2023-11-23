@@ -148,72 +148,6 @@ impl IrTypeBank {
         for indirect_type in &mut self.indirect { (action)(indirect_type); }
     }
 
-    pub fn deduplicate(&self) -> IrTypeBankMapping {
-        let mut result = IrTypeBankMapping {
-            arrays: HashMap::new(),
-            objects: HashMap::new(),
-            concrete_objects: HashMap::new(),
-            variants: HashMap::new(),
-            closures: HashMap::new(),
-            indirects: HashMap::new(),
-        };
-        for from_array_idx in 0..self.arrays.len() {
-            for to_array_idx in 0..from_array_idx {
-                if !self.arrays[to_array_idx].eq(&self.arrays[from_array_idx], self, &mut HashMap::new()) { continue; }
-                result.arrays.insert(from_array_idx, to_array_idx);
-                break;
-            }
-        }
-        for from_object_idx in 0..self.objects.len() {
-            for to_object_idx in 0..from_object_idx {
-                if !IrType::objects_eq(
-                    &self.objects[to_object_idx], &self.objects[from_object_idx],
-                    self, &mut HashMap::new()
-                ) { continue; }
-                result.objects.insert(from_object_idx, to_object_idx);
-                break;
-            }
-        }
-        for from_concrete_object_idx in 0..self.concrete_objects.len() {
-            for to_concrete_object_idx in 0..from_concrete_object_idx {
-                if !IrType::concrete_objects_eq(
-                    &self.concrete_objects[to_concrete_object_idx], &self.concrete_objects[from_concrete_object_idx],
-                    self, &mut HashMap::new()
-                ) { continue; }
-                result.concrete_objects.insert(from_concrete_object_idx, to_concrete_object_idx);
-                break;
-            }
-        }
-        for from_variants_idx in 0..self.variants.len() {
-            for to_variants_idx in 0..from_variants_idx {
-                if !IrType::variants_eq(
-                    &self.variants[to_variants_idx], &self.variants[from_variants_idx],
-                    self, &mut HashMap::new()
-                ) { continue; }
-                result.variants.insert(from_variants_idx, to_variants_idx);
-                break;
-            }
-        }
-        for from_closures_idx in 0..self.closures.len() {
-            for to_closures_idx in 0..from_closures_idx {
-                if !IrType::closures_eq(
-                    &self.closures[to_closures_idx], &self.closures[from_closures_idx],
-                    self, &mut HashMap::new()
-                ) { continue; }
-                result.closures.insert(from_closures_idx, to_closures_idx);
-                break;
-            }
-        }
-        for from_indirect_idx in 0..self.indirect.len() {
-            for to_indirect_idx in 0..from_indirect_idx {
-                if !self.indirect[to_indirect_idx].eq(&self.indirect[from_indirect_idx], self, &mut HashMap::new()) { continue; }
-                result.indirects.insert(from_indirect_idx, to_indirect_idx);
-                break;
-            }
-        }
-        result
-    }
-
     pub fn display(&self, strings: &StringMap) -> String {
         fn display_type(t: IrType) -> String {
             match t {
@@ -287,88 +221,25 @@ impl IrTypeBank {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrArrayTypeIdx(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrObjectTypeIdx(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrConcreteObjectTypeIdx(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrVariantTypeIdx(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrClosureTypeIdx(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct IrIndirectTypeIdx(pub usize);
 
-pub struct IrTypeBankMapping {
-    arrays: HashMap<usize, usize>,
-    objects: HashMap<usize, usize>,
-    concrete_objects: HashMap<usize, usize>,
-    variants: HashMap<usize, usize>,
-    closures: HashMap<usize, usize>,
-    indirects: HashMap<usize, usize>
-}
-
-impl IrTypeBankMapping {
-    pub fn apply_array(&self, i: IrArrayTypeIdx) -> IrArrayTypeIdx {
-        self.arrays.get(&i.0).map(|i| IrArrayTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn array_is_mapped(&self, i: usize) -> bool { self.arrays.contains_key(&i) }
-    pub fn apply_object(&self, i: IrObjectTypeIdx) -> IrObjectTypeIdx {
-        self.objects.get(&i.0).map(|i| IrObjectTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn object_is_mapped(&self, i: usize) -> bool { self.objects.contains_key(&i) }
-    pub fn apply_concrete_object(&self, i: IrConcreteObjectTypeIdx) -> IrConcreteObjectTypeIdx {
-        self.concrete_objects.get(&i.0).map(|i| IrConcreteObjectTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn concrete_object_is_mapped(&self, i: usize) -> bool { self.concrete_objects.contains_key(&i) }
-    pub fn apply_variants(&self, i: IrVariantTypeIdx) -> IrVariantTypeIdx {
-        self.variants.get(&i.0).map(|i| IrVariantTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn variant_is_mapped(&self, i: usize) -> bool { self.variants.contains_key(&i) }
-    pub fn apply_closure(&self, i: IrClosureTypeIdx) -> IrClosureTypeIdx {
-        self.closures.get(&i.0).map(|i| IrClosureTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn closure_is_mapped(&self, i: usize) -> bool { self.closures.contains_key(&i) }
-    pub fn apply_indirect(&self, i: IrIndirectTypeIdx) -> IrIndirectTypeIdx {
-        self.indirects.get(&i.0).map(|i| IrIndirectTypeIdx(*i)).unwrap_or(i)
-    }
-    pub fn indirect_is_mapped(&self, i: usize) -> bool { self.indirects.contains_key(&i) }
-}
-
-impl std::fmt::Debug for IrTypeBankMapping {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "IrTypeBankMapping {{
-    arrays: [{}
-    ]
-    objects: [{}
-    ]
-    concrete_objects: [{}
-    ]
-    variants: [{}
-    ]
-    closures: [{}
-    ]
-    indirects: [{}
-    ]
-}}",    
-            self.arrays.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
-            self.objects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
-            self.concrete_objects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
-            self.variants.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
-            self.closures.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join(""),
-            self.indirects.iter().map(|(f, t)| format!("\n        {} -> {}", f, t)).collect::<Vec<String>>().join("")
-        ))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IrType {
     Unit,
     Boolean,
@@ -390,22 +261,6 @@ impl IrType {
             v = *type_bank.get_indirect(idx); 
         }
         v
-    }
-
-    pub fn apply_mapping(&self, mapping: &IrTypeBankMapping) -> IrType {
-        match self {
-            IrType::Unit |
-            IrType::Boolean |
-            IrType::Integer |
-            IrType::Float |
-            IrType::String => *self,
-            IrType::Array(i) => IrType::Array(mapping.apply_array(*i)),
-            IrType::Object(i) => IrType::Object(mapping.apply_object(*i)),
-            IrType::ConcreteObject(i) => IrType::ConcreteObject(mapping.apply_concrete_object(*i)),
-            IrType::Variants(i) => IrType::Variants(mapping.apply_variants(*i)),
-            IrType::Closure(i) => IrType::Closure(mapping.apply_closure(*i)),
-            IrType::Indirect(i) => IrType::Indirect(mapping.apply_indirect(*i))
-        }
     }
 
     pub fn objects_eq(a: &HashMap<StringIdx, IrType>, b: &HashMap<StringIdx, IrType>, type_bank: &IrTypeBank, encountered: &mut HashMap<usize, IrType>) -> bool {

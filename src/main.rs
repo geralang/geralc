@@ -175,13 +175,10 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let ir_type_deduplication = ir_types.deduplicate();//IrTypeBank::new().deduplicate();
-    //println!("{}", ir_types.display(&strings));
-    //println!("{:?}", ir_type_deduplication);
     //println!("lowering done");
     // if target consumes IR, pass it the IR and write the result
     if let CompileTarget::IrConsumer(generator) = selected_target {
-        write_file(output_file, (generator)(ir_symbols, ir_types, ir_type_deduplication, main_procedure_path, &mut strings), &strings);
+        write_file(output_file, (generator)(ir_symbols, ir_types, main_procedure_path, &mut strings), &strings);
         return;
     }
     // done!

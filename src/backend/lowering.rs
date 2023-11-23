@@ -48,7 +48,9 @@ fn var_types_to_ir_type(
             result//.reinsert(type_bank, strings)
         }        
     } else {
-        IrType::Unit // If "any type" has reached this point, it's unused.
+        // If "any type" has reached this point, it's unused.
+        // If we return unit, it can be optimized away!
+        IrType::Unit
     }
 }
 

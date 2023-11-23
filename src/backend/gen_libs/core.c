@@ -20,17 +20,20 @@ GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
 }
 
 void gera___rc_incr(GeraAllocation* a) {
+    if(a == NULL) { return; }
     a->rc += 1;
     //printf("GC: %p | rc++ => %llu\n", a, a->rc);
 }
 
 void gera___rc_free(GeraAllocation* a) {
+    if(a == NULL) { return; }
     (a->fh)(a->data, a->size);
     free(a);
     //printf("GC: %p | free!\n", a);
 }
 
 void gera___rc_decr(GeraAllocation* a) {
+    if(a == NULL) { return; }
     a->rc -= 1;
     //printf("GC: %p | rc-- => %llu\n", a, a->rc);
     if(a->rc == 0) { gera___rc_free(a); }

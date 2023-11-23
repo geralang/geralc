@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 use crate::backend::{
-    ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable, IrTypeBankMapping},
+    ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
     interpreter::Value
 };
 use crate::frontend::modules::NamespacePath;
@@ -11,7 +11,6 @@ use crate::util::strings::{StringMap, StringIdx};
 pub fn generate_javascript(
     symbols: Vec<IrSymbol>,
     types: IrTypeBank,
-    type_dedup: IrTypeBankMapping,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -23,7 +22,7 @@ pub fn generate_javascript(
     output.push_str("\n");
     emit_constants(&symbols, strings, &mut output);
     output.push_str("\n");
-    emit_procedure_impls(&symbols, &types, &type_dedup, strings, &externals, &mut output);
+    emit_procedure_impls(&symbols, &types, strings, &externals, &mut output);
     output.push_str("\n");
     emit_main_function(&main_procedure_path, strings, &mut output);
     output.push_str("\n})();");
@@ -78,57 +77,57 @@ fn emit_variable(variable: IrVariable, output: &mut String) {
     output.push_str(&variable.index.to_string());
 }
 
-fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &IrTypeBankMapping, &mut StringMap) -> String> {
+fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> {
     fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
         NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
     }
-    let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &IrTypeBankMapping, &mut StringMap) -> String> = HashMap::new();
-    builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _, _| {
+    let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> = HashMap::new();
+    builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _| {
         String::from(r#"
 return param0 === param1;
 "#)
     });
-    builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, _, _| {
         String::from(r#"
 return param0.tag === param1.tag;
 "#)
     });
-    builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _| {
         String::from(r#"
 return BigInt(param0.length);
 "#)
     });
-    builtins.insert(path_from(&["core", "array"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "array"], strings), |_, _, _, _| {
         String::from(r#"
 return new Array(Number(param1)).fill(param0);
 "#)
     });
-    builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, _, strings| {
+    builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, strings| {
         format!("
 while(param0.call().tag == {}) {{}}
 ", strings.insert("next").0)
     });
-    builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
         String::from(r#"
 throw param0;
 "#)
     });
-    builtins.insert(path_from(&["core", "as_str"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "as_str"], strings), |_, _, _, _| {
         String::from(r#"
 return param0.toString();
 "#)
     });
-    builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _| {
         String::from(r#"
 return BigInt(Math.floor(param0));
 "#)
     });
-    builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, _, _| {
         String::from(r#"
 return Number(param0);
 "#)
     });
-    builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _| {
         String::from(r#"
 let start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
@@ -146,31 +145,31 @@ if(start_idx > end_idx) {
 return param0.substring(Number(param0), Number(param1));
 "#)
     });
-    builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _| {
         String::from(r#"
 return param0 + param1;
 "#)
     });
-    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, _, _, strings| {
+    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, _, strings| {
         format!("
 const r = parseFloat(param0);
 if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
 return {{ tag: {}, value: r }};
 ", strings.insert("none").0, strings.insert("some").0)
     });
-    builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, _, _, strings| {
+    builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, _, strings| {
         format!("
 const r = parseInt(param0);
 if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
 return {{ tag: {}, value: BigInt(r) }};
 ", strings.insert("none").0, strings.insert("some").0)
     });
-    builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 return param0.repeat(Number(param1));
 "#)
     });
-    builtins.insert(path_from(&["core", "hash"], strings), |_, _, _, _, _| {
+    builtins.insert(path_from(&["core", "hash"], strings), |_, _, _, _| {
         String::from(r#"
 return hash(param0);
 "#)
@@ -181,7 +180,6 @@ return hash(param0);
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
-    type_dedup: &IrTypeBankMapping,
     strings: &mut StringMap,
     external: &HashMap<NamespacePath, StringIdx>,
     output: &mut String
@@ -208,7 +206,7 @@ fn emit_procedure_impls(
                 }
                 let mut body_str = String::new();
                 emit_block(
-                    body, variables, types, type_dedup, external, symbols, strings, &mut body_str
+                    body, variables, types, external, symbols, strings, &mut body_str
                 );
                 indent(&body_str, output);
                 output.push_str("}\n");
@@ -228,7 +226,7 @@ fn emit_procedure_impls(
                 let body_str = (builtin_bodies
                     .get(path)
                     .expect("builtin should have implementation"))
-                    (parameter_types, *return_type, types, type_dedup, strings);
+                    (parameter_types, *return_type, types, strings);
                 indent(&body_str, output);
                 output.push_str("}\n");
             }
@@ -246,7 +244,7 @@ fn emit_main_function(
     output.push_str("();\n");
 }
 
-fn emit_path(path: &NamespacePath, strings: &StringMap,output: &mut String) {
+fn emit_path(path: &NamespacePath, strings: &StringMap, output: &mut String) {
     output.push_str(
         &path.get_segments()
             .iter()
@@ -322,7 +320,6 @@ fn emit_block(
     instructions: &Vec<IrInstruction>,
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
-    type_dedup: &IrTypeBankMapping,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -332,7 +329,7 @@ fn emit_block(
     for instruction in instructions {
         let mut o = String::new();
         emit_instruction(
-            instruction, variable_types, types, type_dedup, external, symbols, strings, &mut o
+            instruction, variable_types, types, external, symbols, strings, &mut o
         );
         indent(&o, output);
     }
@@ -343,10 +340,9 @@ fn emit_copied(
     copied: &str,
     copied_type: IrType,
     types: &IrTypeBank,
-    type_dedup: &IrTypeBankMapping,
     output: &mut String
 ) {
-    match copied_type.direct(types).apply_mapping(type_dedup) {
+    match copied_type.direct(types) {
         IrType::Unit |
         IrType::Boolean |
         IrType::Integer |
@@ -373,19 +369,17 @@ fn emit_copied_variable(
     copied: IrVariable,
     copied_type: IrType,
     types: &IrTypeBank,
-    type_dedup: &IrTypeBankMapping,
     output: &mut String
 ) {
     let mut copied_str = String::new();
     emit_variable(copied, &mut copied_str);
-    emit_copied(&copied_str, copied_type, types, type_dedup, output);
+    emit_copied(&copied_str, copied_type, types, output);
 }
 
 fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
-    type_dedup: &IrTypeBankMapping,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -427,7 +421,7 @@ fn emit_instruction(
                 output.push_str(strings.get(*member_name));
                 output.push_str(": ");
                 emit_copied_variable(
-                    *member_value, variable_types[member_value.index], types, type_dedup, output
+                    *member_value, variable_types[member_value.index], types, output
                 );
             }
             output.push_str(" };\n");
@@ -440,7 +434,7 @@ fn emit_instruction(
                 if had_member { output.push_str(", "); }
                 had_member = true;
                 emit_copied_variable(
-                    *element_value, variable_types[element_value.index], types, type_dedup, output
+                    *element_value, variable_types[element_value.index], types, output
                 );
             }
             output.push_str(" ];\n");
@@ -450,7 +444,7 @@ fn emit_instruction(
             output.push_str(" = { tag: ");
             output.push_str(&name.0.to_string());
             output.push_str(", value: ");
-            emit_copied_variable(*v, variable_types[v.index], types, type_dedup, output);
+            emit_copied_variable(*v, variable_types[v.index], types, output);
             output.push_str(" };\n");
         }
         IrInstruction::LoadGlobalVariable { path, into } => {
@@ -467,7 +461,7 @@ fn emit_instruction(
                 IrSymbol::BuiltInProcedure { .. } |
                 IrSymbol::ExternalProcedure { .. } => {
                     let (expected_parameter_types, expected_return_type) =
-                        if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types).apply_mapping(type_dedup) {
+                        if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types) {
                             types.get_closure(closure_idx)
                         } else { panic!("should be a closure"); };
                     let mut found_variant = 0;
@@ -540,7 +534,7 @@ fn emit_instruction(
                 output.push_str(strings.get(*capture_name));
                 output.push_str(": ");
                 emit_copied_variable(
-                    *capture_value, variable_types[capture_value.index], types, type_dedup, output
+                    *capture_value, variable_types[capture_value.index], types, output
                 );
             }
             output.push_str(" },\n");
@@ -561,7 +555,7 @@ fn emit_instruction(
             }
             let mut body_body_str = String::new();
             emit_block(
-                body, variables, types, type_dedup, external, symbols, strings, &mut body_body_str
+                body, variables, types, external, symbols, strings, &mut body_body_str
             );
             indent(&body_body_str, &mut body_str);
             body_str.push_str("}\n");
@@ -575,7 +569,7 @@ fn emit_instruction(
             emit_variable(*accessed, &mut accessed_str);
             accessed_str.push_str(".");
             accessed_str.push_str(strings.get(*member));
-            emit_copied(&accessed_str, variable_types[into.index], types, type_dedup, output);
+            emit_copied(&accessed_str, variable_types[into.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::SetObjectMember { value, accessed, member } => {
@@ -583,7 +577,7 @@ fn emit_instruction(
             output.push_str(".");
             output.push_str(strings.get(*member));
             output.push_str(" = ");
-            emit_copied_variable(*value, variable_types[value.index], types, type_dedup, output);
+            emit_copied_variable(*value, variable_types[value.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::GetArrayElement { accessed, index, into } => {
@@ -594,7 +588,7 @@ fn emit_instruction(
             accessed_str.push_str("[");
             emit_variable(*index, &mut accessed_str);
             accessed_str.push_str("]");
-            emit_copied(&accessed_str, variable_types[into.index], types, type_dedup, output);
+            emit_copied(&accessed_str, variable_types[into.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::SetArrayElement { value, accessed, index } => {
@@ -602,7 +596,7 @@ fn emit_instruction(
             output.push_str("[");
             emit_variable(*index, output);
             output.push_str("] = ");
-            emit_copied_variable(*value, variable_types[value.index], types, type_dedup, output);
+            emit_copied_variable(*value, variable_types[value.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::GetClosureCapture { name, into } => {
@@ -615,19 +609,19 @@ fn emit_instruction(
             output.push_str("this.captures.");
             output.push_str(strings.get(*name));
             output.push_str(" = ");
-            emit_copied_variable(*value, variable_types[value.index], types, type_dedup, output);
+            emit_copied_variable(*value, variable_types[value.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::Move { from, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_copied_variable(*from, variable_types[from.index], types, type_dedup, output);
+            emit_copied_variable(*from, variable_types[from.index], types, output);
             output.push_str(";\n");
         }
         IrInstruction::Add { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types).apply_mapping(type_dedup) {
+            if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" + ");
@@ -643,7 +637,7 @@ fn emit_instruction(
         IrInstruction::Subtract { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types).apply_mapping(type_dedup) {
+            if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" - ");
@@ -659,7 +653,7 @@ fn emit_instruction(
         IrInstruction::Multiply { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types).apply_mapping(type_dedup) {
+            if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" * ");
@@ -675,7 +669,7 @@ fn emit_instruction(
         IrInstruction::Divide { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types).apply_mapping(type_dedup) {
+            if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" / ");
@@ -691,7 +685,7 @@ fn emit_instruction(
         IrInstruction::Modulo { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types).apply_mapping(type_dedup) {
+            if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" % ");
@@ -777,14 +771,14 @@ fn emit_instruction(
                 emit_value(branch_value, output);
                 output.push_str(")) ");
                 emit_block(
-                    branch_body, variable_types, types, type_dedup, external, symbols, strings,
+                    branch_body, variable_types, types, external, symbols, strings,
                     output
                 );
             }
             if else_branch.len() > 0 {
                 if had_branch { output.push_str(" else "); }
                 emit_block(
-                    else_branch, variable_types, types, type_dedup, external, symbols, strings, output
+                    else_branch, variable_types, types, external, symbols, strings, output
                 );
             }
             output.push_str("\n");
@@ -807,7 +801,7 @@ fn emit_instruction(
                     branch_str.push_str(".value; ");
                 }
                 emit_block(
-                    branch_body, variable_types, types, type_dedup, external, symbols, strings,
+                    branch_body, variable_types, types, external, symbols, strings,
                     &mut branch_str
                 );
                 branch_str.push_str("\n");
@@ -817,7 +811,7 @@ fn emit_instruction(
                 let mut else_branch_str = String::new();
                 else_branch_str.push_str("default: ");
                 emit_block(
-                    else_branch, variable_types, types, type_dedup, external, symbols, strings,
+                    else_branch, variable_types, types, external, symbols, strings,
                     &mut else_branch_str
                 );
                 else_branch_str.push_str("\n");
@@ -840,7 +834,7 @@ fn emit_instruction(
                 had_param = true;
                 emit_copied_variable(
                     arguments[argument_idx], variable_types[arguments[argument_idx].index], types,
-                    type_dedup, output
+                    output
                 );
             }
             output.push_str(");\n");
@@ -856,7 +850,7 @@ fn emit_instruction(
                 had_param = true;
                 emit_copied_variable(
                     arguments[argument_idx], variable_types[arguments[argument_idx].index], types,
-                    type_dedup, output
+                    output
                 );
             }
             output.push_str(");\n");
