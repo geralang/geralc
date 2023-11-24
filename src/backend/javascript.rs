@@ -109,7 +109,7 @@ while(param0.call().tag == {}) {{}}
     });
     builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
         String::from(r#"
-throw param0;
+gera___panic(param0);
 "#)
     });
     builtins.insert(path_from(&["core", "as_str"], strings), |_, _, _, _| {
@@ -171,7 +171,7 @@ return param0.repeat(Number(param1));
     });
     builtins.insert(path_from(&["core", "hash"], strings), |_, _, _, _| {
         String::from(r#"
-return hash(param0);
+return gera___hash(param0);
 "#)
     });
     return builtins;
@@ -187,7 +187,7 @@ fn emit_procedure_impls(
     let builtin_bodies = get_builtin_bodies(strings);
     for symbol in symbols {
         match symbol {
-            IrSymbol::Procedure { path, variant, parameter_types, return_type: _, variables, body, source: _ } => {
+            IrSymbol::Procedure { path, variant, parameter_types, return_type: _, variables, body } => {
                 output.push_str("function ");
                 emit_procedure_name(path, *variant, strings, output);
                 output.push_str("(");
@@ -240,6 +240,9 @@ fn emit_main_function(
     strings: &StringMap,
     output: &mut String
 ) {
+    output.push_str("gera___stack.push(");
+    emit_string_literal(&main_procedure_path.display(strings), output);
+    output.push_str(", \"???\", 0);\n");
     emit_procedure_name(main_procedure_path, 0, strings, output);
     output.push_str("();\n");
 }
@@ -522,7 +525,7 @@ fn emit_instruction(
             output.push_str(";\n");
         }
         IrInstruction::LoadClosure {
-            parameter_types, return_type: _, captured, variables, body, into, source: _
+            parameter_types, return_type: _, captured, variables, body, into
         } => {
             emit_variable(*into, output);
             output.push_str(" = {\n");
@@ -580,21 +583,51 @@ fn emit_instruction(
             emit_copied_variable(*value, variable_types[value.index], types, output);
             output.push_str(";\n");
         }
-        IrInstruction::GetArrayElement { accessed, index, into } => {
-            emit_variable(*into, output);
-            output.push_str(" = ");
+        IrInstruction::GetArrayElement { accessed, index, into, source } => {
+            let mut index_str = String::new();
+            emit_variable(*index, &mut index_str);
             let mut accessed_str = String::new();
             emit_variable(*accessed, &mut accessed_str);
-            accessed_str.push_str("[");
-            emit_variable(*index, &mut accessed_str);
-            accessed_str.push_str("]");
+            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(", ");
+            output.push_str(&accessed_str);
+            output.push_str(".length, ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
+            emit_variable(*into, output);
+            output.push_str(" = ");
+            output.push_str(&accessed_str);
+            output.push_str("[");
+            output.push_str(&index_str);
+            output.push_str("]");
+            
             emit_copied(&accessed_str, variable_types[into.index], types, output);
             output.push_str(";\n");
         }
-        IrInstruction::SetArrayElement { value, accessed, index } => {
-            emit_variable(*accessed, output);
+        IrInstruction::SetArrayElement { value, accessed, index, source } => {
+            let mut index_str = String::new();
+            emit_variable(*index, &mut index_str);
+            let mut accessed_str = String::new();
+            emit_variable(*accessed, &mut accessed_str);
+            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(", ");
+            output.push_str(&accessed_str);
+            output.push_str(".length, ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
+            output.push_str(&accessed_str);
             output.push_str("[");
-            emit_variable(*index, output);
+            output.push_str(&index_str);
             output.push_str("] = ");
             emit_copied_variable(*value, variable_types[value.index], types, output);
             output.push_str(";\n");
@@ -666,10 +699,21 @@ fn emit_instruction(
             }
             output.push_str(";\n");
         }
-        IrInstruction::Divide { a, b, into } => {
+        IrInstruction::Divide { a, b, into, source } => {    
+            let mut divisor = String::new();
+            emit_variable(*b, &mut divisor);
             emit_variable(*into, output);
             output.push_str(" = ");
             if let IrType::Integer = variable_types[a.index].direct(types) {
+                output.push_str("gera___verify_integer_divisor(");
+                output.push_str(&divisor);
+                output.push_str(", ");
+                emit_string_literal(strings.get(source.file_name()), output);
+                output.push_str(", ");
+                let source_line = strings.get(source.file_content())[..source.start_position()]
+                    .lines().collect::<Vec<&str>>().len();
+                output.push_str(&source_line.to_string());
+                output.push_str(");\n");
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" / ");
@@ -738,7 +782,7 @@ fn emit_instruction(
         }
         IrInstruction::Equals { a, b, into } => {
             emit_variable(*into, output);
-            output.push_str(" = eq(");
+            output.push_str(" = gera___eq(");
             emit_variable(*a, output);
             output.push_str(", ");
             emit_variable(*b, output);
@@ -746,7 +790,7 @@ fn emit_instruction(
         }
         IrInstruction::NotEquals { a, b, into } => {
             emit_variable(*into, output);
-            output.push_str(" = !eq(");
+            output.push_str(" = !gera___eq(");
             emit_variable(*a, output);
             output.push_str(", ");
             emit_variable(*b, output);
@@ -765,7 +809,7 @@ fn emit_instruction(
             for (branch_value, branch_body) in branches {
                 if had_branch { output.push_str(" else "); }
                 had_branch = true;
-                output.push_str("if(eq(");
+                output.push_str("if(gera___eq(");
                 output.push_str(&value_str);
                 output.push_str(", ");
                 emit_value(branch_value, output);
@@ -819,7 +863,16 @@ fn emit_instruction(
             }
             output.push_str("}\n");
         }
-        IrInstruction::Call { path, variant, arguments, into } => {
+        IrInstruction::Call { path, variant, arguments, into, source } => {
+            output.push_str("gera___stack.push(");
+            emit_string_literal(&path.display(strings), output);
+            output.push_str(", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             emit_variable(*into, output);
             output.push_str(" = ");
             if let Some(backing) = external.get(path) {
@@ -838,8 +891,16 @@ fn emit_instruction(
                 );
             }
             output.push_str(");\n");
+            output.push_str("gera___stack.pop();\n");
         }
-        IrInstruction::CallClosure { called, arguments, into } => {
+        IrInstruction::CallClosure { called, arguments, into, source } => {
+            output.push_str("gera___stack.push(\"<closure>\", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             emit_variable(*into, output);
             output.push_str(" = ");
             emit_variable(*called, output);
@@ -854,6 +915,7 @@ fn emit_instruction(
                 );
             }
             output.push_str(");\n");
+            output.push_str("gera___stack.pop();\n");
         }
         IrInstruction::Return { value } => {
             output.push_str("return ");

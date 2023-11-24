@@ -883,7 +883,6 @@ return param0.length;
         let mut result = String::new();
         result.push_str(r#"
 if(param1 < 0) {
-    gera___st_push("core::array", "<builtin>/core.gera", 0);
     size_t error_message_length = snprintf(NULL, 0, "the array length %lld is not valid", param1);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the array length %lld is not valid", param1);
@@ -1007,7 +1006,6 @@ return (gfloat) param0;
 gint start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
 if(param1 > param0.length) { 
-    gera___st_push("core::substring", "<builtin>/core.gera", 0);
     size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
@@ -1016,14 +1014,12 @@ if(param1 > param0.length) {
 gint end_idx = param2;
 if(param2 < 0) { end_idx = param0.length + param2; }
 if(param2 > param0.length) {
-    gera___st_push("core::substring", "<builtin>/core.gera", 0);
     size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
     gera___panic(error_message);
 }
 if(start_idx > end_idx) {
-    gera___st_push("core::substring", "<builtin>/core.gera", 0);
     size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
@@ -1074,7 +1070,6 @@ return gera___concat(param0, param1);
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 if(param1 < 0) {
-    gera___st_push("core::array", "<builtin>/core.gera", 0);
     size_t error_message_length = snprintf(NULL, 0, "the string repetition count %lld is not valid", param1);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the string repetition count %lld is not valid", param1);
@@ -1161,7 +1156,7 @@ fn emit_procedure_impls(
     let builtin_bodies = get_builtin_bodies(strings);
     for symbol in symbols {
         match symbol {
-            IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body, source } => {
+            IrSymbol::Procedure { path, variant, parameter_types, return_type, variables, body } => {
                 emit_type(*return_type, types, output);
                 output.push_str(" ");
                 emit_procedure_name(path, *variant, strings, output);
@@ -1176,15 +1171,6 @@ fn emit_procedure_impls(
                     output.push_str(&p.to_string());
                 }
                 output.push_str(") {\n");
-                output.push_str("    gera___st_push(");
-                emit_string_literal(&path.display(strings), output);
-                output.push_str(", ");
-                emit_string_literal(strings.get(source.file_name()), output);
-                output.push_str(", ");
-                let source_line = strings.get(source.file_content())[..source.start_position()]
-                    .lines().collect::<Vec<&str>>().len() + 1;
-                output.push_str(&source_line.to_string());
-                output.push_str(");\n");
                 for variable_idx in 0..variables.len() {
                     if let IrType::Unit = variables[variable_idx].direct(types) { continue; }
                     output.push_str("    ");
@@ -1209,7 +1195,6 @@ fn emit_procedure_impls(
                 body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
                 indent(&body_str, output);
-                output.push_str("    gera___st_pop();\n");
                 if let IrType::Unit = return_type.direct(types) {} else {
                     output.push_str("    return returned;\n");
                 }
@@ -1249,6 +1234,9 @@ fn emit_main_function(
 ) {
     output.push_str("int main(void) {\n");
     output.push_str("    gera___st_init();\n");
+    output.push_str("    gera___st_push(");
+    emit_string_literal(&main_procedure_path.display(strings), output);
+    output.push_str(", \"???\", 0);\n");
     output.push_str("    ");
     emit_procedure_name(main_procedure_path, 0, strings, output);
     output.push_str("();\n");
@@ -1700,7 +1688,7 @@ fn emit_instruction(
             free.insert(into.index);
         }
         IrInstruction::LoadClosure {
-            parameter_types, return_type, captured, variables, body, into, source
+            parameter_types, return_type, captured, variables, body, into
         } => {
             fn emit_closure_captures_name(closure_idx: usize, variant: usize, output: &mut String) {
                 emit_closure_name(closure_idx, output);
@@ -1776,13 +1764,6 @@ fn emit_instruction(
                 closure_body.push_str(&param_idx.to_string());
             }
             closure_body.push_str(") {\n");
-            closure_body.push_str("    gera___st_push(\"<closure>\", ");
-            emit_string_literal(strings.get(source.file_name()), &mut closure_body);
-            closure_body.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
-                .lines().collect::<Vec<&str>>().len() + 1;
-            closure_body.push_str(&source_line.to_string());
-            closure_body.push_str(");\n");
             closure_body.push_str("    ");
             emit_closure_captures_name(closure_idx, variant, &mut closure_body);
             closure_body.push_str("* captures = (");
@@ -1806,7 +1787,6 @@ fn emit_instruction(
             body_str.push_str("\nret:\n");
             emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
             indent(&body_str, &mut closure_body);
-            closure_body.push_str("    gera___st_pop();\n");
             if let IrType::Unit = return_type.direct(types) {} else {
                 closure_body.push_str("    return returned;\n");
             }
@@ -1905,7 +1885,7 @@ fn emit_instruction(
             output.push_str(";\n");
             emit_rc_incr(&member_str, member_type, types, strings, output);
         }
-        IrInstruction::GetArrayElement { accessed, index, into } => {
+        IrInstruction::GetArrayElement { accessed, index, into, source } => {
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }
             let element_type = if let IrType::Array(array_idx) = variable_types[accessed.index]
                 .direct(types) {
@@ -1922,7 +1902,13 @@ fn emit_instruction(
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);
-            output.push_str(".length);\n");
+            output.push_str(".length, ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             output.push_str(&into_str);
             output.push_str(" = ");
             let mut access_str = String::new();
@@ -1941,7 +1927,7 @@ fn emit_instruction(
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
             free.insert(into.index);
         }
-        IrInstruction::SetArrayElement { value, accessed, index } => {
+        IrInstruction::SetArrayElement { value, accessed, index, source } => {
             if let IrType::Unit = variable_types[value.index].direct(types) { return; }
             let element_type = if let IrType::Array(array_idx) = variable_types[accessed.index]
                 .direct(types) {
@@ -1955,7 +1941,13 @@ fn emit_instruction(
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);
-            output.push_str(".length);\n");
+            output.push_str(".length, ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             let mut element_str = String::new();
             element_str.push_str("((");
             emit_type(element_type, types, &mut element_str);
@@ -2048,12 +2040,18 @@ fn emit_instruction(
             emit_variable(*b, output);
             output.push_str(";\n");
         }
-        IrInstruction::Divide { a, b, into } => {
+        IrInstruction::Divide { a, b, into, source } => {
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
             if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
+                output.push_str(", ");
+                emit_string_literal(strings.get(source.file_name()), output);
+                output.push_str(", ");
+                let source_line = strings.get(source.file_content())[..source.start_position()]
+                    .lines().collect::<Vec<&str>>().len();
+                output.push_str(&source_line.to_string());
                 output.push_str(");\n");
             }
             emit_variable(*into, output);
@@ -2255,7 +2253,7 @@ fn emit_instruction(
             }
             output.push_str("\n}\n");
         }
-        IrInstruction::Call { path, variant, arguments, into } => {
+        IrInstruction::Call { path, variant, arguments, into, source } => {
             // this is cursed and I hate it
             let (parameter_types, return_type) = match symbols.into_iter().filter(|s| match *s {
                 IrSymbol::Procedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
@@ -2271,6 +2269,15 @@ fn emit_instruction(
                 _ => panic!("should be a procedure")
             };
             // end of cursed part 
+            output.push_str("gera___st_push(");
+            emit_string_literal(&path.display(strings), output);
+            output.push_str(", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             let returns_value = if let IrType::Unit = return_type.direct(types) { false }
                 else { true };
             let mut value = String::new();
@@ -2308,13 +2315,21 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
+            output.push_str("gera___st_pop();\n");
             free.insert(into.index);
         }
-        IrInstruction::CallClosure { called, arguments, into } => {
+        IrInstruction::CallClosure { called, arguments, into, source } => {
             let (parameter_types, return_type) = if let IrType::Closure(p)
                     = variable_types[called.index].direct(types) {
                 types.get_closure(p)
             } else { panic!("should be a closure"); };
+            output.push_str("gera___st_push(\"<closure>\", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             let returns_value = if let IrType::Unit = return_type.direct(types) { false }
                 else { true };
             let mut value = String::new();
@@ -2351,6 +2366,7 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
+            output.push_str("gera___st_pop();\n");
             free.insert(into.index);
         }
         IrInstruction::Return { value } => {

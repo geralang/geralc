@@ -147,7 +147,7 @@ pub fn lower_typed_ast(
         public: _,
         parameter_names: _,
         parameter_types: _, returns,
-        body, source
+        body, source: _
     } = main_procedure.1 {
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
@@ -170,8 +170,7 @@ pub fn lower_typed_ast(
             variables: generator.variables.into_iter()
                 .map(|v| v.1)
                 .collect(),
-            body,
-            source: *source
+            body
         });
     } else { panic!("should be a procedure"); }
     for (symbol_path, typed_symbol) in typed_symbols {
@@ -336,7 +335,6 @@ impl IrGenerator {
         return_ir_type: IrType,
         parameter_names: &Vec<StringIdx>,
         body: &Option<Vec<TypedAstNode>>,
-        source: &SourceRange,
         captured: &HashMap<StringIdx, IrType>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -395,8 +393,7 @@ impl IrGenerator {
                         parameter_types: parameter_ir_types,
                         return_type: return_ir_type,
                         variables: Vec::new(),
-                        body: Vec::new(),
-                        source: *source
+                        body: Vec::new()
                     });
                     let new_body = generator.lower_nodes(
                         body, captured,
@@ -529,8 +526,7 @@ impl IrGenerator {
                         .map(|v| v.1)
                         .collect(),
                     body,
-                    into,
-                    source: node.source()
+                    into
                 });
                 Ok(Some(into))
             }
@@ -651,7 +647,9 @@ impl IrGenerator {
                         let accessed = lower_node!(&*array, None);
                         let index = lower_node!(&*index, None);
                         let value = lower_node!(&*value, None);
-                        self.add(IrInstruction::SetArrayElement { value, accessed, index });
+                        self.add(IrInstruction::SetArrayElement {
+                            value, accessed, index, source: node.source()
+                        });
                     }
                     AstNodeVariant::VariableAccess { name } => {
                         if let Some(var_idx) = named_variables.get(name) {
@@ -679,7 +677,7 @@ impl IrGenerator {
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure {
-                        public: _, parameter_names, parameter_types, returns, body, source
+                        public: _, parameter_names, parameter_types, returns, body, source: _
                     } = symbols.get(path).expect("symbol should exist") {
                         //let mut call_type_scope = original_type_scope.clone();
                         let mut call_type_scope = current_type_scope.clone();
@@ -709,7 +707,7 @@ impl IrGenerator {
                         );
                         let proc_variant = IrGenerator::find_procedure(
                             path, &call_type_scope, parameter_ir_types,
-                            return_ir_type, parameter_names, body, &source, captured, symbols, strings,
+                            return_ir_type, parameter_names, body, captured, symbols, strings,
                             external_backings, interpreter, type_bank, ir_symbols
                         )?;
                         let into = into_given_or_alloc!(node_type!());
@@ -717,7 +715,8 @@ impl IrGenerator {
                             path: path.clone(),
                             variant: proc_variant,
                             arguments: parameter_values,
-                            into
+                            into,
+                            source: node.source()
                         });
                         return Ok(Some(into));
                     }
@@ -734,7 +733,9 @@ impl IrGenerator {
                     parameters.push(lower_node!(argument, None));
                 }
                 let into = into_given_or_alloc!(return_type);
-                self.add(IrInstruction::CallClosure { called, arguments: parameters, into });
+                self.add(IrInstruction::CallClosure {
+                    called, arguments: parameters, into, source: node.source()
+                });
                 Ok(Some(into))
             }
             AstNodeVariant::Object { values } => {
@@ -767,7 +768,9 @@ impl IrGenerator {
                 let accessed = lower_node!(&*array, None);
                 let index = lower_node!(&*index, None);
                 let into = into_given_or_alloc!(node_type!());
-                self.add(IrInstruction::GetArrayElement { accessed, index, into });
+                self.add(IrInstruction::GetArrayElement {
+                    accessed, index, into, source: node.source()
+                });
                 Ok(Some(into))
             }
             AstNodeVariant::VariableAccess { name } => {
@@ -851,7 +854,9 @@ impl IrGenerator {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
                 let into = into_given_or_alloc!(node_type!());
-                self.add(IrInstruction::Divide { a, b, into });
+                self.add(IrInstruction::Divide {
+                    a, b, into, source: node.source()
+                });
                 Ok(Some(into))
             }
             AstNodeVariant::Modulo { a, b } => {
@@ -980,7 +985,7 @@ impl IrGenerator {
             AstNodeVariant::ModuleAccess { path } => {
                 match symbols.get(path).expect("should exist") {
                     Symbol::Constant { .. } => {}
-                    Symbol::Procedure { parameter_names, body, source, .. } => {
+                    Symbol::Procedure { parameter_names, body, .. } => {
                         let (parameter_types, return_type) =
                             if let IrType::Closure(closure_idx) = node_type!().direct(type_bank) {
                                 type_bank.get_closure(closure_idx)
@@ -988,7 +993,7 @@ impl IrGenerator {
                         //let mut call_type_scope = type_scope.clone();
                         IrGenerator::find_procedure(
                             path, current_type_scope, parameter_types.clone(),
-                            *return_type, parameter_names, body, source, captured, symbols, strings,
+                            *return_type, parameter_names, body, captured, symbols, strings,
                             external_backings, interpreter, type_bank, ir_symbols
                         )?;
                     }

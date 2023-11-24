@@ -17,8 +17,7 @@ pub enum IrSymbol {
         variant: usize,
         parameter_types: Vec<IrType>, return_type: IrType,
         variables: Vec<IrType>,
-        body: Vec<IrInstruction>,
-        source: SourceRange
+        body: Vec<IrInstruction>
     },
     ExternalProcedure {
         path: NamespacePath,
@@ -384,14 +383,14 @@ pub enum IrInstruction {
     LoadParameter { index: usize, into: IrVariable },
     LoadClosure {
         parameter_types: Vec<IrType>, return_type: IrType, captured: HashMap<StringIdx, IrVariable>,
-        variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable, source: SourceRange
+        variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable
     },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },
 
-    GetArrayElement { accessed: IrVariable, index: IrVariable, into: IrVariable },
-    SetArrayElement { value: IrVariable, accessed: IrVariable, index: IrVariable },
+    GetArrayElement { accessed: IrVariable, index: IrVariable, into: IrVariable, source: SourceRange },
+    SetArrayElement { value: IrVariable, accessed: IrVariable, index: IrVariable, source: SourceRange },
 
     GetClosureCapture { name: StringIdx, into: IrVariable },
     SetClosureCapture { value: IrVariable, name: StringIdx },
@@ -401,7 +400,7 @@ pub enum IrInstruction {
     Add { a: IrVariable, b: IrVariable, into: IrVariable },
     Subtract { a: IrVariable, b: IrVariable, into: IrVariable },
     Multiply { a: IrVariable, b: IrVariable, into: IrVariable },
-    Divide { a: IrVariable, b: IrVariable, into: IrVariable },
+    Divide { a: IrVariable, b: IrVariable, into: IrVariable, source: SourceRange },
     Modulo { a: IrVariable, b: IrVariable, into: IrVariable },
     Negate { x: IrVariable, into: IrVariable },
 
@@ -416,8 +415,8 @@ pub enum IrInstruction {
     BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
     BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, Option<IrVariable>, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
-    Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable },
-    CallClosure { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable },
+    Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable, source: SourceRange },
+    CallClosure { called: IrVariable, arguments: Vec<IrVariable>, into: IrVariable, source: SourceRange },
     Return { value: IrVariable },
 
     Phi { options: Vec<IrVariable>, into: IrVariable }
