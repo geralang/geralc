@@ -406,7 +406,7 @@ impl Interpreter {
         }
         err.push_str(ERROR_RESET_COLOR);
         return Error::new([
-            ErrorSection::Error(ErrorType::StaticExpressionPanics),
+            ErrorSection::Error(ErrorType::ConstExpressionPanics),
             ErrorSection::Raw(err),
             ErrorSection::Code(source)
         ].into());
@@ -536,7 +536,7 @@ impl Interpreter {
                             Ok(return_value)
                         } else if let Some(_) = external_backings.get(path) {
                             return Err(Error::new([
-                                ErrorSection::Error(ErrorType::StaticDependsOnExternal(path.display(strings))),
+                                ErrorSection::Error(ErrorType::ConstDependsOnExternal(path.display(strings))),
                                 ErrorSection::Code(node_source)
                             ].into()));
                         } else {
@@ -808,7 +808,7 @@ impl Interpreter {
                                 value
                             } else {
                                 return Err(Error::new([
-                                    ErrorSection::Error(ErrorType::StaticDependsOnExternal(path.display(strings))),
+                                    ErrorSection::Error(ErrorType::ConstDependsOnExternal(path.display(strings))),
                                     ErrorSection::Code(node_source)
                                 ].into()));
                             };
@@ -829,7 +829,7 @@ impl Interpreter {
                 let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
                 Ok(Value::Variant(*name, value.into()))
             }
-            AstNodeVariant::Static { value } => {
+            AstNodeVariant::Const { value } => {
                 self.evaluate_node(&*value, symbols, external_backings, strings)
             }
         }

@@ -69,8 +69,8 @@ pub enum ErrorType {
     VariableWithoutValue(StringIdx),
     
     // interpreter errors
-    StaticExpressionPanics,
-    StaticDependsOnExternal(String),
+    ConstExpressionPanics,
+    ConstDependsOnExternal(String),
     
     // ir lowering errors
     NoMainProcedureDefined(String),
@@ -222,10 +222,10 @@ impl ErrorType {
                 strings.get(*name)
             ),
 
-            ErrorType::StaticExpressionPanics => format!(
-                "A panic occured while evaluating a static expression:"
+            ErrorType::ConstExpressionPanics => format!(
+                "A panic occured while evaluating a constant expression:"
             ),
-            ErrorType::StaticDependsOnExternal(path) => format!(
+            ErrorType::ConstDependsOnExternal(path) => format!(
                 concat!("The symbol ", style_red!(), "{}", style_dark_red!(), " is implemented externally, meaning it may not be used in constant values"),
                 path
             ),

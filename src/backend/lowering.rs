@@ -1008,7 +1008,7 @@ impl IrGenerator {
                 self.add(IrInstruction::LoadVariant { name: *name, v, into });
                 Ok(Some(into))
             }
-            AstNodeVariant::Static { value } => {
+            AstNodeVariant::Const { value } => {
                 let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::LoadValue {
                     value: interpreter.evaluate_node(&*value, symbols, external_backings, strings)?,
