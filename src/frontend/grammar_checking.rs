@@ -242,11 +242,16 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_max_scope!("Variables", ScopeType::Statement, ScopeType::Expression);
         }
         AstNodeVariant::Use { paths: _ } => {
-            enforce_min_scope!("'mod'", ScopeType::GlobalStatement);
+            enforce_min_scope!("'use'", ScopeType::GlobalStatement);
         }
         AstNodeVariant::Variant { name: _, value } => {
             enforce_min_scope!("Variant creation", ScopeType::Expression);
             enforce_max_scope!("Variant creation", ScopeType::Statement, ScopeType::Expression);
+            check_grammar_singular(&*value, ScopeType::Expression, errors);
+        }
+        AstNodeVariant::Static { value } => {
+            enforce_min_scope!("Static expressions", ScopeType::Expression);
+            enforce_max_scope!("Static expressions", ScopeType::Statement, ScopeType::Expression);
             check_grammar_singular(&*value, ScopeType::Expression, errors);
         }
     }

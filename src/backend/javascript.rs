@@ -299,7 +299,7 @@ fn emit_value(
         Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _, _) => panic!("constant closures are forbidden!"),
+        Value::Closure(_, _, _) => panic!("constant closures are forbidden!"),
         Value::Variant(variant_name, variant_value) => {
             output.push_str("{ tag = ");
             output.push_str(&variant_name.0.to_string());
@@ -564,6 +564,12 @@ fn emit_instruction(
             body_str.push_str("}\n");
             indent(&body_str, output);
             output.push_str("};\n");
+        }
+        IrInstruction::LoadValue { value, into } => {
+            emit_variable(*into, output);
+            output.push_str(" = ");
+            emit_value(value, output);
+            output.push_str(";\n");
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
             emit_variable(*into, output);

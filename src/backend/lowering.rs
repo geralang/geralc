@@ -121,7 +121,7 @@ fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<()
         Value::String(_) => Ok(()),
         Value::Array(_) |
         Value::Object(_) |
-        Value::Closure(_, _, _, _) => Err(Error::new([
+        Value::Closure(_, _, _) => Err(Error::new([
             ErrorSection::Error(ErrorType::ConstantHeapAllocation),
             ErrorSection::Code(source),
             ErrorSection::Help(String::from("Objects, arrays and closures are stored in heap memory. Heap memory must be initialized when the program is executed. Therefore objects, arrays and closures may not be used as constants."))
@@ -140,7 +140,7 @@ pub fn lower_typed_ast(
     external_backings: &HashMap<NamespacePath, StringIdx>,
     main_procedure: (&NamespacePath, &Symbol<TypedAstNode>)
 ) -> Result<(Vec<IrSymbol>, IrTypeBank), Error> {
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new(strings);
     let mut type_bank = IrTypeBank::new();
     let mut ir_symbols = Vec::new();
     if let Symbol::Procedure {
@@ -180,7 +180,7 @@ pub fn lower_typed_ast(
                     let v = if let Some(value) = interpreter.get_constant_value(symbol_path) {
                         value.clone()
                     } else {
-                        interpreter.evaluate_node(value, typed_symbols, strings)?
+                        interpreter.evaluate_node(value, typed_symbols, external_backings, strings)?
                     };
                     enforce_valid_constant_value(&v, value.source())?;
                     ir_symbols.push(IrSymbol::Variable {
@@ -548,7 +548,7 @@ impl IrGenerator {
                 let mut branches = Vec::new();
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
-                    let branch_value = interpreter.evaluate_node(&branch.0, symbols, strings)?;
+                    let branch_value = interpreter.evaluate_node(&branch.0, symbols, external_backings, strings)?;
                     enforce_valid_constant_value(&branch_value, branch.0.source())?;
                     let branch_body = self.lower_nodes(
                         &branch.1, captured, current_type_scope,
@@ -1006,6 +1006,14 @@ impl IrGenerator {
                 let v = lower_node!(&*value, None);
                 let into = into_given_or_alloc!(node_type!());
                 self.add(IrInstruction::LoadVariant { name: *name, v, into });
+                Ok(Some(into))
+            }
+            AstNodeVariant::Static { value } => {
+                let into = into_given_or_alloc!(node_type!());
+                self.add(IrInstruction::LoadValue {
+                    value: interpreter.evaluate_node(&*value, symbols, external_backings, strings)?,
+                    into
+                });
                 Ok(Some(into))
             }
             _ => panic!("this node type should not be in the AST at this point")

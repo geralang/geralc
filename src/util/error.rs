@@ -69,8 +69,8 @@ pub enum ErrorType {
     VariableWithoutValue(StringIdx),
     
     // interpreter errors
-    ArrayIndexOutOfBounds(usize, i64),
-    ConstantDependsOnExternal(String),
+    StaticExpressionPanics,
+    StaticDependsOnExternal(String),
     
     // ir lowering errors
     NoMainProcedureDefined(String),
@@ -222,12 +222,10 @@ impl ErrorType {
                 strings.get(*name)
             ),
 
-            ErrorType::ArrayIndexOutOfBounds(length, accessed) => format!(
-                concat!("The index ", style_red!(), "{}", style_dark_red!(), " is out of bounds for an array of length ", style_red!(), "{}", style_dark_red!()),
-                accessed,
-                length
+            ErrorType::StaticExpressionPanics => format!(
+                "A panic occured while evaluating a static expression:"
             ),
-            ErrorType::ConstantDependsOnExternal(path) => format!(
+            ErrorType::StaticDependsOnExternal(path) => format!(
                 concat!("The symbol ", style_red!(), "{}", style_dark_red!(), " is implemented externally, meaning it may not be used in constant values"),
                 path
             ),
@@ -258,7 +256,8 @@ pub enum ErrorSection {
     Error(ErrorType),
     Info(String),
     Help(String),
-    Code(SourceRange)
+    Code(SourceRange),
+    Raw(String)
 }
 
 impl ErrorSection {
@@ -340,7 +339,8 @@ impl ErrorSection {
                     }
                 }
                 output
-            }
+            },
+            ErrorSection::Raw(message) => message.clone()
         }
     }
 }

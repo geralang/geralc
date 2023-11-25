@@ -919,7 +919,9 @@ if(param1 < 0) {
     });
     builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, strings| {
         format!("
+gera___st_push(\"<closure>\", \"???\", 0);
 while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
+gera___st_pop();
 ", strings.insert("next").0)
     });
     builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
@@ -1310,10 +1312,18 @@ fn emit_value(
             else if f.is_nan() { output.push_str("(0.0 / 0.0)"); }
             else { output.push_str(&format!("{:.}", *f)); }
         }
-        Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
+        Value::String(s) => {
+            output.push_str("(GeraString) { .allocation = NULL, .length = ");
+            output.push_str(&s.chars().count().to_string());
+            output.push_str(", .length_bytes = ");
+            output.push_str(&s.len().to_string());
+            output.push_str(", .data = ");
+            emit_string_literal(std::rc::Rc::as_ref(s), output);
+            output.push_str(" }");
+        }
         Value::Array(_) => panic!("constant arrays are forbidden!"),
         Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _, _) => panic!("constant closures are forbidden!"),
+        Value::Closure(_, _, _) => panic!("constant closures are forbidden!"),
         Value::Variant(variant_name, variant_value) => {
             let variant_idx = if let IrType::Variants(variant_idx) = value_type.direct(types) {
                 variant_idx.0
@@ -1775,7 +1785,7 @@ fn emit_instruction(
                 emit_type(variables[variable_idx], types, &mut closure_body);
                 closure_body.push_str(" ");
                 emit_variable(IrVariable { index: variable_idx, version: 0 }, &mut closure_body);
-                output.push_str(" = ");
+                closure_body.push_str(" = ");
                 emit_variable_default_value(variables[variable_idx], types, &mut closure_body);
                 closure_body.push_str(";\n");
             }
@@ -1835,6 +1845,12 @@ fn emit_instruction(
             }
             output.push_str("}\n");
             free.insert(into.index);
+        }
+        IrInstruction::LoadValue { value, into } => {
+            emit_variable(*into, output);
+            output.push_str(" = ");
+            emit_value(value, variable_types[into.index], types, strings, output);
+            output.push_str(";\n");
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
             if let IrType::Unit = variable_types[into.index].direct(types) { return; }

@@ -181,7 +181,8 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
     fn canonicalize_node(&self, node: &mut T, modules: &HashMap<NamespacePath, Module<T>>, variables: &mut HashSet<StringIdx>, strings: &StringMap) -> Vec<Error> {
         let mut errors = Vec::new();
         macro_rules! visit_node {
-            ($node: expr) => { errors.append(&mut self.canonicalize_node($node, modules, variables, strings)) }
+            ($node: expr) => { errors.append(&mut self.canonicalize_node($node, modules, variables, strings)) };
+            ($node: expr, $variables: expr) => { errors.append(&mut self.canonicalize_node($node, modules, $variables, strings)) }
         }
         macro_rules! visit_nodes {
             ($nodes: expr) => { errors.append(&mut self.canonicalize_nodes($nodes, modules, &mut variables.clone(), strings)) };
@@ -345,6 +346,9 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::Use { paths: _ } => {}
             AstNodeVariant::Variant { name: _, value } => {
                 visit_node!(&mut **value);
+            }
+            AstNodeVariant::Static { value } => {
+                visit_node!(&mut **value, &mut HashSet::new());
             }
         }
         errors

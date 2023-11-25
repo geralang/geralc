@@ -385,6 +385,7 @@ pub enum IrInstruction {
         parameter_types: Vec<IrType>, return_type: IrType, captured: HashMap<StringIdx, IrVariable>,
         variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable
     },
+    LoadValue { value: Value, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },

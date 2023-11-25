@@ -1358,6 +1358,13 @@ fn type_check_node(
                 value: Box::new(value_typed),
             }, variant_types, node_source), (false, false)))
         }
+        AstNodeVariant::Static { value } => {
+            let value_typed = type_check_node!(*value, limited_to, assignment, &mut HashMap::new());
+            let value_types = value_typed.0.get_types();
+            Ok((TypedAstNode::new(AstNodeVariant::Static {
+                value: Box::new(value_typed.0),
+            }, value_types, node_source), value_typed.1))
+        }
     }
 }
 

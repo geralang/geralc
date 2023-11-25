@@ -937,6 +937,18 @@ impl Parser {
                         (&start_source..&value_source).into()
                     ));
                 }
+                TokenType::KeywordStatic => {
+                    let start_source = self.current.source;
+                    enforce_next!("the static expression");
+                    let value = enforce_expression!(&[], None, "the static expression");
+                    let value_source = value.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Static {
+                            value: value.into()
+                        },
+                        (&start_source..&value_source).into()
+                    ));
+                }
                 _ => return Err(Error::new([
                     ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),
                     ErrorSection::Code(self.current.source)
