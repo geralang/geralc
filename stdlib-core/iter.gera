@@ -125,17 +125,9 @@ pub proc find(iter, condition) {
 
 pub proc enumerate(iter) {
     mut var i = 0
-    return || {
-        case iter() {
-            #end -> return #end unit
-            #next v -> {
-                var c = i
-                i = i + 1
-                return #next {
-                    idx = c,
-                    val = v
-                }
-            }
-        }
-    }
+    return iter |> map(|v| {
+        var ci = i
+        i = i + 1
+        return { idx = ci, val = v }
+    })
 }
