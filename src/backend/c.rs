@@ -3,10 +3,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::backend::{
     ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
-    interpreter::Value
+    constants::ConstantPool
 };
 use crate::frontend::modules::NamespacePath;
 use crate::util::strings::{StringMap, StringIdx};
+
+use super::constants::ConstantValue;
 
 struct ConversionFunctions {
     declarations: String,
@@ -16,7 +18,7 @@ struct ConversionFunctions {
 
 pub fn generate_c(
     symbols: Vec<IrSymbol>,
-    types: IrTypeBank,
+    mut types: IrTypeBank,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -31,31 +33,37 @@ pub fn generate_c(
     emit_free_handler_functions(&types, strings, &mut output);
     output.push_str("\n");
     emit_comparison_functions(&types, strings, &mut output);
-    output.push_str("\n");
+    let mut constants = ConstantPool::new();
+    let mut constant_dependants = String::new();
+    constant_dependants.push_str("\n");
     emit_symbol_declarations(
-        &symbols, &types, strings, &mut external, &mut output
+        &symbols, &types, &mut constants, strings, &mut external, &mut constant_dependants
     );
-    output.push('\n');
     let mut conversions = ConversionFunctions {
         declarations: String::new(),
         bodies: String::new(),
         declared: HashSet::new()
     };
     let mut closure_bodies = Vec::new();
-    let mut procedures = String::new();
+    let mut procedure_impls = String::new();
     emit_procedure_impls(
-        &symbols, &types, strings, &mut closure_bodies, &mut conversions, &mut external,
-        &mut procedures
+        &symbols, &types, &mut constants, strings, &mut closure_bodies, &mut conversions, &mut external,
+        &mut procedure_impls
     );
-    procedures.push('\n');
-    output.push_str(&conversions.declarations);
-    output.push_str(&conversions.bodies);
-    procedures.push('\n');
+    constant_dependants.push_str("\n");
+    constant_dependants.push_str(&conversions.declarations);
+    constant_dependants.push_str("\n");
+    constant_dependants.push_str(&conversions.bodies);
+    constant_dependants.push_str("\n");
     for closure_body in &closure_bodies {
-        output.push_str(&closure_body);
+        constant_dependants.push_str(&closure_body);
     }
+    constant_dependants.push_str("\n");
+    constant_dependants.push_str(&procedure_impls);
     output.push_str("\n");
-    output.push_str(&procedures);
+    emit_constant_declarations(&constants, &mut types, strings, &mut output);
+    output.push_str(&constant_dependants);
+    output.push_str("\n");
     emit_main_function(&main_procedure_path, strings, &mut output);
     return output;
 }
@@ -585,6 +593,7 @@ fn emit_comparison_functions(
 fn emit_symbol_declarations(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     strings: &StringMap,
     external: &mut HashMap<NamespacePath, StringIdx>,
     output: &mut String
@@ -645,7 +654,8 @@ fn emit_symbol_declarations(
                 output.push_str(" ");
                 emit_path(path, strings, output);
                 output.push_str(" = ");
-                emit_value(value, *value_type, types, strings, output);
+                let value = constants.insert(value, *value_type, types);
+                emit_value(value, *value_type, types, constants, strings, output);
                 output.push_str(";\n");
             }
             IrSymbol::ExternalVariable { path, backing, value_type } => {
@@ -1149,6 +1159,7 @@ fn emit_variable_default_value(
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     strings: &mut StringMap,
     closure_bodies: &mut Vec<String>,
     conversions: &mut ConversionFunctions,
@@ -1192,7 +1203,7 @@ fn emit_procedure_impls(
                 let mut body_free = HashSet::new();
                 emit_block(
                     body, variables, *return_type, &mut body_free, &mut HashMap::new(), 
-                    closure_bodies, conversions, types, external, symbols, strings, &mut body_str
+                    closure_bodies, conversions, types, constants, external, symbols, strings, &mut body_str
                 );
                 body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
@@ -1229,12 +1240,141 @@ fn emit_procedure_impls(
     }
 }
 
+fn emit_constant_string_name(idx: usize, output: &mut String) {
+    output.push_str("geraconstantstring");
+    output.push_str(&idx.to_string());
+}
+
+fn emit_constant_array_name(idx: usize, output: &mut String) {
+    output.push_str("geraconstantarray");
+    output.push_str(&idx.to_string());
+}
+
+fn emit_constant_object_name(idx: usize, output: &mut String) {
+    output.push_str("geraconstantobject");
+    output.push_str(&idx.to_string());
+}
+
+fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, strings: &StringMap, output: &mut String) {
+    for si in 0..constants.get_string_count() {
+        let v = constants.get_string(si);
+        output.push_str("const GeraString ");
+        emit_constant_string_name(si, output);
+        output.push_str(" = {\n");
+        output.push_str("    .allocation = NULL,\n");
+        output.push_str("    .length_bytes = ");
+        output.push_str(&v.len().to_string());
+        output.push_str(",\n");
+        output.push_str("    .length = ");
+        output.push_str(&v.chars().count().to_string());
+        output.push_str(",\n");
+        output.push_str("    .data = ");
+        emit_string_literal(v, output);
+        output.push_str("\n");
+        output.push_str("};\n");
+    }
+    for ai in 0..constants.get_array_count() {
+        let (values, element_type) = constants.get_array(ai);
+        emit_type(element_type, types, output);
+        output.push_str(" ");
+        emit_constant_array_name(ai, output);
+        output.push_str("values[");
+        output.push_str(&values.len().to_string());
+        output.push_str("];\n");
+        let constant_type = IrType::Array(types.insert_array(element_type));
+        emit_type(constant_type, types, output);
+        output.push_str(" ");
+        emit_constant_array_name(ai, output);
+        output.push_str(";\n");
+    }
+    for oi in 0..constants.get_object_count() {
+        let constant_object_idx = types.insert_object(
+            constants.get_object(oi).iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
+        );
+        let constant_type = IrType::Object(constant_object_idx);
+        emit_object_alloc_name(constant_object_idx.0, output);
+        output.push_str(" ");
+        emit_constant_object_name(oi, output);
+        output.push_str("values;\n");
+        emit_type(constant_type, types, output);
+        output.push_str(" ");
+        emit_constant_object_name(oi, output);
+        output.push_str(";\n");
+    }
+    output.push_str("\n");
+    output.push_str("void gera_init_constants(void) {\n");
+    let mut cinit = String::new();
+    for ai in 0..constants.get_array_count() {
+        let (values, element_type) = constants.get_array(ai);
+        for (i, value) in values.iter().enumerate() {
+            emit_constant_array_name(ai, &mut cinit);
+            cinit.push_str("values[");
+            cinit.push_str(&i.to_string());
+            cinit.push_str("] = ");
+            emit_value(
+                *value, element_type, types, constants, strings, &mut cinit
+            );
+            cinit.push_str(";\n");
+        }
+        let constant_type = IrType::Array(types.insert_array(element_type));
+        emit_constant_array_name(ai, &mut cinit);
+        cinit.push_str(" = (");
+        emit_type(constant_type, types, &mut cinit);
+        cinit.push_str(") {\n");
+        cinit.push_str("    .allocation = NULL,\n");
+        cinit.push_str("    .length = ");
+        cinit.push_str(&values.len().to_string());
+        cinit.push_str(",\n");
+        cinit.push_str("    .data = (char*) ");
+        emit_constant_array_name(ai, &mut cinit);
+        cinit.push_str("values\n");
+        cinit.push_str("};\n");
+    }
+    for oi in 0..constants.get_object_count() {
+        let constant_object_idx = types.insert_object(
+            constants.get_object(oi).iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
+        );
+        let members = constants.get_object(oi);
+        emit_constant_object_name(oi, &mut cinit);
+        cinit.push_str("values = (");
+        emit_object_alloc_name(constant_object_idx.0, &mut cinit);
+        cinit.push_str(") {\n");
+        for (member_name, (member_value, member_type)) in members {
+            cinit.push_str("    .member");
+            cinit.push_str(&member_name.0.to_string());
+            cinit.push_str(" = ");
+            emit_value(*member_value, *member_type, types, constants, strings, &mut cinit);
+            cinit.push_str(",\n");
+        }
+        cinit.push_str("};\n");
+        let constant_type = IrType::Object(constant_object_idx);
+        emit_constant_object_name(oi, &mut cinit);
+        cinit.push_str(" = (");
+        emit_type(constant_type, types, &mut cinit);
+        cinit.push_str(") {\n");
+        cinit.push_str("    .allocation = NULL,\n");
+        for (member_name, _) in members {
+            cinit.push_str("    .member");
+            cinit.push_str(&member_name.0.to_string());
+            cinit.push_str(" = &");
+            emit_constant_object_name(oi, &mut cinit);
+            cinit.push_str("values.member");
+            cinit.push_str(&member_name.0.to_string());
+            cinit.push_str(",\n");
+        }
+        cinit.push_str("};\n");
+    }
+    indent(&cinit, output);
+    output.push_str("}\n");
+}
+
 fn emit_main_function(
     main_procedure_path: &NamespacePath,
     strings: &StringMap,
     output: &mut String
 ) {
     output.push_str("int main(void) {\n");
+    output.push_str("    gera_init_constants();\n");
     output.push_str("    gera___st_init();\n");
     output.push_str("    gera___st_push(");
     emit_string_literal(&main_procedure_path.display(strings), output);
@@ -1296,49 +1436,42 @@ fn emit_string_literal(value: &str, output: &mut String) {
 }
 
 fn emit_value(
-    value: &Value, value_type: IrType, types: &IrTypeBank, strings: &StringMap, output: &mut String
+    value: ConstantValue, value_type: IrType, types: &IrTypeBank, constants: &ConstantPool,
+    strings: &StringMap, output: &mut String
 ) {
     match value {
-        Value::Unit => panic!("should not have to emit unit value!"),
-        Value::Boolean(b) => output.push_str(if *b { "1" } else { "0" }),
-        Value::Integer(i) => {
-            if *i == i64::MIN {
+        ConstantValue::Unit => panic!("should not have to emit unit value!"),
+        ConstantValue::Boolean(b) => output.push_str(if b { "1" } else { "0" }),
+        ConstantValue::Integer(i) => {
+            if i == i64::MIN {
                 output.push_str(&format!("-{} - 1", i64::MAX));
             } else { output.push_str(&i.to_string()) }
         }
-        Value::Float(f) => {
-            if *f == f64::INFINITY { output.push_str("(1.0 / 0.0)"); }
-            else if *f == f64::NEG_INFINITY { output.push_str("(-1.0 / 0.0)"); }
+        ConstantValue::Float(f) => {
+            if f == f64::INFINITY { output.push_str("(1.0 / 0.0)"); }
+            else if f == f64::NEG_INFINITY { output.push_str("(-1.0 / 0.0)"); }
             else if f.is_nan() { output.push_str("(0.0 / 0.0)"); }
-            else { output.push_str(&format!("{:.}", *f)); }
+            else { output.push_str(&format!("{:.}", f)); }
         }
-        Value::String(s) => {
-            output.push_str("(GeraString) { .allocation = NULL, .length = ");
-            output.push_str(&s.chars().count().to_string());
-            output.push_str(", .length_bytes = ");
-            output.push_str(&s.len().to_string());
-            output.push_str(", .data = ");
-            emit_string_literal(std::rc::Rc::as_ref(s), output);
-            output.push_str(" }");
-        }
-        Value::Array(_) => panic!("constant arrays are forbidden!"),
-        Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _) => panic!("constant closures are forbidden!"),
-        Value::Variant(variant_name, variant_value) => {
+        ConstantValue::String(s) => emit_constant_string_name(s, output),
+        ConstantValue::Array(a) => emit_constant_array_name(a, output),
+        ConstantValue::Object(o) => emit_constant_object_name(o, output),
+        ConstantValue::Variant(v) => {
             let variant_idx = if let IrType::Variants(variant_idx) = value_type.direct(types) {
                 variant_idx.0
             } else { panic!("value type should be variants"); };
+            let (variant_tag, variant_value, _) = constants.get_variant(v);
             output.push_str("(");
             emit_variants_name(variant_idx, output);
             output.push_str(") { .tag = ");
-            output.push_str(&variant_name.0.to_string());
-            let variant_type = types.get_all_variants()[variant_idx].get(variant_name)
+            output.push_str(&variant_tag.0.to_string());
+            let variant_type = types.get_all_variants()[variant_idx].get(&variant_tag)
                 .expect("variant should exist").direct(types);
             if let IrType::Unit = variant_type {} else {
                 output.push_str(", .value = { .");
-                output.push_str(strings.get(*variant_name));
+                output.push_str(strings.get(variant_tag));
                 output.push_str(" = ");
-                emit_value(variant_value, variant_type, types, strings, output);
+                emit_value(variant_value, variant_type, types, constants, strings, output);
                 output.push_str(" }");
             }
             output.push_str(" }");
@@ -1364,6 +1497,7 @@ fn emit_block(
     closure_bodies: &mut Vec<String>,
     conversions: &mut ConversionFunctions,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -1374,7 +1508,7 @@ fn emit_block(
         let mut o = String::new();
         emit_instruction(
             instruction, variable_types, return_type, free, capture_types, closure_bodies,
-            conversions, types, external, symbols, strings, &mut o
+            conversions, types, constants, external, symbols, strings, &mut o
         );
         indent(&o, output);
     }
@@ -1397,6 +1531,7 @@ fn emit_instruction(
     closure_bodies: &mut Vec<String>,
     conversions: &mut ConversionFunctions,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -1722,7 +1857,8 @@ fn emit_instruction(
             emit_block(
                 body, variables, *return_type, &mut body_free,
                 &mut captured.iter().map(|(cn, cv)| (*cn, variable_types[cv.index])).collect(),
-                closure_bodies, conversions, types, external, symbols, strings, &mut body_str
+                closure_bodies, conversions, types, constants, external, symbols, strings,
+                &mut body_str
             );
             let variant = closure_bodies.len();
             // emit closure captures struct
@@ -1849,7 +1985,8 @@ fn emit_instruction(
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_value(value, variable_types[into.index], types, strings, output);
+            let value = constants.insert(value, variable_types[into.index], types);
+            emit_value(value, variable_types[into.index], types, constants, strings, output);
             output.push_str(";\n");
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
@@ -2173,9 +2310,8 @@ fn emit_instruction(
                 output.push_str(" branchval");
                 output.push_str(&branch_idx.to_string());
                 output.push_str(" = ");
-                emit_value(
-                    &branches[branch_idx].0, variable_types[value.index], types, strings, output
-                );
+                let bvalue = constants.insert(&branches[branch_idx].0, variable_types[value.index], types);
+                emit_value(bvalue, variable_types[value.index], types, constants, strings, output);
                 output.push_str(";");
             }
             output.push_str("\n");
@@ -2190,13 +2326,14 @@ fn emit_instruction(
                 branches_str.push_str(") ");
                 emit_block(
                     &branches[branch_idx].1, variable_types, return_type, free, capture_types,
-                    closure_bodies, conversions, types, external, symbols, strings, &mut branches_str
+                    closure_bodies, conversions, types, constants, external, symbols, strings,
+                    &mut branches_str
                 );
                 branches_str.push_str(" else ");
             }
             emit_block(
                 else_branch, variable_types, return_type, free, capture_types, closure_bodies,
-                conversions, types, external, symbols, strings, &mut branches_str
+                conversions, types, constants, external, symbols, strings, &mut branches_str
             );
             indent(&branches_str, output);
             output.push_str("\n}\n");
@@ -2246,7 +2383,8 @@ fn emit_instruction(
                 for instruction in branch_body {
                     emit_instruction(
                         instruction, variable_types, return_type, free, capture_types,
-                        closure_bodies, conversions, types, external, symbols, strings, &mut branch
+                        closure_bodies, conversions, types, constants, external, symbols, strings,
+                        &mut branch
                     );
                 }
                 let mut branch_indented = String::new();
@@ -2260,7 +2398,8 @@ fn emit_instruction(
                 for instruction in else_branch {
                     emit_instruction(
                         instruction, variable_types, return_type, free, capture_types,
-                        closure_bodies, conversions, types, external, symbols, strings, &mut branch
+                        closure_bodies, conversions, types, constants, external, symbols, strings,
+                        &mut branch
                     );
                 }
                 let mut branch_indented = String::new();

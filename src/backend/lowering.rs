@@ -118,19 +118,20 @@ fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<()
         Value::Boolean(_) |
         Value::Integer(_) |
         Value::Float(_) |
-        Value::String(_) => Ok(()),
-        Value::Array(_) |
-        Value::Object(_) |
-        Value::Closure(_, _, _) => Err(Error::new([
-            ErrorSection::Error(ErrorType::ConstantHeapAllocation),
+        Value::String(_) => {},
+        Value::Array(elements) => for e in elements.borrow().iter() {
+            enforce_valid_constant_value(e, source)?;
+        },
+        Value::Object(members) => for (_, m) in members.borrow().iter() {
+            enforce_valid_constant_value(m, source)?;
+        },
+        Value::Closure(_, _, _) => return Err(Error::new([
+            ErrorSection::Error(ErrorType::ConstantClosure),
             ErrorSection::Code(source),
-            ErrorSection::Help(String::from("Objects, arrays and closures are stored in heap memory. Heap memory must be initialized when the program is executed. Therefore objects, arrays and closures may not be used as constants."))
         ].into())),
-        Value::Variant(_, variant_value) => {
-            enforce_valid_constant_value(&*variant_value, source)?;
-            Ok(())
-        }
+        Value::Variant(_, variant_value) => enforce_valid_constant_value(&*variant_value, source)?
     }
+    Ok(())
 }
 
 pub fn lower_typed_ast(
@@ -1009,11 +1010,10 @@ impl IrGenerator {
                 Ok(Some(into))
             }
             AstNodeVariant::Const { value } => {
+                let v = interpreter.evaluate_node(&*value, symbols, external_backings, strings)?;
+                enforce_valid_constant_value(&v, value.source())?;
                 let into = into_given_or_alloc!(node_type!());
-                self.add(IrInstruction::LoadValue {
-                    value: interpreter.evaluate_node(&*value, symbols, external_backings, strings)?,
-                    into
-                });
+                self.add(IrInstruction::LoadValue { value: v, into });
                 Ok(Some(into))
             }
             _ => panic!("this node type should not be in the AST at this point")

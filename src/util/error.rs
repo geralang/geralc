@@ -75,7 +75,7 @@ pub enum ErrorType {
     // ir lowering errors
     NoMainProcedureDefined(String),
     InvalidMainProcedure(String),
-    ConstantHeapAllocation,
+    ConstantClosure,
 
     // code generation
     InvalidCompileTarget(String)
@@ -238,8 +238,8 @@ impl ErrorType {
                 concat!(style_red!(), "{}", style_dark_red!(), " is not the name of a valid main procedure"),
                 path
             ),
-            ErrorType::ConstantHeapAllocation => format!(
-                "Objects, arrays or closures may not be used as values for constants"
+            ErrorType::ConstantClosure => format!(
+                "Closures may not be used as values for constants"
             ),
 
             ErrorType::InvalidCompileTarget(target) => format!(
