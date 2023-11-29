@@ -123,13 +123,17 @@ void gera___panic(const char* message) {
 
 #define INVALID_ARRAY_IDX_ERROR_MSG "the index %lld is out of bounds for an array of length %lld"
 
-void gera___verify_index(gint index, size_t size, const char* file, size_t line) {
-    if(index >= 0 && ((size_t) index) < size) { return; }
+size_t gera___verify_index(gint index, size_t size, const char* file, size_t line) {
+    size_t final_index;
+    if(index < 0) { final_index = (size_t) (((gint) size) + index); }
+    else { final_index = (size_t) index; }
+    if(final_index < size) { return final_index; }
     size_t error_message_length = snprintf(NULL, 0, INVALID_ARRAY_IDX_ERROR_MSG, index, size);
     char error_message[error_message_length + 1];
     sprintf(error_message, INVALID_ARRAY_IDX_ERROR_MSG, index, size);
     gera___st_push("<index>", file, line);
     gera___panic(error_message);
+    return -1;
 }
 
 #define INVALID_INTEGER_DIVISOR "integer division by zero"

@@ -131,12 +131,12 @@ return Number(param0);
         String::from(r#"
 let start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
-if(param1 > param0.length) {
+if(start_idx > param0.length) {
     throw `the start index ${param1} is out of bounds for a string of length ${param0.length}`;
 }
 let end_idx = param2;
 if(param2 < 0) { end_idx = param0.length + param2; }
-if(param2 > param0.length) {
+if(end_idx > param0.length) {
     throw `the end index ${param2} is out of bounds for a string of length ${param0.length}`;
 }
 if(start_idx > end_idx) {
@@ -594,7 +594,8 @@ fn emit_instruction(
             emit_variable(*index, &mut index_str);
             let mut accessed_str = String::new();
             emit_variable(*accessed, &mut accessed_str);
-            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(" = gera___verify_index(");
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);
@@ -620,7 +621,8 @@ fn emit_instruction(
             emit_variable(*index, &mut index_str);
             let mut accessed_str = String::new();
             emit_variable(*accessed, &mut accessed_str);
-            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(" = gera___verify_index(");
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);

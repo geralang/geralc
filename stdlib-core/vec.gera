@@ -3,6 +3,7 @@ mod std::vec
 
 use std::iter
 use std::str
+use std::arr
 
 pub proc new() {
     return {
@@ -59,11 +60,10 @@ pub proc insert(vector, index, item) {
         vector |> grow(item, length(vector.content) * 2)
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx > vector.size -> panic(
-        "the insertion index _ is out of bounds for a vector of length _"
-            |> str::format(idx)
-            |> str::format(vector.size)
-    )
+    case idx > vector.size -> "the insertion index _ is out of bounds for a vector of length _"
+        |> str::format(idx)
+        |> str::format(vector.size)
+        |> panic()
     idx..vector.size |> iter::for_each(|i| {
         vector.content[i + 1] = vector.content[i]
     })
@@ -80,11 +80,10 @@ pub proc pop(vector) {
 pub proc remove(vector, index) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic(
-        "the index _ is out of bounds for a vector of length _"
-            |> str::format(idx)
-            |> str::format(vector.size)
-    )
+    case idx >= vector.size -> "the index _ is out of bounds for a vector of length _"
+        |> str::format(idx)
+        |> str::format(vector.size)
+        |> panic()
     vector.size = vector.size - 1
     idx..vector.size |> iter::for_each(|i| {
         vector.content[i] = vector.content[i + 1]
@@ -95,38 +94,39 @@ pub proc remove(vector, index) {
 pub proc get(vector, index) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic(
-        "the index _ is out of bounds for a vector of length _"
-            |> str::format(idx)
-            |> str::format(vector.size)
-    )
+    case idx >= vector.size -> "the index _ is out of bounds for a vector of length _"
+        |> str::format(idx)
+        |> str::format(vector.size)
+        |> panic()
     return vector.content[idx]
 }
 
 pub proc set(vector, index, value) {
     mut var idx = index
     case index < 0 -> idx = index + vector.size
-    case idx >= vector.size -> panic(
-        "the index _ is out of bounds for a vector of length _"
-            |> str::format(idx)
-            |> str::format(vector.size)
-    )
+    case idx >= vector.size -> "the index _ is out of bounds for a vector of length _"
+        |> str::format(idx)
+        |> str::format(vector.size)
+        |> panic()
     vector.content[idx] = value
     return vector
 }
 
 pub proc iter(vector) {
-    mut var i = 0
-    return || {
-        case i >= vector.size -> return #end unit
-        var val = vector.content[i]
-        i = i + 1
-        return #next val
-    }
+    return 0..vector.size
+        |> iter::map(|i| vector.content[i])
 }
 
 pub proc collect(from_iter) {
     var dest = new()
     from_iter |> iter::for_each(|item| dest |> push(item))
     return dest 
+}
+
+pub proc clone(vector) {
+    return {
+        content = vector.content
+            |> arr::clone(),
+        size = vector.size
+    }
 }

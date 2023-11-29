@@ -61,9 +61,11 @@ function gera___panic(message) {
 }
 
 function gera___verify_index(index, length, file, line) {
-    if(index >= 0 && index < length) { return; }
+    const final_index = index < 0? length + index : index;
+    if(final_index < length) { return final_index; }
     gera___stack.push("<index>", file, line);
     gera___panic(`the index ${index} is out of bounds for an array of length ${length}`);
+    return -1;
 }
 
 function gera___verify_integer_divisor(d, file, line) {

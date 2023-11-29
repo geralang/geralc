@@ -9,7 +9,7 @@ pub proc substring_until(s, end_index) {
 }
 
 pub proc substring_after(s, start_index) {
-    return s |> substring(start_index, length(s))
+    return s |> substring(start_index, s |> length())
 }
 
 pub proc at(s, index) {

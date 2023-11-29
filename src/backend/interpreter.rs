@@ -195,21 +195,21 @@ impl Interpreter {
                 else { panic!("should be an integer"); };
             let end = if let Value::Integer(end) = &params[2] { *end }
             else { panic!("should be an integer"); };
-            let start = if start < 0 { source_length as i64 + start } else { start } as usize;
-            let end = if end < 0 { source_length as i64 + end } else { end } as usize;
-            if start > source_length { 
+            let start_index = if start < 0 { source_length as i64 + start } else { start } as usize;
+            let end_index = if end < 0 { source_length as i64 + end } else { end } as usize;
+            if start_index > source_length { 
                 return Err(interpreter.generate_panic(
                     &format!("the start index {} is out of bounds for a string of length {}", start, source_length),
                     source, strings
                 ));
             }
-            if end > source_length {
+            if end_index > source_length {
                 return Err(interpreter.generate_panic(
                     &format!("the start index {} is out of bounds for a string of length {}", end, source_length),
                     source, strings
                 ));
             }
-            if start > end {
+            if start_index > end_index {
                 return Err(interpreter.generate_panic(
                     &format!("the start index {} is larger than the end index {} (length of string is {})", start, end, source_length),
                     source, strings
@@ -218,7 +218,7 @@ impl Interpreter {
             Ok(Value::String(
                 src.chars()
                     .enumerate()
-                    .filter(|(ci, _)| *ci >= start && *ci < end)
+                    .filter(|(ci, _)| *ci >= start_index && *ci < end_index)
                     .map(|(_, c)| c)
                     .collect::<String>()
                     .into()
@@ -617,14 +617,16 @@ impl Interpreter {
                     element_index
                 } else { panic!("accessed index should be an integer"); };
                 let element_count = element_values.borrow().len();
-                if element_index < 0 || element_index as usize >= element_count {
+                let final_element_index = if element_index < 0 { (element_count as i64 + element_index) as usize }
+                    else { element_index as usize };
+                if final_element_index >= element_count {
                     self.stack_trace_push("<index>".into(), node.source(), strings);
                     return Err(self.generate_panic(
                         &format!("array index {} is out of bounds for an array of length {}", element_index, element_count),
                         node.source(), strings
                     ))
                 }
-                let element_value = element_values.borrow()[element_index as usize].clone();
+                let element_value = element_values.borrow()[final_element_index].clone();
                 Ok(element_value)
             }
             AstNodeVariant::VariableAccess { name } => {
@@ -873,14 +875,16 @@ impl Interpreter {
                     element_index
                 } else { panic!("accessed index should be an integer"); };
                 let element_count = elements.borrow().len();
-                if element_index < 0 || element_index as usize >= element_count {
+                let final_element_index = if element_index < 0 { (element_count as i64 + element_index) as usize }
+                    else { element_index as usize };
+                if final_element_index >= element_count {
                     self.stack_trace_push("<index>".into(), node.source(), strings);
                     return Some(self.generate_panic(
                         &format!("array index {} is out of bounds for an array of length {}", element_index, element_count),
                         node.source(), strings
                     ))
                 }
-                elements.borrow_mut()[element_index as usize] = value;
+                elements.borrow_mut()[final_element_index] = value;
             }
             AstNodeVariant::VariableAccess { name } => {
                 for frame in (0..self.stack.len()).rev() {

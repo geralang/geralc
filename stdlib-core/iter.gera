@@ -122,3 +122,20 @@ pub proc from_value(value) {
 pub proc find(iter, condition) {
     return iter |> filter(condition) |> next()
 }
+
+pub proc enumerate(iter) {
+    mut var i = 0
+    return || {
+        case iter() {
+            #end -> return #end unit
+            #next v -> {
+                var c = i
+                i = i + 1
+                return #next {
+                    idx = c,
+                    val = v
+                }
+            }
+        }
+    }
+}

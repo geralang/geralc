@@ -1017,7 +1017,7 @@ return (gfloat) param0;
         String::from(r#"
 gint start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
-if(param1 > param0.length) { 
+if(start_idx > param0.length) { 
     size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
@@ -1025,7 +1025,7 @@ if(param1 > param0.length) {
 }
 gint end_idx = param2;
 if(param2 < 0) { end_idx = param0.length + param2; }
-if(param2 > param0.length) {
+if(end_idx > param0.length) {
     size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
     char error_message[error_message_length + 1];
     sprintf(error_message, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
@@ -2051,7 +2051,8 @@ fn emit_instruction(
             emit_variable(*accessed, &mut accessed_str);
             let mut index_str = String::new();
             emit_variable(*index, &mut index_str);
-            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(" = gera___verify_index(");
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);
@@ -2090,7 +2091,8 @@ fn emit_instruction(
             emit_variable(*accessed, &mut accessed_str);
             let mut index_str = String::new();
             emit_variable(*index, &mut index_str);
-            output.push_str("gera___verify_index(");
+            output.push_str(&index_str);
+            output.push_str(" = gera___verify_index(");
             output.push_str(&index_str);
             output.push_str(", ");
             output.push_str(&accessed_str);

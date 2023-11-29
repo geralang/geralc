@@ -34,4 +34,3 @@ pub proc clamp(x, min, max) {
 }
 
 
-
