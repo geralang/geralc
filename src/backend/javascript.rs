@@ -606,13 +606,11 @@ fn emit_instruction(
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
+            accessed_str.push_str("[");
+            accessed_str.push_str(&index_str);
+            accessed_str.push_str("]");
             emit_variable(*into, output);
             output.push_str(" = ");
-            output.push_str(&accessed_str);
-            output.push_str("[");
-            output.push_str(&index_str);
-            output.push_str("]");
-            
             emit_copied(&accessed_str, variable_types[into.index], types, output);
             output.push_str(";\n");
         }
