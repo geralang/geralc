@@ -88,6 +88,7 @@ pub proc format(s, value) {
 }
 
 pub proc split(s, separator) {
+    case length(s) == 0 -> return s |> iter()
     var current = {
         start = 0,
         index = 0,

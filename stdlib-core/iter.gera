@@ -123,6 +123,10 @@ pub proc find(iter, condition) {
     return iter |> filter(condition) |> next()
 }
 
+pub proc find_last(iter, condition) {
+    return iter |> filter(condition) |> last()
+}
+
 pub proc enumerate(iter) {
     mut var i = 0
     return iter |> map(|v| {

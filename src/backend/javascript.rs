@@ -142,7 +142,7 @@ if(end_idx > param0.length) {
 if(start_idx > end_idx) {
     throw `the start index ${param1} is larger than the end index ${param2} (length of string is ${param0.length})`;
 }
-return param0.substring(Number(param0), Number(param1));
+return param0.substring(Number(start_idx), Number(end_idx));
 "#)
     });
     builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _| {
