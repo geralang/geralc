@@ -3,6 +3,7 @@ mod std::str
 
 use std::iter
 use std::opt
+use std::math
 
 pub proc substring_until(s, end_index) {
     return s |> substring(0, end_index)
@@ -88,35 +89,28 @@ pub proc format(s, value) {
 }
 
 pub proc split(s, separator) {
-    case length(s) == 0 -> return s |> iter()
     var current = {
-        start = 0,
-        index = 0,
-        done = false
+        anchor = 0
     }
+    var until_length = length(s) - length(separator)
     return || {
-        case current.done -> return #end unit
-        mut var found = { value = #end unit }
-        exhaust(|| {
-            case current.index > length(s) - length(separator) -> {
-                var part = s |> substring_after(current.start)
-                found.value = #next part
-                current.done = true
-                return #end unit
+        case current.anchor > until_length -> return #end unit
+        var next_split = current.anchor..until_length
+            |> iter::find(|index| 
+                substring(s, index, index + length(separator)) == separator
+            )
+        case next_split {
+            #none -> {
+                var result = s |> substring_after(current.anchor)
+                current.anchor = length(s)
+                return #next result
             }
-            var c = current.index
-            current.index = current.index + 1
-            var compared_sub = s |> substring(c, c + length(separator))
-            case compared_sub == separator -> {
-                var part = s |> substring(current.start, current.index)
-                current.index = c + length(separator)
-                current.start = current.index
-                found.value = #next part
-                return #end unit
+            #some i -> {
+                var result = s |> substring(current.anchor, i)
+                current.anchor = i + length(separator)
+                return #next result
             }
-            return #next unit
-        })
-        return found.value
+        }
     }
 }
 
