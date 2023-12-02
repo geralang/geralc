@@ -831,7 +831,7 @@ impl Interpreter {
                 let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
                 Ok(Value::Variant(*name, value.into()))
             }
-            AstNodeVariant::Const { value } => {
+            AstNodeVariant::Static { value } => {
                 self.evaluate_node(&*value, symbols, external_backings, strings)
             }
         }

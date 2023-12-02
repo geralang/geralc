@@ -249,7 +249,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_max_scope!("Variant creation", ScopeType::Statement, ScopeType::Expression);
             check_grammar_singular(&*value, ScopeType::Expression, errors);
         }
-        AstNodeVariant::Const { value } => {
+        AstNodeVariant::Static { value } => {
             enforce_min_scope!("Static expressions", ScopeType::Expression);
             enforce_max_scope!("Static expressions", ScopeType::Statement, ScopeType::Expression);
             check_grammar_singular(&*value, ScopeType::Expression, errors);

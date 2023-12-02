@@ -229,7 +229,7 @@ impl Lexer {
                 "false" => return Some(Ok(self.make_token("false", TokenType::KeywordFalse, string_map))),
                 "else" => return Some(Ok(self.make_token("else", TokenType::KeywordElse, string_map))),
                 "unit" => return Some(Ok(self.make_token("unit", TokenType::KeywordUnit, string_map))),
-                "const" => return Some(Ok(self.make_token("const", TokenType::KeywordConstant, string_map))),
+                "static" => return Some(Ok(self.make_token("const", TokenType::KeywordStatic, string_map))),
                 _ => return Some(Ok(Token {
                     token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),

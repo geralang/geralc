@@ -347,7 +347,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::Variant { name: _, value } => {
                 visit_node!(&mut **value);
             }
-            AstNodeVariant::Const { value } => {
+            AstNodeVariant::Static { value } => {
                 visit_node!(&mut **value, &mut HashSet::new());
             }
         }

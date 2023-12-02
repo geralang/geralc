@@ -1009,7 +1009,7 @@ impl IrGenerator {
                 self.add(IrInstruction::LoadVariant { name: *name, v, into });
                 Ok(Some(into))
             }
-            AstNodeVariant::Const { value } => {
+            AstNodeVariant::Static { value } => {
                 let v = interpreter.evaluate_node(&*value, symbols, external_backings, strings)?;
                 enforce_valid_constant_value(&v, value.source())?;
                 let into = into_given_or_alloc!(node_type!());

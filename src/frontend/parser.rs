@@ -937,13 +937,13 @@ impl Parser {
                         (&start_source..&value_source).into()
                     ));
                 }
-                TokenType::KeywordConstant => {
+                TokenType::KeywordStatic => {
                     let start_source = self.current.source;
                     enforce_next!("the static expression");
                     let value = enforce_expression!(&[], None, "the static expression");
                     let value_source = value.source();
                     previous = Some(AstNode::new(
-                        AstNodeVariant::Const {
+                        AstNodeVariant::Static {
                             value: value.into()
                         },
                         (&start_source..&value_source).into()
