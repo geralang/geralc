@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::backend::{
     ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
-    interpreter::Value
+    constants::{ConstantValue, ConstantPool, ConstantPoolValue}
 };
 use crate::frontend::modules::NamespacePath;
 use crate::util::strings::{StringMap, StringIdx};
@@ -19,10 +19,15 @@ pub fn generate_javascript(
     output.push_str("(function() {\n");
     output.push_str("\"use strict\";\n");
     emit_core_library(&mut output);
+    let mut constants = ConstantPool::new();
+    let mut constant_deps = String::new();
+    emit_static_variables(&symbols, &types, &mut constants, strings, &mut constant_deps);
+    constant_deps.push_str("\n");
+    emit_procedure_impls(&symbols, &types, &mut constants, strings, &externals, &mut constant_deps);
     output.push_str("\n");
-    emit_constants(&symbols, strings, &mut output);
+    emit_constant_declarations(&constants, strings, &mut output);
     output.push_str("\n");
-    emit_procedure_impls(&symbols, &types, strings, &externals, &mut output);
+    output.push_str(&constant_deps);
     output.push_str("\n");
     emit_main_function(&main_procedure_path, strings, &mut output);
     output.push_str("\n})();");
@@ -50,8 +55,10 @@ fn emit_core_library(output: &mut String) {
     output.push_str("\n");
 }
 
-fn emit_constants(
+fn emit_static_variables(
     symbols: &Vec<IrSymbol>,
+    types: &IrTypeBank,
+    constants: &mut ConstantPool,
     strings: &mut StringMap,
     output: &mut String
 ) {
@@ -60,11 +67,12 @@ fn emit_constants(
             IrSymbol::Procedure { .. } |
             IrSymbol::ExternalProcedure { .. } |
             IrSymbol::BuiltInProcedure { .. } => {}
-            IrSymbol::Variable { path, value_type: _, value } => {
+            IrSymbol::Variable { path, value_type, value } => {
                 output.push_str("const ");
                 emit_path(path, strings, output);
                 output.push_str(" = ");
-                emit_value(value, output);
+                let value = constants.insert(value, *value_type, types);
+                emit_value(&value, constants, output);
                 output.push_str(";\n");
             }
             IrSymbol::ExternalVariable { .. } => {}
@@ -180,6 +188,7 @@ return gera___hash(param0);
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     strings: &mut StringMap,
     external: &HashMap<NamespacePath, StringIdx>,
     output: &mut String
@@ -206,7 +215,7 @@ fn emit_procedure_impls(
                 }
                 let mut body_str = String::new();
                 emit_block(
-                    body, variables, types, external, symbols, strings, &mut body_str
+                    body, variables, types, constants, external, symbols, strings, &mut body_str
                 );
                 indent(&body_str, output);
                 output.push_str("}\n");
@@ -231,6 +240,50 @@ fn emit_procedure_impls(
                 output.push_str("}\n");
             }
             _ => {}
+        }
+    }
+}
+
+fn emit_constant_name(idx: usize, output: &mut String) {
+    output.push_str("geraconstant");
+    output.push_str(&idx.to_string());
+}
+
+fn emit_constant_declarations(constants: &ConstantPool, strings: &StringMap, output: &mut String) {
+    for vi in 0..constants.get_value_count() {
+        match constants.get_value(vi) {
+            ConstantPoolValue::String(v) => {
+                output.push_str("const ");
+                emit_constant_name(vi, output);
+                output.push_str(" = ");
+                emit_string_literal(v, output);
+                output.push_str(";\n");
+            }
+            ConstantPoolValue::Array(values, _) => {
+                output.push_str("const ");
+                emit_constant_name(vi, output);
+                output.push_str(" = [\n");
+                for value in values.iter() {
+                    output.push_str("    ");
+                    emit_value(value, constants, output);
+                    output.push_str(",\n");
+                }
+                output.push_str("];\n");
+            }
+            ConstantPoolValue::Object(members) => {
+                output.push_str("const ");
+                emit_constant_name(vi, output);
+                output.push_str(" = {\n");
+                for (member_name, (member_value, _)) in members {
+                    output.push_str("    ");
+                    output.push_str(strings.get(*member_name));
+                    output.push_str(": ");
+                    emit_value(member_value, constants, output);
+                    output.push_str(",\n");
+                }
+                output.push_str("};\n");
+            }
+            ConstantPoolValue::Variant(_, _, _) => {}
         }
     }
 }
@@ -281,30 +334,30 @@ fn emit_string_literal(value: &str, output: &mut String) {
 }
 
 fn emit_value(
-    value: &Value, output: &mut String
+    value: &ConstantValue, constants: &ConstantPool, output: &mut String
 ) {
     match value {
-        Value::Unit => output.push_str("undefined"),
-        Value::Boolean(b) => output.push_str(if *b { "true" } else { "false" }),
-        Value::Integer(i) => {
+        ConstantValue::Unit => output.push_str("undefined"),
+        ConstantValue::Boolean(b) => output.push_str(if *b { "true" } else { "false" }),
+        ConstantValue::Integer(i) => {
             output.push_str(&i.to_string());
             output.push_str("n");
         }
-        Value::Float(f) => {
+        ConstantValue::Float(f) => {
             if *f == f64::INFINITY { output.push_str("Infinity"); }
             else if *f == f64::NEG_INFINITY { output.push_str("-Infinity"); }
             else if f.is_nan() { output.push_str("NaN"); }
             else { output.push_str(&format!("{:.}", *f)); }
         }
-        Value::String(s) => emit_string_literal(std::rc::Rc::as_ref(s), output),
-        Value::Array(_) => panic!("constant arrays are forbidden!"),
-        Value::Object(_) => panic!("constant objects are forbidden!"),
-        Value::Closure(_, _, _) => panic!("constant closures are forbidden!"),
-        Value::Variant(variant_name, variant_value) => {
+        ConstantValue::String(s) => emit_constant_name(s.into(), output),
+        ConstantValue::Array(a) => emit_constant_name(a.into(), output),
+        ConstantValue::Object(o) => emit_constant_name(o.into(), output),
+        ConstantValue::Variant(v) => {
+            let (variant_name, variant_value, _) = constants.get_variant(*v);
             output.push_str("{ tag = ");
             output.push_str(&variant_name.0.to_string());
             output.push_str(", value = ");
-            emit_value(&*variant_value, output);
+            emit_value(&variant_value, constants, output);
             output.push_str("}");
         }
     }
@@ -323,6 +376,7 @@ fn emit_block(
     instructions: &Vec<IrInstruction>,
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -332,7 +386,7 @@ fn emit_block(
     for instruction in instructions {
         let mut o = String::new();
         emit_instruction(
-            instruction, variable_types, types, external, symbols, strings, &mut o
+            instruction, variable_types, types, constants, external, symbols, strings, &mut o
         );
         indent(&o, output);
     }
@@ -383,6 +437,7 @@ fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<IrType>,
     types: &IrTypeBank,
+    constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -416,31 +471,29 @@ fn emit_instruction(
         }
         IrInstruction::LoadObject { member_values, into } => {
             emit_variable(*into, output);
-            output.push_str(" = { ");
-            let mut had_member = false;
+            output.push_str(" = {\n");
             for (member_name, member_value) in member_values {
-                if had_member { output.push_str(", "); }
-                had_member = true;
+                output.push_str("    ");
                 output.push_str(strings.get(*member_name));
                 output.push_str(": ");
                 emit_copied_variable(
                     *member_value, variable_types[member_value.index], types, output
                 );
+                output.push_str(",\n");
             }
             output.push_str(" };\n");
         }
         IrInstruction::LoadArray { element_values, into } => {
             emit_variable(*into, output);
-            output.push_str(" = [ ");
-            let mut had_member = false;
+            output.push_str(" = [\n");
             for element_value in element_values {
-                if had_member { output.push_str(", "); }
-                had_member = true;
+                output.push_str("    ");
                 emit_copied_variable(
                     *element_value, variable_types[element_value.index], types, output
                 );
+                output.push_str(",\n");
             }
-            output.push_str(" ];\n");
+            output.push_str("];\n");
         }
         IrInstruction::LoadVariant { name, v, into } => {
             emit_variable(*into, output);
@@ -558,7 +611,7 @@ fn emit_instruction(
             }
             let mut body_body_str = String::new();
             emit_block(
-                body, variables, types, external, symbols, strings, &mut body_body_str
+                body, variables, types, constants, external, symbols, strings, &mut body_body_str
             );
             indent(&body_body_str, &mut body_str);
             body_str.push_str("}\n");
@@ -568,7 +621,8 @@ fn emit_instruction(
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_value(value, output);
+            let value = constants.insert(value, variable_types[into.index], types);
+            emit_value(&value, constants, output);
             output.push_str(";\n");
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
@@ -818,17 +872,19 @@ fn emit_instruction(
                 output.push_str("if(gera___eq(");
                 output.push_str(&value_str);
                 output.push_str(", ");
-                emit_value(branch_value, output);
+                let bvalue = constants.insert(branch_value, variable_types[value.index], types);
+                emit_value(&bvalue, constants, output);
                 output.push_str(")) ");
                 emit_block(
-                    branch_body, variable_types, types, external, symbols, strings,
+                    branch_body, variable_types, types, constants, external, symbols, strings,
                     output
                 );
             }
             if else_branch.len() > 0 {
                 if had_branch { output.push_str(" else "); }
                 emit_block(
-                    else_branch, variable_types, types, external, symbols, strings, output
+                    else_branch, variable_types, types, constants, external, symbols, strings,
+                    output
                 );
             }
             output.push_str("\n");
@@ -851,7 +907,7 @@ fn emit_instruction(
                     branch_str.push_str(".value; ");
                 }
                 emit_block(
-                    branch_body, variable_types, types, external, symbols, strings,
+                    branch_body, variable_types, types, constants, external, symbols, strings,
                     &mut branch_str
                 );
                 branch_str.push_str("\n");
@@ -861,7 +917,7 @@ fn emit_instruction(
                 let mut else_branch_str = String::new();
                 else_branch_str.push_str("default: ");
                 emit_block(
-                    else_branch, variable_types, types, external, symbols, strings,
+                    else_branch, variable_types, types, constants, external, symbols, strings,
                     &mut else_branch_str
                 );
                 else_branch_str.push_str("\n");

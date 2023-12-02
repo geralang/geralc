@@ -3,12 +3,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::backend::{
     ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
-    constants::ConstantPool
+    constants::{ConstantPool, ConstantValue, ConstantPoolValue}
 };
 use crate::frontend::modules::NamespacePath;
 use crate::util::strings::{StringMap, StringIdx};
-
-use super::constants::ConstantValue;
 
 struct ConversionFunctions {
     declarations: String,
@@ -1240,129 +1238,136 @@ fn emit_procedure_impls(
     }
 }
 
-fn emit_constant_string_name(idx: usize, output: &mut String) {
-    output.push_str("geraconstantstring");
-    output.push_str(&idx.to_string());
-}
-
-fn emit_constant_array_name(idx: usize, output: &mut String) {
-    output.push_str("geraconstantarray");
-    output.push_str(&idx.to_string());
-}
-
-fn emit_constant_object_name(idx: usize, output: &mut String) {
-    output.push_str("geraconstantobject");
+fn emit_constant_name(idx: usize, output: &mut String) {
+    output.push_str("geraconstant");
     output.push_str(&idx.to_string());
 }
 
 fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, strings: &StringMap, output: &mut String) {
-    for si in 0..constants.get_string_count() {
-        let v = constants.get_string(si);
-        output.push_str("const GeraString ");
-        emit_constant_string_name(si, output);
-        output.push_str(" = {\n");
-        output.push_str("    .allocation = NULL,\n");
-        output.push_str("    .length_bytes = ");
-        output.push_str(&v.len().to_string());
-        output.push_str(",\n");
-        output.push_str("    .length = ");
-        output.push_str(&v.chars().count().to_string());
-        output.push_str(",\n");
-        output.push_str("    .data = ");
-        emit_string_literal(v, output);
-        output.push_str("\n");
-        output.push_str("};\n");
-    }
-    for ai in 0..constants.get_array_count() {
-        let (values, element_type) = constants.get_array(ai);
-        emit_type(element_type, types, output);
-        output.push_str(" ");
-        emit_constant_array_name(ai, output);
-        output.push_str("values[");
-        output.push_str(&values.len().to_string());
-        output.push_str("];\n");
-        let constant_type = IrType::Array(types.insert_array(element_type));
-        emit_type(constant_type, types, output);
-        output.push_str(" ");
-        emit_constant_array_name(ai, output);
-        output.push_str(";\n");
-    }
-    for oi in 0..constants.get_object_count() {
-        let constant_object_idx = types.insert_object(
-            constants.get_object(oi).iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
-        );
-        let constant_type = IrType::Object(constant_object_idx);
-        emit_object_alloc_name(constant_object_idx.0, output);
-        output.push_str(" ");
-        emit_constant_object_name(oi, output);
-        output.push_str("values;\n");
-        emit_type(constant_type, types, output);
-        output.push_str(" ");
-        emit_constant_object_name(oi, output);
-        output.push_str(";\n");
+    for vi in 0..constants.get_value_count() {
+        match constants.get_value(vi) {
+            ConstantPoolValue::String(v) => {
+                output.push_str("const GeraString ");
+                emit_constant_name(vi, output);
+                output.push_str(" = {\n");
+                output.push_str("    .allocation = NULL,\n");
+                output.push_str("    .length_bytes = ");
+                output.push_str(&v.len().to_string());
+                output.push_str(",\n");
+                output.push_str("    .length = ");
+                output.push_str(&v.chars().count().to_string());
+                output.push_str(",\n");
+                output.push_str("    .data = ");
+                emit_string_literal(v, output);
+                output.push_str("\n");
+                output.push_str("};\n");
+            }
+            ConstantPoolValue::Array(values, element_type) => {
+                if let IrType::Unit = element_type.direct(types) {
+                    output.push_str("char");
+                } else {
+                    emit_type(element_type, types, output);
+                }
+                output.push_str(" ");
+                emit_constant_name(vi, output);
+                output.push_str("values[");
+                if let IrType::Unit = element_type.direct(types) {
+                    output.push_str("1");
+                } else {
+                    output.push_str(&values.len().to_string());
+                }
+                output.push_str("];\n");
+                let constant_type = IrType::Array(types.insert_array(element_type));
+                emit_type(constant_type, types, output);
+                output.push_str(" ");
+                emit_constant_name(vi, output);
+                output.push_str(";\n");
+            }
+            ConstantPoolValue::Object(members) => {
+                let constant_object_idx = types.insert_object(
+                    members.iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
+                );
+                let constant_type = IrType::Object(constant_object_idx);
+                emit_object_alloc_name(constant_object_idx.0, output);
+                output.push_str(" ");
+                emit_constant_name(vi, output);
+                output.push_str("values;\n");
+                emit_type(constant_type, types, output);
+                output.push_str(" ");
+                emit_constant_name(vi, output);
+                output.push_str(";\n");
+            }
+            ConstantPoolValue::Variant(_, _, _) => {}
+        }
     }
     output.push_str("\n");
     output.push_str("void gera_init_constants(void) {\n");
     let mut cinit = String::new();
-    for ai in 0..constants.get_array_count() {
-        let (values, element_type) = constants.get_array(ai);
-        for (i, value) in values.iter().enumerate() {
-            emit_constant_array_name(ai, &mut cinit);
-            cinit.push_str("values[");
-            cinit.push_str(&i.to_string());
-            cinit.push_str("] = ");
-            emit_value(
-                *value, element_type, types, constants, strings, &mut cinit
-            );
-            cinit.push_str(";\n");
+    for vi in 0..constants.get_value_count() {
+        match constants.get_value(vi) {
+            ConstantPoolValue::String(_) => {}
+            ConstantPoolValue::Array(values, element_type) => {
+                if let IrType::Unit = element_type.direct(types) {} else {
+                    for (i, value) in values.iter().enumerate() {
+                        emit_constant_name(vi, &mut cinit);
+                        cinit.push_str("values[");
+                        cinit.push_str(&i.to_string());
+                        cinit.push_str("] = ");
+                        emit_value(
+                            *value, element_type, types, constants, strings, &mut cinit
+                        );
+                        cinit.push_str(";\n");
+                    }
+                }
+                let constant_type = IrType::Array(types.insert_array(element_type));
+                emit_constant_name(vi, &mut cinit);
+                cinit.push_str(" = (");
+                emit_type(constant_type, types, &mut cinit);
+                cinit.push_str(") {\n");
+                cinit.push_str("    .allocation = NULL,\n");
+                cinit.push_str("    .length = ");
+                cinit.push_str(&values.len().to_string());
+                cinit.push_str(",\n");
+                cinit.push_str("    .data = (char*) ");
+                emit_constant_name(vi, &mut cinit);
+                cinit.push_str("values\n");
+                cinit.push_str("};\n");
+            }
+            ConstantPoolValue::Object(members) => {
+                let constant_object_idx = types.insert_object(
+                    members.iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
+                );
+                emit_constant_name(vi, &mut cinit);
+                cinit.push_str("values = (");
+                emit_object_alloc_name(constant_object_idx.0, &mut cinit);
+                cinit.push_str(") {\n");
+                for (member_name, (member_value, member_type)) in members {
+                    cinit.push_str("    .member");
+                    cinit.push_str(&member_name.0.to_string());
+                    cinit.push_str(" = ");
+                    emit_value(*member_value, *member_type, types, constants, strings, &mut cinit);
+                    cinit.push_str(",\n");
+                }
+                cinit.push_str("};\n");
+                let constant_type = IrType::Object(constant_object_idx);
+                emit_constant_name(vi, &mut cinit);
+                cinit.push_str(" = (");
+                emit_type(constant_type, types, &mut cinit);
+                cinit.push_str(") {\n");
+                cinit.push_str("    .allocation = NULL,\n");
+                for (member_name, _) in members {
+                    cinit.push_str("    .member");
+                    cinit.push_str(&member_name.0.to_string());
+                    cinit.push_str(" = &");
+                    emit_constant_name(vi, &mut cinit);
+                    cinit.push_str("values.member");
+                    cinit.push_str(&member_name.0.to_string());
+                    cinit.push_str(",\n");
+                }
+                cinit.push_str("};\n");
+            }
+            ConstantPoolValue::Variant(_, _, _) => {}
         }
-        let constant_type = IrType::Array(types.insert_array(element_type));
-        emit_constant_array_name(ai, &mut cinit);
-        cinit.push_str(" = (");
-        emit_type(constant_type, types, &mut cinit);
-        cinit.push_str(") {\n");
-        cinit.push_str("    .allocation = NULL,\n");
-        cinit.push_str("    .length = ");
-        cinit.push_str(&values.len().to_string());
-        cinit.push_str(",\n");
-        cinit.push_str("    .data = (char*) ");
-        emit_constant_array_name(ai, &mut cinit);
-        cinit.push_str("values\n");
-        cinit.push_str("};\n");
-    }
-    for oi in 0..constants.get_object_count() {
-        let constant_object_idx = types.insert_object(
-            constants.get_object(oi).iter().map(|(mn, (_, mt))| (*mn, *mt)).collect()
-        );
-        let members = constants.get_object(oi);
-        emit_constant_object_name(oi, &mut cinit);
-        cinit.push_str("values = (");
-        emit_object_alloc_name(constant_object_idx.0, &mut cinit);
-        cinit.push_str(") {\n");
-        for (member_name, (member_value, member_type)) in members {
-            cinit.push_str("    .member");
-            cinit.push_str(&member_name.0.to_string());
-            cinit.push_str(" = ");
-            emit_value(*member_value, *member_type, types, constants, strings, &mut cinit);
-            cinit.push_str(",\n");
-        }
-        cinit.push_str("};\n");
-        let constant_type = IrType::Object(constant_object_idx);
-        emit_constant_object_name(oi, &mut cinit);
-        cinit.push_str(" = (");
-        emit_type(constant_type, types, &mut cinit);
-        cinit.push_str(") {\n");
-        cinit.push_str("    .allocation = NULL,\n");
-        for (member_name, _) in members {
-            cinit.push_str("    .member");
-            cinit.push_str(&member_name.0.to_string());
-            cinit.push_str(" = &");
-            emit_constant_object_name(oi, &mut cinit);
-            cinit.push_str("values.member");
-            cinit.push_str(&member_name.0.to_string());
-            cinit.push_str(",\n");
-        }
-        cinit.push_str("};\n");
     }
     indent(&cinit, output);
     output.push_str("}\n");
@@ -1453,9 +1458,9 @@ fn emit_value(
             else if f.is_nan() { output.push_str("(0.0 / 0.0)"); }
             else { output.push_str(&format!("{:.}", f)); }
         }
-        ConstantValue::String(s) => emit_constant_string_name(s, output),
-        ConstantValue::Array(a) => emit_constant_array_name(a, output),
-        ConstantValue::Object(o) => emit_constant_object_name(o, output),
+        ConstantValue::String(s) => emit_constant_name(s.into(), output),
+        ConstantValue::Array(a) => emit_constant_name(a.into(), output),
+        ConstantValue::Object(o) => emit_constant_name(o.into(), output),
         ConstantValue::Variant(v) => {
             let variant_idx = if let IrType::Variants(variant_idx) = value_type.direct(types) {
                 variant_idx.0
