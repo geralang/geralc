@@ -10,6 +10,7 @@
 void gera___panic(const char* message);
 
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
+    if(size == 0) { return NULL; }
     GeraAllocation* a = (GeraAllocation*) malloc(sizeof(GeraAllocation) + size);
     if(a == NULL) { gera___panic("unable to allocate heap memory"); }
     a->rc = 1;

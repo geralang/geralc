@@ -4,6 +4,7 @@ mod std::arr
 use std::str
 use std::iter
 use std::vec
+use std::opt
 
 pub proc subarray(a, start, end) {
     mut var start_index = start

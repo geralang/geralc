@@ -120,10 +120,44 @@ while(param0.call().tag == {}) {{}}
 gera___panic(param0);
 "#)
     });
-    builtins.insert(path_from(&["core", "as_str"], strings), |_, _, _, _| {
-        String::from(r#"
+    builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
+        match param_types[0].direct(types) {
+            IrType::Unit => String::from(r#"
+return "<unit>";
+"#),
+            IrType::Boolean |
+            IrType::Integer |
+            IrType::Float => String::from(r#"
 return param0.toString();
-"#)
+"#),
+            IrType::String => String::from(r#"
+return param0;
+"#),
+            IrType::Array(_) => String::from(r#"
+return "<array>";
+"#),
+            IrType::Object(_) |
+            IrType::ConcreteObject(_) => String::from(r#"
+return "<object>";
+"#),
+            IrType::Variants(variant_idx) => {
+                let variant_types = types.get_variants(variant_idx);
+                let mut result = String::from("switch(param0.tag) {\n");
+                for (variant_name, _) in variant_types {
+                    result.push_str("    case ");
+                    result.push_str(&variant_name.0.to_string());
+                    result.push_str(": return \"#");
+                    result.push_str(strings.get(*variant_name));
+                    result.push_str(" <...>\";\n");
+                }
+                result.push_str("}\n");
+                result
+            }
+            IrType::Closure(_) => String::from(r#"
+return "<closure>";
+"#),
+            IrType::Indirect(_) => panic!("should be direct"),
+        }
     });
     builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _| {
         String::from(r#"
@@ -550,13 +584,13 @@ fn emit_instruction(
                         }
                     }
                     emit_variable(*into, output);
-                    output.push_str(" = ");
+                    output.push_str(" = { captures: {}, call: ");
                     if let Some(backing) = external.get(path) {
                         output.push_str(strings.get(*backing));
                     } else {
                         emit_procedure_name(path, found_variant, strings, output);
                     }
-                    output.push_str(";\n");
+                    output.push_str(" };\n");
                 }
                 IrSymbol::Variable { .. } |
                 IrSymbol::ExternalVariable { .. } => {

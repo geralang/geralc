@@ -1,6 +1,8 @@
 
 mod std::iter
 
+use std::opt
+
 pub proc map(iter, mapping) {
     return || {
         case iter() {
@@ -81,18 +83,9 @@ pub proc chain(iter_a, iter_b) {
     }
 }
 
-pub proc count(iter, condition) {
-    var found = { count = 0 }
-    exhaust(|| {
-        case iter() {
-            #end -> return #end unit
-            #next n -> case condition(n) -> {
-                found.count = found.count + 1
-            }
-        }
-        return #next unit
-    })
-    return found.count
+pub proc count(iter) {
+    return iter
+        |> reduce(|count, e| count + 1, 0)
 }
 
 pub proc next(iter) {
@@ -134,4 +127,10 @@ pub proc enumerate(iter) {
         i = i + 1
         return { idx = ci, val = v }
     })
+}
+
+pub proc has(iter, element) {
+    return iter
+        |> find(|e| e == element)
+        |> opt::is_some()
 }
