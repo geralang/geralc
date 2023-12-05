@@ -1,6 +1,8 @@
 
 mod std::opt
 
+use std::iter
+
 pub proc is_some(optional) {
     case optional {
         #some -> return true
@@ -44,14 +46,9 @@ pub proc expect(optional, reason) {
 }
 
 pub proc iter(optional) {
-    mut var done = false
-    return || {
-        case done -> return #end unit
-        done = true
-        return optional
-            |> map(|v| #next v)
-            |> unwrap_or(#end unit)
-    }
+    return optional
+        |> map(|v| iter::over_value(v))
+        |> unwrap_or_else(|| iter::empty())
 }
 
 pub proc flatten(optional) {

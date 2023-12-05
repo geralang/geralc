@@ -134,3 +134,16 @@ pub proc has(iter, element) {
         |> find(|e| e == element)
         |> opt::is_some()
 }
+
+pub proc empty() {
+    return || #end unit
+}
+
+pub proc over_value(v) {
+    mut var done = false
+    return || {
+        case done -> return #end unit
+        done = true
+        return #next v
+    }
+}
