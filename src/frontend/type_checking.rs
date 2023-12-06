@@ -110,6 +110,17 @@ impl TypeAssertion {
             )
         }
     }
+    fn implicit_unit_return(procedure_source: SourceRange, type_scope: &mut TypeScope, strings: &StringMap) -> TypeAssertion {
+        let asserted_type = type_scope.register_with_types(Some(vec![Type::Unit]));
+        TypeAssertion {
+            limited_to: asserted_type,
+            from: procedure_source,
+            reason: format!(
+                "Does not always return early, therefore implicitly returns {} at the end of its body",
+                display_types(strings, type_scope, asserted_type)
+            )
+        }
+    }
     fn call_parameter(call_source: SourceRange, parameter_name: StringIdx, parameter_types: VarTypeIdx, type_scope: &TypeScope, strings: &StringMap) -> TypeAssertion {
         TypeAssertion {
             limited_to: parameter_types,
@@ -278,12 +289,33 @@ impl TypeAssertion {
             )
         }
     }
+    fn procedure_parameter(procedure_source: SourceRange, parameter_name: StringIdx, parameter_types: VarTypeIdx, type_scope: &TypeScope, strings: &StringMap) -> TypeAssertion {
+        TypeAssertion {
+            limited_to: parameter_types,
+            from: procedure_source,
+            reason: format!(
+                "The called procedure expects the parameter '{}' to be of type {}",
+                strings.get(parameter_name),
+                display_types(strings, type_scope, parameter_types)
+            )
+        }
+    }
+    fn call_parameter_value(param_source: SourceRange, given_type: VarTypeIdx, type_scope: &TypeScope, strings: &StringMap) -> TypeAssertion {
+        TypeAssertion {
+            limited_to: given_type,
+            from: param_source,
+            reason: format!(
+                "The call provides a parameter value of type {}",
+                display_types(strings, type_scope, given_type)
+            )
+        }
+    }
 }
 
 fn type_check_symbol<'s>(
     strings: &StringMap,
     type_scope: &mut TypeScope,
-    procedure_names: &mut Vec<NamespacePath>,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(VarTypeIdx, SourceRange)>>)>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &'s mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     name: &NamespacePath
@@ -311,11 +343,11 @@ fn type_check_symbol<'s>(
                     body: Some(Vec::new()),
                     source: symbol_source
                 } );
-                procedure_names.push(name.clone());
+                rec_procedures.push((name.clone(), vec![Vec::new(); arguments.len()]));
                 let (typed_body, returns) = match type_check_nodes(
                     strings,
                     type_scope,
-                    procedure_names,
+                    rec_procedures,
                     symbol_source,
                     &mut procedure_variables,
                     &mut procedure_scope_variables,
@@ -329,21 +361,79 @@ fn type_check_symbol<'s>(
                     Ok(typed_nodes) => typed_nodes,
                     Err(error) => return Err(error),
                 };
-                procedure_names.pop();
-                if let Some(Symbol::Procedure { public: _, parameter_names: _, parameter_types: _, returns: _, body, source: _ }) = symbols.get_mut(name) {
-                    if match type_scope.get_group_types(return_types) {
-                        Some(types) => types.len() == 1 && match &types[0] {
-                            Type::Unit => false,
-                            _ => true
-                        },
-                        _ => true 
-                    } && returns.0 && !returns.1 { return Err(Error::new([
-                        ErrorSection::Error(ErrorType::DoesNotAlwaysReturn("Procedure")),
-                        ErrorSection::Code(symbol_source)
-                    ].into())); }
-                    if !returns.0 {
-                        let unit = type_scope.register_with_types(Some(vec![Type::Unit]));
-                        type_scope.limit_possible_types(return_types, unit);
+                if let Some(Symbol::Procedure { public: _, parameter_names: _, parameter_types, returns: _, body, source }) = symbols.get_mut(name) {
+                    if let Some((_, arg_groups)) = rec_procedures.pop() {
+                        fn copy_arg_type_group(t: VarTypeIdx, mapped: &mut HashMap<usize, VarTypeIdx>, arg_groups: &Vec<Vec<(VarTypeIdx, SourceRange)>>, type_scope: &mut TypeScope) -> VarTypeIdx {
+                            if let Some(n) = mapped.get(&type_scope.get_group_internal_index(t)) {
+                                return *n;
+                            }
+                            for arg in arg_groups {
+                                for (a, _) in arg {
+                                    if t == *a { return t; }
+                                }
+                            }
+                            let new_group = type_scope.register_variable();
+                            mapped.insert(type_scope.get_group_internal_index(t), new_group);
+                            let og_group_types = type_scope.get_group_types(t).clone();
+                            *type_scope.get_group_types_mut(new_group) = og_group_types.map(|types|
+                                types.iter().map(|t| 
+                                    copy_arg_types(t, mapped, arg_groups, type_scope)
+                                ).collect()
+                            );
+                            return new_group;
+                        }
+                        fn copy_arg_types(t: &Type, mapped: &mut HashMap<usize, VarTypeIdx>, arg_groups: &Vec<Vec<(VarTypeIdx, SourceRange)>>, type_scope: &mut TypeScope) -> Type {
+                            match t {
+                                Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String |
+                                Type::Panic => t.clone(),
+                                Type::Array(element_types) => Type::Array(copy_arg_type_group(*element_types, mapped, arg_groups, type_scope)),
+                                Type::Object(member_types, fixed) => Type::Object(
+                                    member_types.iter().map(|(member_name, member_types)| (
+                                        *member_name,
+                                        copy_arg_type_group(*member_types, mapped, arg_groups, type_scope)
+                                    )).collect(),
+                                    *fixed
+                                ),
+                                Type::ConcreteObject(member_types) => Type::ConcreteObject(
+                                    member_types.iter().map(|(member_name, member_types)| (
+                                        *member_name,
+                                        copy_arg_types(member_types, mapped, arg_groups, type_scope)
+                                    )).collect()
+                                ),
+                                Type::Closure(parameter_types, return_types, captured) => Type::Closure(
+                                    parameter_types.iter().map(|p| copy_arg_type_group(*p, mapped, arg_groups, type_scope)).collect(),
+                                    copy_arg_type_group(*return_types, mapped, arg_groups, type_scope),
+                                    captured.as_ref().map(|captured| captured.iter().map(|(capture_name, capture_types)| (
+                                        *capture_name,
+                                        copy_arg_type_group(*capture_types, mapped, arg_groups, type_scope)
+                                    )).collect::<HashMap<StringIdx, VarTypeIdx>>())
+                                ),
+                                Type::Variants(variant_types, fixed) => Type::Variants(
+                                    variant_types.iter().map(|(variant_name, variant_types)| (
+                                        *variant_name,
+                                        copy_arg_type_group(*variant_types, mapped, arg_groups, type_scope)
+                                    )).collect(),
+                                    *fixed
+                                )
+                            }
+                        }
+                        for argument_idx in 0..arguments.len() {
+                            let argument_types = copy_arg_type_group(parameter_types[argument_idx], &mut HashMap::new(), &arg_groups, type_scope);
+                            for (call_param_types, call_param_source) in &arg_groups[argument_idx] {
+                                assert_types(
+                                    TypeAssertion::procedure_parameter(symbol_source, arguments[argument_idx].0, argument_types, type_scope, strings),
+                                    TypeAssertion::call_parameter_value(*call_param_source, *call_param_types, type_scope, strings),
+                                    type_scope
+                                )?;
+                            }
+                        }
+                    }   
+                    if !returns.1 {
+                        assert_types(
+                            TypeAssertion::returned_values(*source, return_types, type_scope, strings),
+                            TypeAssertion::implicit_unit_return(*source, type_scope, strings),
+                            type_scope
+                        )?;
                     }
                     *body = Some(typed_body);
                 } else { panic!("procedure was illegally modified!"); }
@@ -354,7 +444,7 @@ fn type_check_symbol<'s>(
                     match type_check_node(
                         strings,
                         type_scope,
-                        procedure_names,
+                        rec_procedures,
                         symbol_source,
                         &mut HashMap::new(),
                         &mut HashSet::new(),
@@ -396,7 +486,7 @@ type AlwaysReturns = bool;
 fn type_check_nodes(
     strings: &StringMap,
     type_scope: &mut TypeScope,
-    procedure_names: &mut Vec<NamespacePath>,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(VarTypeIdx, SourceRange)>>)>,
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
@@ -413,7 +503,7 @@ fn type_check_nodes(
         match type_check_node(
             strings,
             type_scope,
-            procedure_names,
+            rec_procedures,
             procedure_source,
             variables,
             scope_variables,
@@ -503,7 +593,7 @@ fn initalize_variables(
 fn type_check_node(
     strings: &StringMap,
     type_scope: &mut TypeScope,
-    procedure_names: &mut Vec<NamespacePath>,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(VarTypeIdx, SourceRange)>>)>,
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
@@ -518,23 +608,23 @@ fn type_check_node(
 ) -> Result<(TypedAstNode, (SometimesReturns, AlwaysReturns)), Error> {
     let node_source = node.source();
     macro_rules! type_check_node { ($node: expr, $limited_to: expr) => {
-        match type_check_node(strings, type_scope, procedure_names, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
+        match type_check_node(strings, type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     }; ($node: expr, $limited_to: expr, $assignment: expr) => {
-        match type_check_node(strings, type_scope, procedure_names, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
+        match type_check_node(strings, type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     }; ($node: expr, $limited_to: expr, $assignment: expr, $variables: expr) => {
-        match type_check_node(strings, type_scope, procedure_names, procedure_source, $variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
+        match type_check_node(strings, type_scope, rec_procedures, procedure_source, $variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     } }
     macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $scope_variables: expr, $uninitialized_variables: expr) => {
-        match type_check_nodes(strings, type_scope, procedure_names, procedure_source, $variables, $scope_variables,  $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
+        match type_check_nodes(strings, type_scope, rec_procedures, procedure_source, $variables, $scope_variables,  $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
@@ -556,7 +646,7 @@ fn type_check_node(
             let (typed_body, returns) = match type_check_nodes(
                 strings,
                 type_scope,
-                procedure_names,
+                rec_procedures,
                 procedure_source,
                 &mut closure_variables,
                 &mut closure_scope_variables,
@@ -575,19 +665,12 @@ fn type_check_node(
                     captured_variables.insert(*capture);
                 }
             }
-            if match type_scope.get_group_types(return_types) {
-                Some(types) => types.len() == 1 && match &types[0] {
-                    Type::Unit => false,
-                    _ => true
-                },
-                _ => true 
-            } && returns.0 && !returns.1 { return Err(Error::new([
-                ErrorSection::Error(ErrorType::DoesNotAlwaysReturn("Function")),
-                ErrorSection::Code(node_source)
-            ].into())); }
-            if !returns.0 {
-                let unit = type_scope.register_with_types(Some(vec![Type::Unit]));
-                type_scope.limit_possible_types(return_types, unit);
+            if !returns.1 {
+                assert_types(
+                    TypeAssertion::returned_values(node_source, return_types, type_scope, strings),
+                    TypeAssertion::implicit_unit_return(node_source, type_scope, strings),
+                    type_scope
+                )?;
             }
             let closure_type = type_scope.register_with_types(Some(vec![Type::Closure(
                 closure_args,
@@ -763,23 +846,27 @@ fn type_check_node(
         }
         AstNodeVariant::Call { called, mut arguments } => {
             if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                match type_check_symbol(strings, type_scope, procedure_names, untyped_symbols, symbols, &path).map(|s| s.clone()) {
+                match type_check_symbol(strings, type_scope, rec_procedures, untyped_symbols, symbols, &path).map(|s| s.clone()) {
                     Ok(Symbol::Procedure { public: _, parameter_names, parameter_types, returns, body: _, source: _ }) => {
                         if arguments.len() != parameter_types.len() { return Err(Error::new([
                             ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
                         ].into())) }
-                        if procedure_names.contains(path) {
+                        if let Some(rec_proc_idx) = rec_procedures
+                                .iter().position(|p| p.0 == *path) {
+                            let mut duplications = TypeGroupDuplications::new();
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
-                                typed_arguments.push(type_check_node!(
-                                    arguments.remove(0),
-                                    Some(TypeAssertion::call_parameter(node_source, parameter_names[argument_idx], parameter_types[argument_idx], type_scope, strings))
-                                ).0);
+                                let typed_arg = type_check_node!(arguments.remove(0), None).0;
+                                rec_procedures[rec_proc_idx].1[argument_idx].push(
+                                    (typed_arg.get_types(), typed_arg.source())
+                                );
+                                typed_arguments.push(typed_arg);
                             }
+                            let returned_types = duplications.duplicate(returns, type_scope);
                             if let Some(limited_to) = limited_to {
                                 assert_types(
-                                    TypeAssertion::call_return_value(node_source, returns, type_scope, strings),
+                                    TypeAssertion::call_return_value(node_source, returned_types, type_scope, strings),
                                     limited_to, type_scope
                                 )?;
                             }
@@ -787,7 +874,7 @@ fn type_check_node(
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
-                            }, returns, node_source), (false, false)));
+                            }, returned_types, node_source), (false, false)));
                         } else {
                             let mut duplications = TypeGroupDuplications::new();
                             let mut typed_arguments = Vec::new();
@@ -1303,7 +1390,7 @@ fn type_check_node(
             }, type_scope.register_with_types(Some(vec![Type::Unit])), node_source), (false, false)))
         }
         AstNodeVariant::ModuleAccess { path } => {
-            match type_check_symbol(strings, type_scope, procedure_names, untyped_symbols, symbols, &path) {
+            match type_check_symbol(strings, type_scope, rec_procedures, untyped_symbols, symbols, &path) {
                 Ok(Symbol::Constant { public: _, value: _, value_types }) => {
                     if let Some(limited_to) = limited_to {
                         assert_types(
