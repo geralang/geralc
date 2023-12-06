@@ -1,14 +1,14 @@
-# Gera
+# Gera Compiler
 
 *The compiler for Gera, a statically typed and garbage collected programming language without type annotations.*
 
-A VS Code plugin for Gera is available [here](https://github.com/typesafeschwalbe/vscode-gera).
+### Links
 
-If you would like to read some Gera code, you can read solutions for [Advent of Code 2023](https://adventofcode.com/2023) written in Gera [here](https://github.com/typesafeschwalbe/gera-aoc).
+- [Standard library](https://github.com/typesafeschwalbe/gerastd)
+- [VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
+- [Advent of Code 2023 solutions (written in Gera)](https://github.com/typesafeschwalbe/gera-aoc)
 
-# Progress
-
-*This is a rough outline of the progress made. For further details, feel free to have a look at [the Trello board](https://trello.com/b/BaAKwZsO/gera).*
+### Progress
 
 - [x] Lexer
 - [x] Parser
@@ -20,8 +20,6 @@ If you would like to read some Gera code, you can read solutions for [Advent of 
 - [x] Headers for external procedures
 - [x] Lowering of AST into SSA IR
 - [x] C code generation
-- [ ] Standard library (core)
-- [ ] Standard library (target = C)
 - [x] Javascript code generation
-- [ ] Standard library (target = Javascript)
+- [ ] Complete standard library
 - [ ] Optimizations on IR
