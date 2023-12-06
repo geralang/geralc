@@ -1,7 +1,0 @@
-
-mod std::io
-
-pub proc println(line) {
-    line |> as_str()
-        |> std::internal::io::println()
-}
