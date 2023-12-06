@@ -680,17 +680,17 @@ impl IrGenerator {
                     if let Symbol::Procedure {
                         public: _, parameter_names, parameter_types, returns, body, source: _
                     } = symbols.get(path).expect("symbol should exist") {
-                        let mut duplications = TypeGroupDuplications::new(); 
+                        let mut call_scope = type_scope.clone();
                         let mut parameter_ir_types = Vec::new();
                         let mut parameter_values = Vec::new();
                         for argument_idx in 0..arguments.len() {
-                            let expected_param_type = duplications.duplicate(parameter_types[argument_idx], type_scope);
-                            let concrete_param_type = type_scope.limit_possible_types(
+                            let expected_param_type = parameter_types[argument_idx];
+                            let concrete_param_type = call_scope.limit_possible_types(
                                 expected_param_type,
                                 arguments[argument_idx].get_types()
                             ).expect("should have a possible type");
                             let param_ir_type = var_types_to_ir_type(
-                                &type_scope, concrete_param_type, type_bank, strings,
+                                &call_scope, concrete_param_type, type_bank, strings,
                                 &mut HashMap::new()
                             );
                             parameter_ir_types.push(param_ir_type);
@@ -698,17 +698,17 @@ impl IrGenerator {
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
-                        let return_type = duplications.duplicate(*returns, type_scope);
-                        let concrete_return_type = type_scope.limit_possible_types(
+                        let return_type = *returns;
+                        let concrete_return_type = call_scope.limit_possible_types(
                             return_type,
                             node.get_types()
                         ).expect("should have a possible type");
                         let return_ir_type = var_types_to_ir_type(
-                            &type_scope, concrete_return_type, type_bank, strings,
+                            &call_scope, concrete_return_type, type_bank, strings,
                             &mut HashMap::new()
                         );
                         let proc_variant = IrGenerator::find_procedure(
-                            path, type_scope, parameter_ir_types,
+                            path, &mut call_scope, parameter_ir_types,
                             return_ir_type, parameter_names, body, captured, symbols, strings,
                             external_backings, interpreter, type_bank, ir_symbols
                         )?;
