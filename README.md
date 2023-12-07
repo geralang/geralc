@@ -1,4 +1,4 @@
-<p align="center"><img src="./banner.png" height=400/></p>
+<p align="center"><img src="./banner.png" height=250/></p>
 
 ### Links
 
