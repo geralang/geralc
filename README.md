@@ -1,12 +1,9 @@
-# Gera Compiler
-
-*The compiler for Gera, a statically typed and garbage collected programming language without type annotations.*
+<p align="center"><img src="./banner.png" height=400/></p>
 
 ### Links
 
-- [Standard library](https://github.com/typesafeschwalbe/gerastd)
-- [VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
-- [Advent of Code 2023 solutions (written in Gera)](https://github.com/typesafeschwalbe/gera-aoc)
+[Standard library](https://github.com/typesafeschwalbe/gerastd)
+[VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
 
 ### Progress
 
