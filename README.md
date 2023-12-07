@@ -2,8 +2,8 @@
 
 ### Links
 
-[Standard library](https://github.com/typesafeschwalbe/gerastd)
-[VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
+- [Standard library](https://github.com/typesafeschwalbe/gerastd)
+- [VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
 
 ### Progress
 
