@@ -164,7 +164,7 @@ impl Lexer {
                         } else if !is_backslash {
                             content.push(self.current());
                         }
-                        escaped = is_backslash;
+                        escaped = is_backslash && !escaped;
                         self.next();
                     }
                     self.next();
