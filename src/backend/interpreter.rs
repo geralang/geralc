@@ -26,7 +26,7 @@ pub enum Value {
     String(Rc<str>),
     Array(Rc<RefCell<Box<[Value]>>>),
     Object(Rc<RefCell<HashMap<StringIdx, Value>>>),
-    Closure(Vec<(StringIdx, SourceRange)>, Rc<RefCell<Vec<StackFrame>>>, Vec<TypedAstNode>),
+    Closure(Vec<(StringIdx, SourceRange)>, StackFrame, Vec<TypedAstNode>),
     Variant(StringIdx, Box<Value>)
 }
 
@@ -132,15 +132,13 @@ impl Interpreter {
             Ok(Value::Array(RefCell::new(values.into()).into()))
         });
         builtins.insert(path_from(&["core", "exhaust"], strings), |interpreter, _, params, symbols, external_backings, strings| {
-            let (captured_stack, body) = if let Value::Closure(
-                _, captured_stack, body
-            ) = params[0].clone() { (captured_stack, body) } else { panic!("value should be a closure") };
+            let (captured_frame, body) = if let Value::Closure(
+                _, captured_frame, body
+            ) = params[0].clone() { (captured_frame, body) } else { panic!("value should be a closure") };
             interpreter.stack_trace.push(("<closure>".into(), strings.insert("???"), 0));
             let end_tag = strings.insert("end");
-            let captured_stack_frames = captured_stack.borrow().len();
-            for f in (0..captured_stack_frames).rev() {
-                interpreter.stack.push(captured_stack.borrow()[f].clone());
-            }
+            interpreter.stack.push(captured_frame);
+            interpreter.stack.push(RefCell::new(HashMap::new()).into());
             loop {
                 if let Some(error) = interpreter.evaluate_nodes(&body, symbols, external_backings, strings) {
                     return Err(error);
@@ -150,9 +148,8 @@ impl Interpreter {
                     if tag == end_tag { break; }
                 } else { panic!("should return variant"); }
             }
-            for _ in (0..captured_stack_frames).rev() {
-                interpreter.stack.pop();
-            }
+            interpreter.stack.pop();
+            interpreter.stack.pop();
             Ok(Value::Unit)
         });
         builtins.insert(path_from(&["core", "panic"], strings), |interpreter, source, params, _, _, strings| {
@@ -331,7 +328,7 @@ impl Interpreter {
         });
         Interpreter {
             constants: HashMap::new(),
-            stack: Vec::new(),
+            stack: vec![RefCell::new(HashMap::new()).into()],
             returned_value: None,
             stack_trace: Vec::new(),
             builtins
@@ -355,14 +352,12 @@ impl Interpreter {
         external_backings: &HashMap<NamespacePath, StringIdx>,
         strings: &mut StringMap
     ) -> Option<Error> {
-        self.stack.push(RefCell::new(HashMap::new()).into());
         for node in nodes {
             if self.returned_value.is_some() { break; }
             if let Err(error) = self.evaluate_node(node, symbols, external_backings, strings) {
                 return Some(error);
             }
         }
-        self.stack.pop();
         None
     }
 
@@ -425,12 +420,9 @@ impl Interpreter {
                 panic!("procedure should not be in the tree by now");
             }
             AstNodeVariant::Function { arguments, body } => {
-                let mut cloned_stack = Vec::new();
-                for frame in &self.stack {
-                    cloned_stack.push(RefCell::new(frame.borrow().clone()).into())
-                }
+                let captured = self.stack[self.stack.len() - 1].borrow().clone();
                 Ok(Value::Closure(
-                    arguments.clone(), RefCell::new(cloned_stack).into(), body.clone()
+                    arguments.clone(), RefCell::new(captured).into(), body.clone()
                 ))
             }
             AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
@@ -557,7 +549,7 @@ impl Interpreter {
                     }
                 }
                 let called = self.evaluate_node(&*called, symbols, external_backings, strings)?;
-                let (parameter_names, captured_stack, body) = if let Value::Closure(
+                let (parameter_names, captures, body) = if let Value::Closure(
                     a, b, c
                 ) = called { (a, b, c) } else { panic!("value should be a closure") };
                 let mut parameter_values = HashMap::new();
@@ -567,20 +559,15 @@ impl Interpreter {
                         self.evaluate_node(&arguments[param_idx], symbols, external_backings, strings)?
                     );
                 }
-                let captured_stack_frames = captured_stack.borrow().len();
-                for f in (0..captured_stack_frames).rev() {
-                    self.stack.push(captured_stack.borrow()[f].clone());
-                }
+                self.stack.push(captures);
                 self.stack.push(RefCell::new(parameter_values).into());
                 self.stack_trace_push("<closure>".into(), node.source(), strings);
                 if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, strings) {
                     return Err(error);
                 }
                 self.stack.pop();
+                self.stack.pop();
                 self.stack_trace.pop();
-                for _ in (0..captured_stack_frames).rev() {
-                    self.stack.pop();
-                }
                 let return_value = self.get_return_value();
                 return Ok(return_value);
             }
@@ -754,7 +741,13 @@ impl Interpreter {
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a >= b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a >= b),
-                    _ => panic!("values should be numbers of the same type")
+                    (a, b) => {
+                        println!("{:?} + {:?}", a, b);
+                        println!("{}", Error::new([
+                            ErrorSection::Code(node_source)
+                        ].into()).display(strings));
+                        panic!("values should be numbers of the same type")
+                    }
                 })
             }
             AstNodeVariant::Equals { a, b } => {

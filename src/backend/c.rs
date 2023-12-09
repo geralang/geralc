@@ -32,10 +32,12 @@ pub fn generate_c(
     output.push_str("\n");
     emit_comparison_functions(&types, strings, &mut output);
     let mut constants = ConstantPool::new();
+    let mut static_var_vals = HashMap::new();
     let mut constant_dependants = String::new();
     constant_dependants.push_str("\n");
     emit_symbol_declarations(
-        &symbols, &types, &mut constants, strings, &mut external, &mut constant_dependants
+        &symbols, &types, &mut constants, &mut static_var_vals, strings, &mut external,
+        &mut constant_dependants
     );
     let mut conversions = ConversionFunctions {
         declarations: String::new(),
@@ -59,8 +61,10 @@ pub fn generate_c(
     constant_dependants.push_str("\n");
     constant_dependants.push_str(&procedure_impls);
     output.push_str("\n");
-    emit_constant_declarations(&constants, &mut types, strings, &mut output);
+    emit_constant_declarations(&constants, &mut types, &mut output);
     output.push_str(&constant_dependants);
+    output.push_str("\n");
+    emit_constant_initializers(&constants, &static_var_vals, &mut types, strings, &mut output);
     output.push_str("\n");
     emit_main_function(&main_procedure_path, strings, &mut output);
     return output;
@@ -592,6 +596,7 @@ fn emit_symbol_declarations(
     symbols: &Vec<IrSymbol>,
     types: &IrTypeBank,
     constants: &mut ConstantPool,
+    static_var_vals: &mut HashMap<NamespacePath, (ConstantValue, IrType)>,
     strings: &StringMap,
     external: &mut HashMap<NamespacePath, StringIdx>,
     output: &mut String
@@ -647,19 +652,17 @@ fn emit_symbol_declarations(
             }
             IrSymbol::Variable { path, value_type, value } => {
                 if let IrType::Unit = value_type.direct(types) { continue; }
-                output.push_str("const ");
                 emit_type(*value_type, types, output);
                 output.push_str(" ");
                 emit_path(path, strings, output);
-                output.push_str(" = ");
-                let value = constants.insert(value, *value_type, types);
-                emit_value(value, *value_type, types, constants, strings, output);
                 output.push_str(";\n");
+                let value = constants.insert(value, *value_type, types);
+                static_var_vals.insert(path.clone(), (value, *value_type));
             }
             IrSymbol::ExternalVariable { path, backing, value_type } => {
                 if let IrType::Unit = value_type.direct(types) { continue; }
                 external.insert(path.clone(), *backing);
-                output.push_str("extern const ");
+                output.push_str("extern ");
                 emit_type(*value_type, types, output);  
                 output.push_str(" ");
                 output.push_str(strings.get(*backing));
@@ -707,12 +710,10 @@ fn emit_implicit_conversion(
 ) {
     from_type = from_type.direct(types);
     to_type = to_type.direct(types);
-    if from_type.eq(&to_type, types, &mut HashMap::new()) {
+    if from_type == to_type {
         output.push_str(variable);
         return;
     }
-    println!("{:?} -> {:?}", from_type, to_type);
-    println!("{}", types.display(strings));
     let mut conversion_function_name = String::new();
     emit_conversion_function_name(from_type, to_type, &mut conversion_function_name);
     if !conversions.declared.contains(&(from_type, to_type)) {
@@ -1243,7 +1244,7 @@ fn emit_constant_name(idx: usize, output: &mut String) {
     output.push_str(&idx.to_string());
 }
 
-fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, strings: &StringMap, output: &mut String) {
+fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, output: &mut String) {
     for vi in 0..constants.get_value_count() {
         match constants.get_value(vi) {
             ConstantPoolValue::String(v) => {
@@ -1300,7 +1301,12 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, 
             ConstantPoolValue::Variant(_, _, _) => {}
         }
     }
-    output.push_str("\n");
+}
+
+fn emit_constant_initializers(
+    constants: &ConstantPool, static_var_vals: &HashMap<NamespacePath, (ConstantValue, IrType)>,
+    types: &mut IrTypeBank, strings: &StringMap, output: &mut String
+) {
     output.push_str("void gera_init_constants(void) {\n");
     let mut cinit = String::new();
     for vi in 0..constants.get_value_count() {
@@ -1368,6 +1374,12 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut IrTypeBank, 
             }
             ConstantPoolValue::Variant(_, _, _) => {}
         }
+    }
+    for (path, (value, value_type)) in static_var_vals {
+        emit_path(path, strings, &mut cinit);
+        cinit.push_str(" = ");
+        emit_value(*value, *value_type, types, constants, strings, &mut cinit);
+        cinit.push_str(";\n");
     }
     indent(&cinit, output);
     output.push_str("}\n");

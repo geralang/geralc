@@ -73,6 +73,51 @@ impl TypeScope {
         self.type_groups.len()
     }
 
+    pub fn transfer_into(&self, g: VarTypeIdx, dest: &mut TypeScope) -> VarTypeIdx {
+        fn transfer_type_into(src: &TypeScope, t: &Type, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> Type {
+            match t {
+                Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String |
+                Type::Panic => t.clone(),
+                Type::Array(e) => Type::Array(transfer_group_into(src, *e, dest, done)),
+                Type::Object(m, f) => Type::Object(
+                    m.iter().map(|(mn, mt)| (
+                        (*mn, transfer_group_into(src, *mt, dest, done))
+                    )).collect(),
+                    *f
+                ),
+                Type::ConcreteObject(m) => Type::ConcreteObject(
+                    m.iter().map(|(mn, mt)| (
+                        (*mn, transfer_type_into(src, mt, dest, done))
+                    )).collect()
+                ),
+                Type::Closure(a, r, c) => Type::Closure(
+                    a.iter().map(|at| transfer_group_into(src, *at, dest, done)).collect(),
+                    transfer_group_into(src, *r, dest, done),
+                    c.as_ref().map(|c| c.iter().map(|(cn, ct)|
+                        (*cn, transfer_group_into(src, *ct, dest, done))
+                    ).collect())
+                ),
+                Type::Variants(v, f) => Type::Variants(
+                    v.iter().map(|(vn, vt)| (
+                        (*vn, transfer_group_into(src, *vt, dest, done))
+                    )).collect(),
+                    *f
+                )
+            }
+        }
+        fn transfer_group_into(src: &TypeScope, g: VarTypeIdx, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> VarTypeIdx {
+            if let Some(ng) = done.get(&src.get_group_internal_index(g)) { return *ng; }
+            let ng = dest.register_variable();
+            done.insert(src.get_group_internal_index(g), ng);
+            let ngt = src.get_group_types(g).clone();
+            *dest.get_group_types_mut(ng) = ngt.map(|types|
+                types.iter().map(|t| transfer_type_into(src, t, dest, done)).collect()
+            );
+            return ng;
+        }
+        return transfer_group_into(self, g, dest, &mut HashMap::new());
+    }
+
     pub fn limit_possible_types(&mut self, a: VarTypeIdx, b: VarTypeIdx) -> Option<VarTypeIdx> {
         self.limit_possible_types_internal(a, b, Vec::new())
     }

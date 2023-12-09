@@ -33,8 +33,7 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::DoublePipe => Some(7),
         TokenType::DoubleDot |
         TokenType::DoubleDotEquals => Some(8),
-        TokenType::Hashtag => Some(9),
-        TokenType::FunctionPipe => Some(10),
+        TokenType::FunctionPipe => Some(9),
         _ => None
     }
 }
