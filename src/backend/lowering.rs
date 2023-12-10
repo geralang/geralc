@@ -867,7 +867,9 @@ impl IrGenerator {
                 let a = lower_node!(&*a, None);
                 let b = lower_node!(&*b, None);
                 let into = into_given_or_alloc!(node_type!());
-                self.add(IrInstruction::Modulo { a, b, into });
+                self.add(IrInstruction::Modulo {
+                    a, b, into, source: node.source()
+                });
                 Ok(Some(into))
             }
             AstNodeVariant::Negate { x } => {

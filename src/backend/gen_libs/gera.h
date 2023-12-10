@@ -41,7 +41,12 @@ typedef char gbool;
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh);
 void gera___rc_incr(GeraAllocation* a);
 void gera___rc_decr(GeraAllocation* a);
-
 void gera___free_nothing(char* data, size_t size);
+GeraString gera___alloc_string(const char* data);
+size_t gera___codepoint_size(char fb);
+void gera___panic(const char* reason);
+
+extern int GERA_ARGC;
+extern char** GERA_ARGV;
 
 #endif

@@ -1390,7 +1390,11 @@ fn emit_main_function(
     strings: &StringMap,
     output: &mut String
 ) {
-    output.push_str("int main(void) {\n");
+    output.push_str("int GERA_ARGC;\n");
+    output.push_str("char** GERA_ARGV;\n");
+    output.push_str("int main(int argc, char** argv) {\n");
+    output.push_str("    GERA_ARGC = argc;\n");
+    output.push_str("    GERA_ARGV = argv;\n");
     output.push_str("    gera_init_constants();\n");
     output.push_str("    gera___st_init();\n");
     output.push_str("    gera___st_push(");
@@ -2233,12 +2237,18 @@ fn emit_instruction(
             output.push_str(&divisor);
             output.push_str(";\n");
         }
-        IrInstruction::Modulo { a, b, into } => {
+        IrInstruction::Modulo { a, b, into, source } => {
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
             if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
+                output.push_str(", ");
+                emit_string_literal(strings.get(source.file_name()), output);
+                output.push_str(", ");
+                let source_line = strings.get(source.file_content())[..source.start_position()]
+                    .lines().collect::<Vec<&str>>().len();
+                output.push_str(&source_line.to_string());
                 output.push_str(");\n");
             }
             emit_variable(*into, output);
@@ -2477,7 +2487,10 @@ fn emit_instruction(
             }
             value.push_str(")");
             if returns_value {
-                emit_variable(*into, output);
+                let mut into_str = String::new();
+                emit_variable(*into, &mut into_str);
+                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+                output.push_str(&into_str);
                 output.push_str(" = ");
                 emit_implicit_conversion(
                     &value,
@@ -2528,7 +2541,10 @@ fn emit_instruction(
             }
             value.push_str(")");
             if returns_value {
-                emit_variable(*into, output);
+                let mut into_str = String::new();
+                emit_variable(*into, &mut into_str);
+                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+                output.push_str(&into_str);
                 output.push_str(" = ");
                 emit_implicit_conversion(
                     &value,

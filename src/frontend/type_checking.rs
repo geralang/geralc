@@ -490,7 +490,7 @@ fn type_check_nodes(
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
-    uninitialized_variables: &mut HashMap<StringIdx, (bool, SourceRange)>,
+    uninitialized_variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     captured_variables: &mut HashSet<StringIdx>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -555,15 +555,15 @@ fn initalize_variables(
     strings: &StringMap,
     type_scope: &mut TypeScope,
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
-    uninitialized_variables: &mut HashMap<StringIdx, (bool, SourceRange)>,
+    uninitialized_variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     scopes_variables: &[HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>],
-    scopes_uninitialized_variables: &[HashMap<StringIdx, (bool, SourceRange)>],
+    scopes_uninitialized_variables: &[HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>],
     scopes_returns: &[(SometimesReturns, AlwaysReturns)],
 ) -> Result<(), Error> {
     for variable_name in uninitialized_variables.keys().map(|s| *s).collect::<Vec<StringIdx>>() {
-        let variable_source = uninitialized_variables.get(&variable_name).expect("should exist").1;
+        let uninitialized_var = uninitialized_variables.get(&variable_name).expect("should exist");
+        let (variable_types, variable_mutable, variable_source) = *uninitialized_var;
         let mut always_has_value = true;
-        let variable_types = type_scope.register_variable();
         for scope_i in 0..scopes_uninitialized_variables.len() {
             if let Some(_) = scopes_uninitialized_variables[scope_i].get(&variable_name) {
                 let branch_always_returns = scopes_returns[scope_i].1;
@@ -584,7 +584,7 @@ fn initalize_variables(
             panic!("the variable should exist either in 'variables' or in 'uninitialized_variables'");
         }
         if !always_has_value { continue; }
-        let variable_mutable = uninitialized_variables.remove(&variable_name).expect("should still be in the map").0;
+        uninitialized_variables.remove(&variable_name);
         variables.insert(variable_name, (variable_types, variable_mutable, variable_source));
     }
     Ok(())
@@ -597,7 +597,7 @@ fn type_check_node(
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
-    uninitialized_variables: &mut HashMap<StringIdx, (bool, SourceRange)>,
+    uninitialized_variables: &mut HashMap<StringIdx, (VarTypeIdx, bool, SourceRange)>,
     captured_variables: &mut HashSet<StringIdx>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -624,7 +624,7 @@ fn type_check_node(
         }
     } }
     macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $scope_variables: expr, $uninitialized_variables: expr) => {
-        match type_check_nodes(strings, type_scope, rec_procedures, procedure_source, $variables, $scope_variables,  $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
+        match type_check_nodes(strings, type_scope, rec_procedures, procedure_source, $variables, $scope_variables, $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
@@ -702,10 +702,10 @@ fn type_check_node(
                 variables.insert(name, (value_types, mutable, node_source));
                 Some(Box::new(typed_value))
             } else {
-                uninitialized_variables.insert(name, (mutable, node_source));
+                uninitialized_variables.insert(name, (value_types, mutable, node_source));
                 None
             };
-            scope_variables.insert(name);
+            scope_variables.insert(name);     
             Ok((TypedAstNode::new(AstNodeVariant::Variable {
                 public,
                 mutable,
@@ -1062,16 +1062,12 @@ fn type_check_node(
                         node_source
                     ), (false, false)))
                 }
-            } else if let Some((variable_mutable, variable_source)) = uninitialized_variables.get(&name) {
+            } else if let Some((variable_types, variable_mutable, variable_source)) = uninitialized_variables.remove(&name) {
                 if assignment {
-                    let variable_mutable = *variable_mutable;
-                    let variable_source = *variable_source;
-                    uninitialized_variables.remove(&name);
-                    let variable_type_group = type_scope.register_variable();
-                    variables.insert(name, (variable_type_group, variable_mutable, variable_source));
+                    variables.insert(name, (variable_types, variable_mutable, variable_source));
                     Ok((TypedAstNode::new(
                         AstNodeVariant::VariableAccess { name },
-                        type_scope.register_variable(),
+                        variable_types,
                         node_source
                     ), (false, false)))
                 } else {

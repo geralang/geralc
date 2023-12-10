@@ -402,7 +402,7 @@ pub enum IrInstruction {
     Subtract { a: IrVariable, b: IrVariable, into: IrVariable },
     Multiply { a: IrVariable, b: IrVariable, into: IrVariable },
     Divide { a: IrVariable, b: IrVariable, into: IrVariable, source: SourceRange },
-    Modulo { a: IrVariable, b: IrVariable, into: IrVariable },
+    Modulo { a: IrVariable, b: IrVariable, into: IrVariable, source: SourceRange },
     Negate { x: IrVariable, into: IrVariable },
 
     LessThan { a: IrVariable, b: IrVariable, into: IrVariable },
