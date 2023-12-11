@@ -827,6 +827,7 @@ impl Interpreter {
             AstNodeVariant::Static { value } => {
                 self.evaluate_node(&*value, symbols, external_backings, strings)
             }
+            AstNodeVariant::PipedCall { .. } => panic!("piped calls should have been resolved by the type checker!")
         }
     }
 

@@ -202,11 +202,15 @@ impl Parser {
                     enforce_next!("the call to pipe into");
                     let into = enforce_expression!(&[], get_operator_precedence(TokenType::FunctionPipe), "the call to pipe into");
                     let into_source = into.source();
-                    if let AstNodeVariant::Call { called, mut arguments } = into.node_variant().clone() {
-                        arguments.insert(0, piped);
+                    if let AstNodeVariant::Call { called, arguments } = into.move_node() {
+                        let result_source = (&piped.source()..&into_source).into();
                         previous = Some(AstNode::new(
-                            AstNodeVariant::Call { called, arguments },
-                            into_source
+                            AstNodeVariant::PipedCall { 
+                                receiver: piped.into(),
+                                called,
+                                arguments
+                            },
+                            result_source
                         ));
                     } else {
                         return Err(Error::new([

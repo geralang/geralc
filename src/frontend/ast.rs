@@ -80,6 +80,7 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Assignment { variable: Box<T>, value: Box<T> },
     Return { value: Box<T> },
     Call { called: Box<T>, arguments: Vec<T> },
+    PipedCall { receiver: Box<T>, called: Box<T>, arguments: Vec<T> },
     Object { values: Vec<(StringIdx, T)> },
     Array { values: Vec<T> },
     ObjectAccess { object: Box<T>, member: StringIdx },
@@ -174,6 +175,12 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                 ),
             AstNodeVariant::Call { called, arguments } =>
                 format!("Call\n  called = \n    {}\n  arguments = \n    {}",
+                    indent(called.to_string(strings), 4),
+                    indent(arguments.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
+                ),
+                AstNodeVariant::PipedCall { receiver, called, arguments } =>
+                format!("PipedCall\n  receiver = \n    {}\n  called = \n    {}\n  arguments = \n    {}",
+                    indent(receiver.to_string(strings), 4),
                     indent(called.to_string(strings), 4),
                     indent(arguments.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),

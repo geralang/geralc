@@ -943,6 +943,76 @@ fn type_check_node(
                 arguments: typed_arguments
             }, result_type, node_source), (false, false)))
         }
+        AstNodeVariant::PipedCall { receiver, called, mut arguments } => {
+            let mut called = *called;
+            if let AstNodeVariant::VariableAccess { name } = called.node_variant() {
+                if !variables.contains_key(name) {
+                    let mut argument_types = vec![
+                        type_check_node!((*receiver).clone(), None).0.get_types()
+                    ];
+                    for argument in &arguments {
+                        let arg_types = type_check_node!(argument.clone(), None).0.get_types();
+                        argument_types.push(arg_types);
+                    }
+                    let mut call_candidates = Vec::new();
+                    for symbol_path in untyped_symbols.keys().chain(symbols.keys())
+                            .map(|p| p.clone()).collect::<Vec<NamespacePath>>() {
+                        let symbol_name = symbol_path.get_segments()[symbol_path.get_segments().len() - 1];
+                        if symbol_name != *name { continue; }
+                        //let symbol_name = symbol_name.clone();
+                        match type_check_symbol(
+                            strings, type_scope, rec_procedures, untyped_symbols, symbols, &symbol_path
+                        )? {
+                            Symbol::Constant { .. } => { continue; }
+                            Symbol::Procedure { parameter_types, public, .. } => {
+                                if !public { continue; }
+                                if parameter_types.len() != argument_types.len() { continue; }
+                                if let Some(_) = rec_procedures
+                                        .iter().position(|p| p.0 == symbol_path) {
+                                    return Err(Error::new([
+                                        ErrorSection::Error(ErrorType::RecursivePipedCall(*name)),
+                                        ErrorSection::Code(node_source)
+                                    ].into()));
+                                }
+                                let mut duplications = TypeGroupDuplications::new();
+                                let mut still_valid = true;
+                                for argument_idx in 0..argument_types.len() {
+                                    let expected_type = duplications.duplicate(parameter_types[argument_idx], type_scope);
+                                    if let None = type_scope.limit_possible_types(expected_type, argument_types[argument_idx]) {
+                                        still_valid = false;
+                                        break;
+                                    }
+                                }
+                                if !still_valid { continue; }
+                                call_candidates.push(symbol_path);
+                            }
+                        }
+                    }
+                    if call_candidates.len() > 1 {
+                        return Err(Error::new([
+                            ErrorSection::Error(ErrorType::MultipleCallCandidates(*name)),
+                            ErrorSection::Code(node_source),
+                            ErrorSection::Info(format!(
+                                "Possible candidates are:{}",
+                                call_candidates.iter().map(|c| format!("\n- {}", c.display(strings)))
+                                        .collect::<Vec<String>>().join("")
+                            ))
+                        ].into()));
+                    } else if call_candidates.len() == 1 {
+                        *called.node_variant_mut() = AstNodeVariant::ModuleAccess {
+                            path: call_candidates.remove(0)
+                        };
+                    }
+                }
+            }
+            let mut args = vec![*receiver];
+            args.append(&mut arguments);
+            let call = AstNode::new(
+                AstNodeVariant::Call { called: called.into(), arguments: args },
+                node_source
+            );
+            return Ok(type_check_node!(call, limited_to));
+        }
         AstNodeVariant::Object { values } => {
             let mut member_types = HashMap::new();
             let mut typed_values = Vec::new();
