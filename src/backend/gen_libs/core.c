@@ -162,9 +162,26 @@ GeraString gera___alloc_string(const char* data) {
         || (cu & 0b11000000) == 0b11000000) {
             result.length += 1;
         }
-        result.data[c] = cu;
+        allocation->data[c] = cu;
     }
     return result;
+}
+
+GeraString gera___wrap_static_string(const char* data) {
+    size_t length_bytes = 0;
+    size_t length = 0;
+    for(;;) {
+        char c = data[length_bytes];
+        if(c == '\0') { break; }
+        length_bytes += gera___codepoint_size(c);
+        length += 1;
+    }
+    return (GeraString) {
+        .allocation = NULL,
+        .data = data,
+        .length = length,
+        .length_bytes = length_bytes
+    };
 }
 
 size_t gera___codepoint_size(char fb) {
@@ -191,7 +208,7 @@ GeraString gera___substring(GeraString src, gint start, gint end) {
     result.allocation = src.allocation;
     result.length = end_idx - start_idx;
     result.length_bytes = length_bytes;
-    result.data = src.allocation->data + start_offset;
+    result.data = src.data + start_offset;
     return result;
 }
 
@@ -205,10 +222,10 @@ GeraString gera___concat(GeraString a, GeraString b) {
     result.length_bytes = a.length_bytes + b.length_bytes;
     result.data = allocation->data;
     for(size_t i = 0; i < a.length_bytes; i += 1) {
-        result.data[i] = a.data[i];
+        allocation->data[i] = a.data[i];
     }
     for(size_t i = 0; i < b.length_bytes; i += 1) {
-        result.data[a.length_bytes + i] = b.data[i];
+        allocation->data[a.length_bytes + i] = b.data[i];
     }
     return result;
 }
@@ -251,16 +268,6 @@ void gera___set_args(int argc, char** argv) {
     GERA_ARGS.data = GERA_ARGS.allocation->data;
     GERA_ARGS.length = argc;
     for(size_t i = 0; i < argc; i += 1) {
-        size_t length_bytes = 0;
-        size_t length = 0;
-        for(; argv[i][length_bytes] != '\0'; length += 1) {
-            length_bytes += gera___codepoint_size(argv[i][length_bytes]);
-        }
-        ((GeraString*) GERA_ARGS.data)[i] = (GeraString) {
-            .allocation = NULL,
-            .data = argv[i],
-            .length = length,
-            .length_bytes = length_bytes
-        };
+        ((GeraString*) GERA_ARGS.data)[i] = gera___wrap_static_string(argv[i]);
     }
 }

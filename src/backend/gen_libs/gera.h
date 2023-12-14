@@ -24,7 +24,7 @@ typedef struct GeraString {
     GeraAllocation* allocation;
     size_t length;
     size_t length_bytes;
-    char* data;
+    const char* data;
 } GeraString;
 
 typedef double gfloat;
@@ -43,6 +43,7 @@ void gera___rc_incr(GeraAllocation* a);
 void gera___rc_decr(GeraAllocation* a);
 void gera___free_nothing(char* data, size_t size);
 GeraString gera___alloc_string(const char* data);
+GeraString gera___wrap_static_string(const char* data);
 size_t gera___codepoint_size(char fb);
 void gera___panic(const char* reason);
 

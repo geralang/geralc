@@ -942,10 +942,10 @@ gera___panic(message_nt);
     builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
         match param_types[0].direct(types) {
             IrType::Unit => String::from(r#"
-return gera___alloc_string("<unit>");
+return gera___wrap_static_string("<unit>");
 "#),
             IrType::Boolean => String::from(r#"
-return gera___alloc_string(param0? "true" : "false");
+return gera___wrap_static_string(param0? "true" : "false");
 "#),
             IrType::Integer => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "%lld", param0);
@@ -978,7 +978,7 @@ sprintf(result, "<object %p>", param0.allocation);
 return gera___alloc_string(result);
 "#),
             IrType::ConcreteObject(_) => String::from(r#"
-return gera___alloc_string("<object>");
+return gera___wrap_static_string("<object>");
 "#),
             IrType::Variants(variant_idx) => {
                 let variant_types = types.get_variants(variant_idx);
@@ -986,7 +986,7 @@ return gera___alloc_string("<object>");
                 for (variant_name, _) in variant_types {
                     result.push_str("    case ");
                     result.push_str(&variant_name.0.to_string());
-                    result.push_str(": return gera___alloc_string(\"#");
+                    result.push_str(": return gera___wrap_static_string(\"#");
                     result.push_str(strings.get(*variant_name));
                     result.push_str(" <...>\");\n");
                 }
@@ -1036,7 +1036,7 @@ if(start_idx > end_idx) {
     sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
     gera___panic(error_message);
 }
-return gera___substring(param0, param1, param2);
+return gera___substring(param0, start_idx, end_idx);
 "#)
     });
     builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _| {
@@ -1580,7 +1580,7 @@ fn emit_instruction(
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
             output.push_str(&into_str);
-            output.push_str(" = gera___alloc_string(");
+            output.push_str(" = gera___wrap_static_string(");
             emit_string_literal(strings.get(*value), output);
             output.push_str(");\n");
         }

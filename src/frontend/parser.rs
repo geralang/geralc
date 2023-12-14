@@ -203,7 +203,6 @@ impl Parser {
                     let into = enforce_expression!(&[], get_operator_precedence(TokenType::FunctionPipe), "the call to pipe into");
                     let into_source = into.source();
                     if let AstNodeVariant::Call { called, mut arguments } = into.move_node() {
-                        let result_source = (&piped.source()..&into_source).into();
                         let mut new_arguments = vec![piped];
                         new_arguments.append(&mut arguments);
                         previous = Some(AstNode::new(
@@ -211,7 +210,7 @@ impl Parser {
                                 called,
                                 arguments: new_arguments
                             },
-                            result_source
+                            into_source
                         ));
                     } else {
                         return Err(Error::new([
