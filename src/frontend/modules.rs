@@ -248,11 +248,6 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 visit_node!(&mut **called);
                 visit_nodes!(arguments);
             }
-            AstNodeVariant::PipedCall { receiver, called, arguments } => {
-                visit_node!(&mut **receiver);
-                visit_node!(&mut **called);
-                visit_nodes!(arguments);
-            }
             AstNodeVariant::Object { values } => {
                 for member in values {
                     visit_node!(&mut member.1);

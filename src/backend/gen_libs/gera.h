@@ -46,7 +46,6 @@ GeraString gera___alloc_string(const char* data);
 size_t gera___codepoint_size(char fb);
 void gera___panic(const char* reason);
 
-extern int GERA_ARGC;
-extern char** GERA_ARGV;
+extern GeraArray GERA_ARGS;
 
 #endif

@@ -242,3 +242,25 @@ gint gera___hash(unsigned char* data, size_t data_len) {
     }
     return *((gint*) &hash);
 }
+
+GeraArray GERA_ARGS;
+void gera___set_args(int argc, char** argv) {
+    GERA_ARGS.allocation = gera___rc_alloc(
+        sizeof(GeraString) * argc, &gera___free_nothing
+    );
+    GERA_ARGS.data = GERA_ARGS.allocation->data;
+    GERA_ARGS.length = argc;
+    for(size_t i = 0; i < argc; i += 1) {
+        size_t length_bytes = 0;
+        size_t length = 0;
+        for(; argv[i][length_bytes] != '\0'; length += 1) {
+            length_bytes += gera___codepoint_size(argv[i][length_bytes]);
+        }
+        ((GeraString*) GERA_ARGS.data)[i] = (GeraString) {
+            .allocation = NULL,
+            .data = argv[i],
+            .length = length,
+            .length_bytes = length_bytes
+        };
+    }
+}

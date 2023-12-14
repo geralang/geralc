@@ -66,8 +66,6 @@ pub enum ErrorType {
     RecursiveConstant(String),
     InvalidParameterCount(String, usize, usize),
     VariableWithoutValue(StringIdx),
-    MultipleCallCandidates(StringIdx),
-    RecursivePipedCall(StringIdx),
     
     // interpreter errors
     ConstExpressionPanics,
@@ -216,14 +214,6 @@ impl ErrorType {
             ),
             ErrorType::VariableWithoutValue(name) => format!(
                 concat!("There is a variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope, but it is not guaranteed to have a value at this point"),
-                strings.get(*name)
-            ),
-            ErrorType::MultipleCallCandidates(name) => format!(
-                concat!("There are multiple candidates for a call to ", style_red!(), "{}", style_dark_red!()),
-                strings.get(*name)
-            ),
-            ErrorType::RecursivePipedCall(name) => format!(
-                concat!("This incomplete piped call to ", style_red!(), "{}", style_dark_red!(), " is possibly recursive"),
                 strings.get(*name)
             ),
 

@@ -1390,11 +1390,8 @@ fn emit_main_function(
     strings: &StringMap,
     output: &mut String
 ) {
-    output.push_str("int GERA_ARGC;\n");
-    output.push_str("char** GERA_ARGV;\n");
     output.push_str("int main(int argc, char** argv) {\n");
-    output.push_str("    GERA_ARGC = argc;\n");
-    output.push_str("    GERA_ARGV = argv;\n");
+    output.push_str("    gera___set_args(argc, argv);\n");
     output.push_str("    gera_init_constants();\n");
     output.push_str("    gera___st_init();\n");
     output.push_str("    gera___st_push(");
