@@ -1,7 +1,8 @@
-<p align="center"><img src="./banner.png" height=250/></p>
+<p align="center"><img src="./banner.png" height=400/></p>
 
 ### Links
 
+- [Package manager](https://github.com/typesafeschwalbe/gerap)
 - [Standard library](https://github.com/typesafeschwalbe/gerastd)
 - [VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
 
