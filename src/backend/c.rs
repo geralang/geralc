@@ -1206,10 +1206,12 @@ fn emit_procedure_impls(
                 );
                 body_str.push_str("\nret:\n");
                 emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
-                indent(&body_str, output);
-                if let IrType::Unit = return_type.direct(types) {} else {
-                    output.push_str("    return returned;\n");
+                if let IrType::Unit = return_type.direct(types) {
+                    body_str.push_str("return;\n");
+                } else {
+                    body_str.push_str("return returned;\n");
                 }
+                indent(&body_str, output);
                 output.push_str("}\n");
             }
             IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type } => {
@@ -1950,10 +1952,12 @@ fn emit_instruction(
             }
             body_str.push_str("\nret:\n");
             emit_scope_decrements(&body_free, variables, types, strings, &mut body_str);
-            indent(&body_str, &mut closure_body);
-            if let IrType::Unit = return_type.direct(types) {} else {
-                closure_body.push_str("    return returned;\n");
+            if let IrType::Unit = return_type.direct(types) {
+                body_str.push_str("return;\n");
+            } else {
+                body_str.push_str("return returned;\n");
             }
+            indent(&body_str, &mut closure_body);
             closure_body.push_str("}\n");
             closure_bodies.push(closure_body);
             // emit closure literal
