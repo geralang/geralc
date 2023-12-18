@@ -18,9 +18,9 @@ function gera___eq(a, b) { // assumes that types match
 
 const gera___hash = (function() {
     const random_int = () => {
-        const upper = BigInt.asIntN(64, BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))) << 32n;
-        const lower = BigInt.asIntN(32, BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
-        return BigInt.asIntN(64, upper + lower);
+        const upper = BigInt.asIntN(32, BigInt(Math.floor(Math.random() * (2 ** 32)))) << 32n;
+        const lower = BigInt.asIntN(32, BigInt(Math.floor(Math.random() * (2 ** 32))));
+        return BigInt.asIntN(64, upper | lower);
     };
     const object_hashes = new WeakMap();
     return (data) => {
