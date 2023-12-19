@@ -35,14 +35,14 @@ use std::{fs, env, collections::HashMap};
 
 fn handle_error(error: &Error, strings: &StringMap) -> ! {
     println!("{}", error.display(strings));
-    std::process::exit(1);
+    std::process::exit(1)
 }
 
 fn handle_errors(errors: &[Error], strings: &StringMap) -> ! {
     for error in errors {
         println!("{}", error.display(strings));
     }
-    std::process::exit(1);
+    std::process::exit(1)
 }
 
 fn main() {
