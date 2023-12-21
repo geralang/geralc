@@ -53,6 +53,7 @@ fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePat
 }
 
 pub fn load_builtins(
+    target_str: &str,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     type_scope: &mut TypeScope,
@@ -60,7 +61,7 @@ pub fn load_builtins(
     external_backings: &mut HashMap<NamespacePath, StringIdx>
 ) {
     load_foreign_builtins(strings, modules, type_scope, typed_symbols);
-    load_native_builtins(strings, modules, type_scope, typed_symbols, external_backings);
+    load_native_builtins(target_str, strings, modules, type_scope, typed_symbols, external_backings);
 }
 
 fn load_foreign_builtins(
@@ -275,6 +276,7 @@ fn load_foreign_builtins(
 }
 
 fn load_native_builtins(
+    target_str: &str,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     type_scope: &mut TypeScope,
@@ -283,7 +285,7 @@ fn load_native_builtins(
 ) {
     let src = strings.insert(include_str!("core.gera"));
     let file = strings.insert("<builtin>/core.gera");
-    if let Err(errors) = process_file(file, src, strings, modules, type_scope, typed_symbols, external_backings) {
+    if let Err(errors) = process_file(file, src, target_str, strings, modules, type_scope, typed_symbols, external_backings) {
         for error in errors {
             println!("{}", error.display(strings));
         }

@@ -952,6 +952,23 @@ impl Parser {
                         (&start_source..&value_source).into()
                     ));
                 }
+                TokenType::KeywordTarget => {
+                    let start_source = self.current.source;
+                    enforce_next!("the target the block requires");
+                    enforce_current_type!(&[TokenType::Identifier], "the target the block requires");
+                    let target = self.current.token_content;
+                    enforce_next!("an opening brace ('{')");
+                    enforce_current_type!(&[TokenType::BraceOpen], "an opening brace ('{')");
+                    enforce_next!("the procedure's body");
+                    let body = self.parse_block(strings, lexer)?;
+                    enforce_not_reached_end!("a closing brace ('}')");
+                    enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Target { target, body },
+                        (&start_source..&self.current.source).into()
+                    ));
+                    next!();
+                }
                 _ => return Err(Error::new([
                     ErrorSection::Error(ErrorType::TotallyUnexpectedToken(self.current.token_content)),
                     ErrorSection::Code(self.current.source)

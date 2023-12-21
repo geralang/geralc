@@ -350,6 +350,9 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::Static { value } => {
                 visit_node!(&mut **value, &mut HashSet::new());
             }
+            AstNodeVariant::Target { target: _, body: _ } => {
+                panic!("Should be expanded!");
+            }
         }
         errors
     }

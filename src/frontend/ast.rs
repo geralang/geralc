@@ -109,7 +109,8 @@ pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     ModuleAccess { path: NamespacePath },
     Use { paths: Vec<NamespacePath> },
     Variant { name: StringIdx, value: Box<T> },
-    Static { value: Box<T> }
+    Static { value: Box<T> },
+    Target { target: StringIdx, body: Vec<T> }
 }
 
 fn indent(input: String, amount: usize) -> String {
@@ -297,7 +298,12 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
             AstNodeVariant::Static { value } =>
                 format!("Static\n  value = \n    {}",
                     indent(value.to_string(strings), 4),
-                )
+                ),
+            AstNodeVariant::Target { target, body } =>
+                format!("Target\n  target = {}\n  body = \n    {}",
+                    strings.get(*target),
+                    indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
+                ),
         }
     }
 }

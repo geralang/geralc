@@ -1448,6 +1448,9 @@ fn type_check_node(
                 value: Box::new(value_typed.0),
             }, value_types, node_source), value_typed.1))
         }
+        AstNodeVariant::Target { target: _, body: _ } => {
+            panic!("Should've been expanded!");
+        }
     }
 }
 

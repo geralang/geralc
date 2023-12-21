@@ -208,10 +208,10 @@ GeraString gera___substring(GeraString src, gint start, gint end) {
 }
 
 GeraString gera___concat(GeraString a, GeraString b) {
-    GeraString result;
     GeraAllocation* allocation = gera___rc_alloc(
         a.length_bytes + b.length_bytes, &gera___free_nothing
     );
+    GeraString result;
     result.allocation = allocation;
     result.length = a.length + b.length;
     result.length_bytes = a.length_bytes + b.length_bytes;

@@ -21,7 +21,7 @@ use frontend::{
     grammar_checking::{check_grammar, ScopeType},
     modules::{Module, NamespacePath},
     type_checking::{type_check_modules, Symbol}, external::ExternalMappingParser,
-    types::TypeScope
+    types::TypeScope, target_macro::process_target_blocks
 };
 use backend::{
     lowering::lower_typed_ast,
@@ -95,11 +95,11 @@ fn main() {
     let mut type_scope = TypeScope::new();
     let mut typed_symbols = HashMap::new();
     let mut external_backings = HashMap::new();
-    load_builtins(&mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings);
+    load_builtins(&target_str, &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings);
     // read all files
     let mut file_read_errors = Vec::new();
     for file_name in args.free_values() {
-        match read_file(strings.insert(file_name), &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
+        match read_file(strings.insert(file_name), &target_str, &mut strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings) {
             Ok(_) => {}
             Err(mut errors) => file_read_errors.append(&mut errors)
         }
@@ -186,6 +186,7 @@ fn main() {
 
 pub fn read_file(
     file_path: StringIdx,
+    target_str: &str,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     type_scope: &mut TypeScope,
@@ -201,12 +202,13 @@ pub fn read_file(
         ].into())]),
     };
     // process the file
-    process_file(file_path, file_content, strings, modules, type_scope, typed_symbols, external_backings)
+    process_file(file_path, file_content, target_str, strings, modules, type_scope, typed_symbols, external_backings)
 }
 
 pub fn process_file(
     file_path: StringIdx,
     file_content: StringIdx,
+    target_str: &str,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     type_scope: &mut TypeScope,
@@ -231,6 +233,8 @@ pub fn process_file(
         let mut grammar_errors = Vec::new();
         check_grammar(&nodes, ScopeType::GlobalStatement, &mut grammar_errors);
         if grammar_errors.len() > 0 { return Err(grammar_errors); }
+        // expand target macrocs
+        process_target_blocks(&mut nodes, target_str, strings);
         // put the file into a module
         let mut module_path: NamespacePath = NamespacePath::new(Vec::new());
         if nodes.len() == 0 || match nodes[0].node_variant() {

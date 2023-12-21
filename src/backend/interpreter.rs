@@ -827,6 +827,9 @@ impl Interpreter {
             AstNodeVariant::Static { value } => {
                 self.evaluate_node(&*value, symbols, external_backings, strings)
             }
+            AstNodeVariant::Target { target: _, body: _ } => {
+                panic!("Should've been expanded!");
+            }
         }
     }
 

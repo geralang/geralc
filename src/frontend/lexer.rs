@@ -274,6 +274,7 @@ impl Lexer {
                 "else" => return Some(Ok(self.make_token("else", TokenType::KeywordElse, string_map))),
                 "unit" => return Some(Ok(self.make_token("unit", TokenType::KeywordUnit, string_map))),
                 "static" => return Some(Ok(self.make_token("const", TokenType::KeywordStatic, string_map))),
+                "target" => return Some(Ok(self.make_token("target", TokenType::KeywordTarget, string_map))),
                 _ => return Some(Ok(Token {
                     token_type: TokenType::Identifier,
                     token_content: string_map.insert(&identifier),
