@@ -159,6 +159,50 @@ impl Lexer {
                                 '\n' => {}
                                 'n' => content.push('\n'),
                                 'r' => content.push('\r'),
+                                'x' => 'char_parsing: {
+                                    fn parse_hex_digit(d: char) -> Option<u8> {
+                                        return Some(match d {
+                                            '0' => 0, '1' => 1, '2' => 2,
+                                            '3' => 3, '4' => 4, '5' => 5,
+                                            '6' => 6, '7' => 7, '8' => 8,
+                                            '9' => 9,
+                                            'a' | 'A' => 10, 'b' | 'B' => 11,
+                                            'c' | 'C' => 12, 'd' | 'D' => 13,
+                                            'e' | 'E' => 14, 'f' | 'F' => 15,
+                                            _ => return None
+                                        })
+                                    }
+                                    let mut v: u8 = 0;
+                                    self.next();
+                                    if !self.has() { 
+                                        content.push('x');
+                                        break 'char_parsing;
+                                    }
+                                    let left = self.current();
+                                    if let Some(d) = parse_hex_digit(left) {
+                                        v += d * 16;
+                                    } else {
+                                        content.push('x');
+                                        content.push(left);
+                                        break 'char_parsing;
+                                    }
+                                    self.next();
+                                    if !self.has() {
+                                        content.push('x');
+                                        content.push(left);
+                                        break 'char_parsing;
+                                    }
+                                    let right = self.current();
+                                    if let Some(d) = parse_hex_digit(right) {
+                                        v += d;
+                                    } else {
+                                        content.push('x');
+                                        content.push(left);
+                                        content.push(right);
+                                        break 'char_parsing;
+                                    }
+                                    content.push(v as char);
+                                }
                                 other => content.push(other)
                             }
                         } else if !is_backslash {
