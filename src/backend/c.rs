@@ -942,22 +942,22 @@ gera___panic(message_nt);
     builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
         match param_types[0].direct(types) {
             IrType::Unit => String::from(r#"
-return gera___wrap_static_string("<unit>");
+return gera___wrap_static_string("<unit>", 6);
 "#),
             IrType::Boolean => String::from(r#"
-return gera___wrap_static_string(param0? "true" : "false");
+return gera___wrap_static_string(param0? "true" : "false", param0? 4 : 5);
 "#),
             IrType::Integer => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "%lld", param0);
 char result[result_length + 1];
 sprintf(result, "%lld", param0);
-return gera___alloc_string(result);
+return gera___alloc_string(result, result_length);
 "#),
             IrType::Float => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "%f", param0);
 char result[result_length + 1];
 sprintf(result, "%f", param0);
-return gera___alloc_string(result);
+return gera___alloc_string(result, result_length);
 "#),
             IrType::String => {
                 let mut result = String::new();
@@ -969,16 +969,16 @@ return gera___alloc_string(result);
 size_t result_length = snprintf(NULL, 0, "<array %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<array %p>", param0.allocation);
-return gera___alloc_string(result);
+return gera___alloc_string(result, result_length);
 "#),
             IrType::Object(_) => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "<object %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<object %p>", param0.allocation);
-return gera___alloc_string(result);
+return gera___alloc_string(result, result_length);
 "#),
             IrType::ConcreteObject(_) => String::from(r#"
-return gera___wrap_static_string("<object>");
+return gera___wrap_static_string("<object>", 8);
 "#),
             IrType::Variants(variant_idx) => {
                 let variant_types = types.get_variants(variant_idx);
@@ -986,9 +986,12 @@ return gera___wrap_static_string("<object>");
                 for (variant_name, _) in variant_types {
                     result.push_str("    case ");
                     result.push_str(&variant_name.0.to_string());
-                    result.push_str(": return gera___wrap_static_string(\"#");
-                    result.push_str(strings.get(*variant_name));
-                    result.push_str(" <...>\");\n");
+                    let variant_str = format!("#{} <...>", strings.get(*variant_name));
+                    result.push_str(": return gera___wrap_static_string(\"");
+                    result.push_str(&variant_str);
+                    result.push_str("\", ");
+                    result.push_str(&variant_str.len().to_string());
+                    result.push_str(");\n");
                 }
                 result.push_str("}\n");
                 result
@@ -997,7 +1000,7 @@ return gera___wrap_static_string("<object>");
 size_t result_length = snprintf(NULL, 0, "<closure %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<closure %p>", param0.allocation);
-return gera___alloc_string(result);
+return gera___alloc_string(result, result_length);
 "#),
             IrType::Indirect(_) => panic!("should be direct"),
         }
@@ -1447,7 +1450,9 @@ fn emit_procedure_name(
 fn emit_string_literal(value: &str, output: &mut String) {
     output.push('"');
     output.push_str(
-        &value.replace("\\", "\\\\")
+        &value
+            .replace("\\", "\\\\")
+            .replace("\x00", "\\x00")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\"", "\\\"")
@@ -1584,6 +1589,8 @@ fn emit_instruction(
             output.push_str(&into_str);
             output.push_str(" = gera___wrap_static_string(");
             emit_string_literal(strings.get(*value), output);
+            output.push_str(", ");
+            output.push_str(&strings.get(*value).len().to_string());
             output.push_str(");\n");
         }
         IrInstruction::LoadObject { member_values, into } => {

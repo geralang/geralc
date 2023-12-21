@@ -42,8 +42,8 @@ GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh);
 void gera___rc_incr(GeraAllocation* a);
 void gera___rc_decr(GeraAllocation* a);
 void gera___free_nothing(char* data, size_t size);
-GeraString gera___alloc_string(const char* data);
-GeraString gera___wrap_static_string(const char* data);
+GeraString gera___alloc_string(const char* data, size_t length_bytes);
+GeraString gera___wrap_static_string(const char* data, size_t length_bytes);
 size_t gera___codepoint_size(char fb);
 void gera___panic(const char* reason);
 

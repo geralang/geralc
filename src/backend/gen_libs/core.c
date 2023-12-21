@@ -145,36 +145,31 @@ void gera___verify_integer_divisor(gint d, const char* file, size_t line) {
     gera___panic(INVALID_INTEGER_DIVISOR);
 }
 
-GeraString gera___alloc_string(const char* data) {
-    size_t size = 0;
-    for(;;size += 1) {
-        if(data[size] == '\0') { break; }
-    }
-    GeraString result;
-    GeraAllocation* allocation = gera___rc_alloc(size, &gera___free_nothing);
-    result.allocation = allocation;
-    result.length = 0;
-    result.data = allocation->data;
-    result.length_bytes = size;
-    for(size_t c = 0; c < size; c += 1) {
+GeraString gera___alloc_string(const char* data, size_t length_bytes) {
+    GeraAllocation* allocation = gera___rc_alloc(
+        length_bytes, &gera___free_nothing
+    );
+    size_t length = 0;
+    for(size_t c = 0; c < length_bytes; c += 1) {
         char cu = data[c];
         if((cu & 0b10000000) == 0b00000000
         || (cu & 0b11000000) == 0b11000000) {
-            result.length += 1;
+            length += 1;
         }
         allocation->data[c] = cu;
     }
-    return result;
+    return (GeraString) {
+        .allocation = allocation,
+        .data = allocation->data,
+        .length_bytes = length_bytes,
+        .length = length
+    };
 }
 
-GeraString gera___wrap_static_string(const char* data) {
-    size_t length_bytes = 0;
+GeraString gera___wrap_static_string(const char* data, size_t length_bytes) {
     size_t length = 0;
-    for(;;) {
-        char c = data[length_bytes];
-        if(c == '\0') { break; }
-        length_bytes += gera___codepoint_size(c);
-        length += 1;
+    for(size_t o = 0; o < length_bytes; length += 1) {
+        o += gera___codepoint_size(data[o]);
     }
     return (GeraString) {
         .allocation = NULL,
@@ -268,6 +263,8 @@ void gera___set_args(int argc, char** argv) {
     GERA_ARGS.data = GERA_ARGS.allocation->data;
     GERA_ARGS.length = argc;
     for(size_t i = 0; i < argc; i += 1) {
-        ((GeraString*) GERA_ARGS.data)[i] = gera___wrap_static_string(argv[i]);
+        size_t len;
+        for(len = 0; argv[i][len] != '\0'; len += 1);
+        ((GeraString*) GERA_ARGS.data)[i] = gera___wrap_static_string(argv[i], len);
     }
 }
