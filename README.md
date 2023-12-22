@@ -1,5 +1,7 @@
 <p align="center"><img src="./banner.png" height=400/></p>
 
+The Gera compiler is not intended to be used on its own. It is recommended to put `gerac` into the PATH and use `gerap` (the Gera package manager) to build / run code.
+
 ### Links
 
 - [Package manager](https://github.com/typesafeschwalbe/gerap)
