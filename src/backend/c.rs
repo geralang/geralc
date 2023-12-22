@@ -892,9 +892,9 @@ return param0.length;
         let mut result = String::new();
         result.push_str(r#"
 if(param1 < 0) {
-    size_t error_message_length = snprintf(NULL, 0, "the array length %lld is not valid", param1);
+    size_t error_message_length = snprintf(NULL, 0, "the array length %lld is not valid", (long long) param1);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the array length %lld is not valid", param1);
+    sprintf(error_message, "the array length %lld is not valid", (long long) param1);
     gera___panic(error_message);
 }"#);
         result.push_str("GeraArray result;\n");
@@ -942,22 +942,22 @@ gera___panic(message_nt);
     builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
         match param_types[0].direct(types) {
             IrType::Unit => String::from(r#"
-return gera___wrap_static_string("<unit>", 6);
+return gera___wrap_static_string("<unit>");
 "#),
             IrType::Boolean => String::from(r#"
-return gera___wrap_static_string(param0? "true" : "false", param0? 4 : 5);
+return gera___wrap_static_string(param0? "true" : "false");
 "#),
             IrType::Integer => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "%lld", param0);
+size_t result_length = snprintf(NULL, 0, "%lld", (long long) param0);
 char result[result_length + 1];
-sprintf(result, "%lld", param0);
-return gera___alloc_string(result, result_length);
+sprintf(result, "%lld", (long long) param0);
+return gera___alloc_string(result);
 "#),
             IrType::Float => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "%f", param0);
 char result[result_length + 1];
 sprintf(result, "%f", param0);
-return gera___alloc_string(result, result_length);
+return gera___alloc_string(result);
 "#),
             IrType::String => {
                 let mut result = String::new();
@@ -969,16 +969,16 @@ return gera___alloc_string(result, result_length);
 size_t result_length = snprintf(NULL, 0, "<array %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<array %p>", param0.allocation);
-return gera___alloc_string(result, result_length);
+return gera___alloc_string(result);
 "#),
             IrType::Object(_) => String::from(r#"
 size_t result_length = snprintf(NULL, 0, "<object %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<object %p>", param0.allocation);
-return gera___alloc_string(result, result_length);
+return gera___alloc_string(result);
 "#),
             IrType::ConcreteObject(_) => String::from(r#"
-return gera___wrap_static_string("<object>", 8);
+return gera___wrap_static_string("<object>");
 "#),
             IrType::Variants(variant_idx) => {
                 let variant_types = types.get_variants(variant_idx);
@@ -989,9 +989,7 @@ return gera___wrap_static_string("<object>", 8);
                     let variant_str = format!("#{} <...>", strings.get(*variant_name));
                     result.push_str(": return gera___wrap_static_string(\"");
                     result.push_str(&variant_str);
-                    result.push_str("\", ");
-                    result.push_str(&variant_str.len().to_string());
-                    result.push_str(");\n");
+                    result.push_str("\");\n");
                 }
                 result.push_str("}\n");
                 result
@@ -1000,7 +998,7 @@ return gera___wrap_static_string("<object>", 8);
 size_t result_length = snprintf(NULL, 0, "<closure %p>", param0.allocation);
 char result[result_length + 1];
 sprintf(result, "<closure %p>", param0.allocation);
-return gera___alloc_string(result, result_length);
+return gera___alloc_string(result);
 "#),
             IrType::Indirect(_) => panic!("should be direct"),
         }
@@ -1020,23 +1018,23 @@ return (gfloat) param0;
 gint start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
 if(start_idx > param0.length) { 
-    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
+    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %zu", (long long) param1, param0.length);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the start index %lld is out of bounds for a string of length %lld", param1, param0.length);
+    sprintf(error_message, "the start index %lld is out of bounds for a string of length %zu", (long long) param1, param0.length);
     gera___panic(error_message);
 }
 gint end_idx = param2;
 if(param2 < 0) { end_idx = param0.length + param2; }
 if(end_idx > param0.length) {
-    size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
+    size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %zu", (long long) param2, param0.length);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the end index %lld is out of bounds for a string of length %lld", param2, param0.length);
+    sprintf(error_message, "the end index %lld is out of bounds for a string of length %zu", (long long) param2, param0.length);
     gera___panic(error_message);
 }
 if(start_idx > end_idx) {
-    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
+    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of string is %zu)", (long long) param1, (long long) param2, param0.length);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %lld)", param1, param2, param0.length);
+    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %zu)", (long long) param1, (long long) param2, param0.length);
     gera___panic(error_message);
 }
 return gera___substring(param0, start_idx, end_idx);
@@ -1084,9 +1082,9 @@ return gera___concat(param0, param1);
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 if(param1 < 0) {
-    size_t error_message_length = snprintf(NULL, 0, "the string repetition count %lld is not valid", param1);
+    size_t error_message_length = snprintf(NULL, 0, "the string repetition count %lld is not valid", (long long) param1);
     char error_message[error_message_length + 1];
-    sprintf(error_message, "the string repetition count %lld is not valid", param1);
+    sprintf(error_message, "the string repetition count %lld is not valid", (long long) param1);
     gera___panic(error_message);
 }
 GeraAllocation* allocation = gera___rc_alloc(param1 == 0? 1 : param0.length_bytes * param1, &gera___free_nothing);
@@ -1452,7 +1450,6 @@ fn emit_string_literal(value: &str, output: &mut String) {
     output.push_str(
         &value
             .replace("\\", "\\\\")
-            .replace("\x00", "\\x00")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\"", "\\\"")
@@ -1589,8 +1586,6 @@ fn emit_instruction(
             output.push_str(&into_str);
             output.push_str(" = gera___wrap_static_string(");
             emit_string_literal(strings.get(*value), output);
-            output.push_str(", ");
-            output.push_str(&strings.get(*value).len().to_string());
             output.push_str(");\n");
         }
         IrInstruction::LoadObject { member_values, into } => {

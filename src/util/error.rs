@@ -85,18 +85,18 @@ impl ErrorType {
     pub fn display(&self, strings: &StringMap) -> String {
         match self {
             ErrorType::ArgumentDoesNotExist(got) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not a valid argument"),
+                concat!(style_red!(), "{}", style_dark_red!(), " is not a valid command line argument"),
                 got
             ),
             ErrorType::InvalidArgumentCount(argument, expected, got) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " expects {} argument{}, got {} instead"),
+                concat!("The command line argument ", style_red!(), "{}", style_dark_red!(), " expects {} value{}, but got {} instead"),
                 argument,
                 expected,
                 if *expected == 1 { "" } else { "s" },
                 got
             ),
             ErrorType::MissingArgument(name) => format!(
-                concat!("The argument ", style_red!(), "{}", style_dark_red!(), " is required, but was not provided"),
+                concat!("The command line argument ", style_red!(), "{}", style_dark_red!(), " is required, but was not provided"),
                 name
             ),
             ErrorType::FileSystemError(error) => format!(

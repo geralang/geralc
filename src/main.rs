@@ -33,6 +33,9 @@ use backend::{
 
 use std::{fs, env, collections::HashMap};
 
+use crate::cli::CliArgList;
+
+
 fn handle_error(error: &Error, strings: &StringMap) -> ! {
     println!("{}", error.display(strings));
     std::process::exit(1)
@@ -61,14 +64,14 @@ fn main() {
     }
     let mut strings = StringMap::new();
     // parse cli args
-    const CLI_ARG_MAIN: CliArg = CliArg::optional("m", "specifies the path of the main procedure", 1);
-    const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", 1);
-    const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", 1);
-    let args = match CliArgs::parse(&[
-        CLI_ARG_MAIN,
-        CLI_ARG_TARGET,
-        CLI_ARG_OUTPUT
-    ], &env::args().collect::<Vec<String>>()[1..]) {
+    const CLI_ARG_MAIN: CliArg = CliArg::optional("m", "specifies the path of the main procedure", &["full-main-proc-path"]);
+    const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", &["target-format ('c' / 'js')"]);
+    const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", &["output-file"]);
+    let arg_list = CliArgList::new()
+        .add(CLI_ARG_MAIN)
+        .add(CLI_ARG_TARGET)
+        .add(CLI_ARG_OUTPUT);
+    let args = match CliArgs::parse(&arg_list, &env::args().collect::<Vec<String>>()[1..]) {
         Ok(args) => args,
         Err(error) => handle_error(&error, &strings)
     };

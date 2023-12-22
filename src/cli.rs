@@ -1,5 +1,5 @@
 
-use crate::util::error::{Error, ErrorSection, ErrorType};
+use crate::{util::error::{Error, ErrorSection, ErrorType}, style_cyan, style_reset, style_dark_red, style_bold_cyan};
 
 use std::collections::HashMap;
 
@@ -9,17 +9,58 @@ pub struct CliArg {
     name: &'static str,
     description: &'static str,
     required: bool,
-    value_count: usize
+    value_descriptions: &'static [&'static str]
 }
 
 impl CliArg {
-    pub const fn optional(name: &'static str, description: &'static str, value_count: usize) -> CliArg {
-        CliArg { name, description, required: false, value_count }
+    pub const fn optional(name: &'static str, description: &'static str, value_descriptions: &'static [&'static str]) -> CliArg {
+        CliArg { name, description, required: false, value_descriptions }
     }
-    pub const fn required(name: &'static str, description: &'static str, value_count: usize) -> CliArg {
-        CliArg { name, description, required: true, value_count }
+    pub const fn required(name: &'static str, description: &'static str, value_descriptions: &'static [&'static str]) -> CliArg {
+        CliArg { name, description, required: true, value_descriptions }
     }
 }
+
+
+pub struct CliArgList {
+    args: Vec<CliArg>
+}
+
+impl CliArgList {
+    pub fn new() -> CliArgList {
+        return CliArgList { args: Vec::new() }
+    } 
+    pub fn add(mut self, arg: CliArg) -> Self {
+        self.args.push(arg);
+        self
+    }
+    pub fn describe(&self) -> String {
+        let mut output = String::from("Available arguments:");
+        for arg in &self.args {
+            output.push('\n');
+            output.push_str(style_bold_cyan!());
+            output.push('-');
+            output.push_str(arg.name);
+            output.push_str(concat!(style_reset!(), style_cyan!()));
+            for value_description in arg.value_descriptions {
+                output.push(' ');
+                output.push('<');
+                output.push_str(value_description);
+                output.push('>');
+            }
+            if arg.required {
+                output.push_str(concat!(style_dark_red!(), " (Required!)"));
+            }
+            output.push_str("\n");
+            output.push_str(style_reset!());
+            output.push_str("  -> ");
+            output.push_str(arg.description);
+            output.push_str(style_reset!());
+        }
+        return output;
+    }
+}
+
 
 
 pub struct CliArgs {
@@ -28,7 +69,7 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
-    pub fn parse(args: &[CliArg], env_args: &[String]) -> Result<CliArgs, Error> {
+    pub fn parse(args: &CliArgList, env_args: &[String]) -> Result<CliArgs, Error> {
         let mut parsed = CliArgs {
             arg_values: HashMap::new(),
             free_values: Vec::new()
@@ -39,7 +80,7 @@ impl CliArgs {
             if current.len() > 1 && current.starts_with("-") {
                 let arg_name = String::from(&current[1..]);
                 let mut arg = None;
-                for searched_arg in args {
+                for searched_arg in &args.args {
                     if searched_arg.name == arg_name {
                         arg = Some(searched_arg);
                         break;
@@ -52,16 +93,17 @@ impl CliArgs {
                         collected_args.push(env_args[i].clone());
                         i += 1;
                     }
-                    if collected_args.len() < arg.value_count {
+                    if collected_args.len() < arg.value_descriptions.len() {
                         return Err(Error::new([
-                            ErrorSection::Error(ErrorType::InvalidArgumentCount(arg_name, arg.value_count, collected_args.len()))
+                            ErrorSection::Error(ErrorType::InvalidArgumentCount(arg_name, arg.value_descriptions.len(), collected_args.len())),
+                            ErrorSection::Help(args.describe())
                         ].into()));
                     }
                     parsed.arg_values.insert(*arg, collected_args);
                 } else {
                     return Err(Error::new([
                         ErrorSection::Error(ErrorType::ArgumentDoesNotExist(arg_name)),
-                        ErrorSection::Help(format!("List of available arguments: {}", args.iter().map(|a| format!("\n'{}' - {}", a.name, a.description)).collect::<Vec<String>>().join("")))
+                        ErrorSection::Help(args.describe())
                     ].into()));
                 }
             } else {
@@ -69,10 +111,11 @@ impl CliArgs {
                 i += 1;
             }
         }
-        for arg in args {
+        for arg in &args.args {
             if arg.required && !parsed.arg_values.contains_key(arg) {
                 return Err(Error::new([
                     ErrorSection::Error(ErrorType::MissingArgument(arg.name)),
+                    ErrorSection::Help(args.describe())
                 ].into()))
             }
         }

@@ -107,11 +107,11 @@ void gera___panic(const char* message) {
     for(size_t i = stack_trace_size - 1;;) {
         GeraStackItem* si = &stack_trace[i];
         printf(
-            ERROR_INDEX_COLOR " %lld " ERROR_PROCEDURE_COLOR "%s",
+            ERROR_INDEX_COLOR " %zu " ERROR_PROCEDURE_COLOR "%s",
             i, si->name
         );
         printf(
-            ERROR_NOTE_COLOR " at " ERROR_FILE_NAME_COLOR "%s:%lld" ERROR_NOTE_COLOR "\n",
+            ERROR_NOTE_COLOR " at " ERROR_FILE_NAME_COLOR "%s:%zu" ERROR_NOTE_COLOR "\n",
             si->file,
             si->line
         );
@@ -122,16 +122,16 @@ void gera___panic(const char* message) {
     exit(1);
 }
 
-#define INVALID_ARRAY_IDX_ERROR_MSG "the index %lld is out of bounds for an array of length %lld"
+#define INVALID_ARRAY_IDX_ERROR_MSG "the index %lld is out of bounds for an array of length %zu"
 
 size_t gera___verify_index(gint index, size_t size, const char* file, size_t line) {
     size_t final_index;
     if(index < 0) { final_index = (size_t) (((gint) size) + index); }
     else { final_index = (size_t) index; }
     if(final_index < size) { return final_index; }
-    size_t error_message_length = snprintf(NULL, 0, INVALID_ARRAY_IDX_ERROR_MSG, index, size);
+    size_t error_message_length = snprintf(NULL, 0, INVALID_ARRAY_IDX_ERROR_MSG, (long long) index, size);
     char error_message[error_message_length + 1];
-    sprintf(error_message, INVALID_ARRAY_IDX_ERROR_MSG, index, size);
+    sprintf(error_message, INVALID_ARRAY_IDX_ERROR_MSG, (long long) index, size);
     gera___st_push("<index>", file, line);
     gera___panic(error_message);
     return -1;
@@ -145,18 +145,17 @@ void gera___verify_integer_divisor(gint d, const char* file, size_t line) {
     gera___panic(INVALID_INTEGER_DIVISOR);
 }
 
-GeraString gera___alloc_string(const char* data, size_t length_bytes) {
+GeraString gera___alloc_string(const char* data) {
+    size_t length = 0;
+    size_t length_bytes = 0;
+    for(; data[length_bytes] != '\0'; length += 1) {
+        length_bytes += gera___codepoint_size(data[length_bytes]);
+    }
     GeraAllocation* allocation = gera___rc_alloc(
         length_bytes, &gera___free_nothing
     );
-    size_t length = 0;
     for(size_t c = 0; c < length_bytes; c += 1) {
-        char cu = data[c];
-        if((cu & 0b10000000) == 0b00000000
-        || (cu & 0b11000000) == 0b11000000) {
-            length += 1;
-        }
-        allocation->data[c] = cu;
+        allocation->data[c] = data[c];
     }
     return (GeraString) {
         .allocation = allocation,
@@ -166,10 +165,11 @@ GeraString gera___alloc_string(const char* data, size_t length_bytes) {
     };
 }
 
-GeraString gera___wrap_static_string(const char* data, size_t length_bytes) {
+GeraString gera___wrap_static_string(const char* data) {
     size_t length = 0;
-    for(size_t o = 0; o < length_bytes; length += 1) {
-        o += gera___codepoint_size(data[o]);
+    size_t length_bytes = 0;
+    for(; data[length_bytes] != '\0'; length += 1) {
+        length_bytes += gera___codepoint_size(data[length_bytes]);
     }
     return (GeraString) {
         .allocation = NULL,
@@ -263,8 +263,6 @@ void gera___set_args(int argc, char** argv) {
     GERA_ARGS.data = GERA_ARGS.allocation->data;
     GERA_ARGS.length = argc;
     for(size_t i = 0; i < argc; i += 1) {
-        size_t len;
-        for(len = 0; argv[i][len] != '\0'; len += 1);
-        ((GeraString*) GERA_ARGS.data)[i] = gera___wrap_static_string(argv[i], len);
+        ((GeraString*) GERA_ARGS.data)[i] = gera___wrap_static_string(argv[i]);
     }
 }
