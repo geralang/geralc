@@ -1094,7 +1094,7 @@ result.data = allocation->data;
 result.length = param0.length * param1;
 result.length_bytes = param0.length_bytes * param1;
 for(size_t i = 0; i < result.length_bytes; i += 1) {
-    result.data[i] = param0.data[i % param0.length_bytes];
+    allocation->data[i] = param0.data[i % param0.length_bytes];
 }
 return result;
 "#)
