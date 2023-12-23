@@ -796,8 +796,6 @@ fn emit_instruction(
         IrInstruction::Divide { a, b, into, source } => {    
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
-            emit_variable(*into, output);
-            output.push_str(" = ");
             if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
@@ -805,15 +803,19 @@ fn emit_instruction(
                 emit_string_literal(strings.get(source.file_name()), output);
                 output.push_str(", ");
                 let source_line = strings.get(source.file_content())[..source.start_position()]
-                    .lines().collect::<Vec<&str>>().len();
+                .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
+                emit_variable(*into, output);
+                output.push_str(" = ");
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" / ");
                 emit_variable(*b, output);
                 output.push_str(")");
             } else {
+                emit_variable(*into, output);
+                output.push_str(" = ");
                 emit_variable(*a, output);
                 output.push_str(" / ");
                 emit_variable(*b, output);
@@ -823,8 +825,6 @@ fn emit_instruction(
         IrInstruction::Modulo { a, b, into, source } => {
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
-            emit_variable(*into, output);
-            output.push_str(" = ");
             if let IrType::Integer = variable_types[a.index].direct(types) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
@@ -835,12 +835,16 @@ fn emit_instruction(
                     .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
+                emit_variable(*into, output);
+                output.push_str(" = ");
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" % ");
                 emit_variable(*b, output);
                 output.push_str(")");
             } else {
+                emit_variable(*into, output);
+                output.push_str(" = ");
                 emit_variable(*a, output);
                 output.push_str(" % ");
                 emit_variable(*b, output);
