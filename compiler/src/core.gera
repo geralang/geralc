@@ -1,0 +1,22 @@
+
+mod core
+    
+pub proc range(start, end) {
+    mut var i = start
+    return || {
+        case i >= end -> return #end unit
+        var c = i
+        i = i + 1
+        return #next c
+    }
+}
+
+pub proc range_incl(start, end) {
+    mut var i = start
+    return || {
+        case i > end -> return #end unit
+        var c = i
+        i = i + 1
+        return #next c
+    }
+}
