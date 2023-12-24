@@ -1,5 +1,5 @@
 
-use crate::{util::error::{Error, ErrorSection, ErrorType}, style_cyan, style_reset, style_dark_red, style_bold_cyan};
+use compiler::{util::error::{Error, ErrorSection, ErrorType}, style_cyan, style_reset, style_dark_red, style_bold_cyan};
 
 use std::collections::HashMap;
 

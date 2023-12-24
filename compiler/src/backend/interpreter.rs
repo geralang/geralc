@@ -741,13 +741,7 @@ impl Interpreter {
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a >= b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a >= b),
-                    (a, b) => {
-                        println!("{:?} + {:?}", a, b);
-                        println!("{}", Error::new([
-                            ErrorSection::Code(node_source)
-                        ].into()).display(strings));
-                        panic!("values should be numbers of the same type")
-                    }
+                    _ => panic!("values should be numbers of the same type")
                 })
             }
             AstNodeVariant::Equals { a, b } => {

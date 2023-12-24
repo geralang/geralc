@@ -1638,8 +1638,5 @@ pub fn display_types(
         result.push_str(" where ");
         result.push_str(&letter_types);
     }
-    format!(
-        concat!(crate::style_cyan!(), "{}", crate::style_reset!()),
-        result
-    )
+    result
 }

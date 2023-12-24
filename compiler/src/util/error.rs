@@ -82,53 +82,73 @@ pub enum ErrorType {
 }
 
 impl ErrorType {
-    pub fn display(&self, strings: &StringMap) -> String {
+    pub fn display(&self, strings: &StringMap, color: bool) -> String {
         match self {
             ErrorType::ArgumentDoesNotExist(got) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not a valid command line argument"),
-                got
+                "{}'{}'{} is not a valid command line argument",
+                if color { style_red!() } else { "" },
+                got,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::InvalidArgumentCount(argument, expected, got) => format!(
-                concat!("The command line argument ", style_red!(), "{}", style_dark_red!(), " expects {} value{}, but got {} instead"),
+                "The command line argument {}'{}'{} expects {} value{}, but got {} instead",
+                if color { style_red!() } else { "" },
                 argument,
+                if color { style_dark_red!() } else { "" },
                 expected,
                 if *expected == 1 { "" } else { "s" },
                 got
             ),
             ErrorType::MissingArgument(name) => format!(
-                concat!("The command line argument ", style_red!(), "{}", style_dark_red!(), " is required, but was not provided"),
-                name
+                "The command line argument {}'{}'{} is required, but was not provided",
+                if color { style_red!() } else { "" },
+                name,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::FileSystemError(error) => format!(
-                concat!("An error occured while interacting with the file system: ", style_red!(), "{}", style_dark_red!()),
-                error
+                "An error occured while interacting with the file system: {}'{}'{}",
+                if color { style_red!() } else { "" },
+                error,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::InvalidFileExtension(file_path) => format!(
-                concat!("The file ", style_red!(), "{}", style_dark_red!(), " has an extension not recognized by the compiler"),
-                file_path
+                "The file {}'{}'{} has an extension not recognized by the compiler",
+                if color { style_red!() } else { "" },
+                file_path,
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::InvalidCharacter(got) => format!(
-                concat!("Encountered ", style_red!(), "{}", style_dark_red!(), ", which is an invalid character"),
-                got
+                "Encountered {}'{}'{}, which is an invalid character",
+                if color { style_red!() } else { "" },
+                got,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::IntLiteralOverflows(value) => format!(
-                concat!("The value ", style_red!(), "{}", style_dark_red!(), " does not fit into a single integer"),
-                strings.get(*value)
+                "The value {}'{}'{} does not fit into a single integer",
+                if color { style_red!() } else { "" },
+                strings.get(*value),
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::FloatLiteralOverflows(value) => format!(
-                concat!("The value ", style_red!(), "{}", style_dark_red!(), " does not fit into a single floating point number"),
-                strings.get(*value)
+                "The value {}'{}'{} does not fit into a single floating point number",
+                if color { style_red!() } else { "" },
+                strings.get(*value),
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::TypeDoesNotExist(name) => format!(
-                concat!("No type with the name ", style_red!(), "{}", style_dark_red!(), " has been defined up to this point"),
-                strings.get(*name)
+                "No type with the name {}'{}'{} has been defined up to this point",
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::NoDefinedModule(thing, name) => format!(
-                concat!("The {} ", style_red!(), "{}", style_dark_red!(), " is not defined to be in any module"),
+                "The {} {}'{}'{} is not defined to be in any module",
                 thing,
-                strings.get(*name)
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::MissingLeftExpr(expected) => format!(
@@ -140,12 +160,14 @@ impl ErrorType {
                 expected
             ),
             ErrorType::UnexpectedToken(expected, got) => format!(
-                concat!("Expected {}, but got ", style_red!(), "{}", style_dark_red!(), " instead"),
+                "Expected {}, but got {}'{}'{} instead",
                 expected,
-                strings.get(*got)
+                if color { style_red!() } else { "" },
+                strings.get(*got),
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::TotallyUnexpectedToken(got) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is totally unexpected here"),
+                "{} is totally unexpected here",
                 strings.get(*got)
             ),
             ErrorType::MayNotBePublic => format!(
@@ -162,84 +184,114 @@ impl ErrorType {
                 got
             ),
             ErrorType::DuplicateFunctionParameter(name) => format!(
-                concat!("the call parameter ", style_red!(), "{}", style_dark_red!(), " exists more than once in the same argument list"),
-                strings.get(*name)
+                "the call parameter {}'{}'{} exists more than once in the same argument list",
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::ModuleDeclarationNotAtTop => format!(
                 "The parent module must be declared at the top of the file"
             ),
             ErrorType::SymbolAlreadyExists(path) => format!(
-                concat!("the symbol ", style_red!(), "{}", style_dark_red!(), " already exists"),
-                path
+                concat!("the symbol {}'{}'{} already exists"),
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::ModuleDoesNotExist(path) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not a known module"),
-                path
+                "{}'{}'{} is not a known module",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::SymbolDoesNotExist(path) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not a known symbol"),
-                path
+                "{}'{}'{} is is not a known symbol",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::SymbolIsNotPublic(path) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " exists but is not public; therefore, this module may not access it"),
-                path
+                "{}'{}'{} exists but is not public; therefore, this module may not access it",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::ModuleAlreadyDefined(path) => format!(
-                concat!("The module ", style_red!(), "{}", style_dark_red!(), " is already defined in another file"),
-                path
+                "The module {}'{}'{} is already defined in another file",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::NoPossibleTypes => format!(
-                concat!("Incompatible types")
+                "Incompatible types"
             ),
             ErrorType::VariableDoesNotExist(name) => format!(
-                concat!("There is no variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope"),
-                strings.get(*name)
+                "There is no variable called {}'{}'{} in the current scope",
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::ImmutableAssignmant(name) => format!(
-                concat!("The variable ", style_red!(), "{}", style_dark_red!(), " was not as declared as mutable, but a new value is assigned"),
-                strings.get(*name)
+                "The variable {}'{}'{} was not as declared as mutable, but a new value is assigned",
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::RecursiveConstant(name) => format!(
-                concat!("The global constant ", style_red!(), "{}", style_dark_red!(), " is recursive"),
-                name
+                "The global constant {}'{}'{} is recursive",
+                if color { style_red!() } else { "" },
+                name,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::InvalidParameterCount(argument, expected, got) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " expects {} parameter{}, got {} instead"),
+                "{}'{}'{} expects {} parameter{}, got {} instead",
+                if color { style_red!() } else { "" },
                 argument,
+                if color { style_dark_red!() } else { "" },
                 expected,
                 if *expected == 1 { "" } else { "s" },
                 got
             ),
             ErrorType::VariableWithoutValue(name) => format!(
-                concat!("There is a variable called ", style_red!(), "{}", style_dark_red!(), " in the current scope, but it is not guaranteed to have a value at this point"),
-                strings.get(*name)
+                "There is a variable called {}'{}'{} in the current scope, but it is not guaranteed to have a value at this point",
+                if color { style_red!() } else { "" },
+                strings.get(*name),
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::ConstExpressionPanics => format!(
                 "A panic occured while evaluating a constant expression:"
             ),
             ErrorType::ConstDependsOnExternal(path) => format!(
-                concat!("The symbol ", style_red!(), "{}", style_dark_red!(), " is implemented externally, meaning it may not be used in constant values"),
-                path
+                "The symbol {}'{}'{} is implemented externally, meaning it may not be used in constant values",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
 
             ErrorType::NoMainProcedureDefined(target) => format!(
-                concat!("The target format ", style_red!(), "{}", style_dark_red!(), " requires a main procedure to be defined"),
-                target
+                "The target format {}'{}'{} requires a main procedure to be defined",
+                if color { style_red!() } else { "" },
+                target,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::InvalidMainProcedure(path) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not the name of a valid main procedure"),
-                path
+                "{}'{}'{} is not the name of a valid main procedure",
+                if color { style_red!() } else { "" },
+                path,
+                if color { style_dark_red!() } else { "" }
             ),
             ErrorType::ConstantClosure => format!(
                 "Closures may not be used as values for constants"
             ),
 
             ErrorType::InvalidCompileTarget(target) => format!(
-                concat!(style_red!(), "{}", style_dark_red!(), " is not a valid compilation target"),
-                target
+                "{}'{}'{} is not a valid compilation target",
+                if color { style_red!() } else { "" },
+                target,
+                if color { style_dark_red!() } else { "" }
             )
         }
     }
@@ -256,11 +308,29 @@ pub enum ErrorSection {
 }
 
 impl ErrorSection {
-    pub fn display(&self, strings: &StringMap) -> String {
+    pub fn display(&self, strings: &StringMap, color: bool) -> String {
         match self {
-            ErrorSection::Error(error_type) => format!(concat!(style_bold_dark_red!(), "error: ", style_dark_red!(), "{}", style_reset!()), error_type.display(strings)),
-            ErrorSection::Info(message) => format!(concat!(style_bold_cyan!(), "info: ", style_reset!(), "{}", style_reset!()), message),
-            ErrorSection::Help(message) => format!(concat!(style_bold_green!(), "help: ", style_reset!(), "{}", style_reset!()), message),
+            ErrorSection::Error(error_type) => format!(
+                "{}error: {}{}{}",
+                if color { style_bold_dark_red!() } else { "" },
+                if color { style_dark_red!() } else { "" },
+                error_type.display(strings, color),
+                if color { style_reset!() } else { "" }
+            ),
+            ErrorSection::Info(message) => format!(
+                "{}info: {}{}{}",
+                if color { style_bold_cyan!() } else { "" },
+                if color { style_reset!() } else { "" },
+                message,
+                if color { style_reset!() } else { "" }
+            ),
+            ErrorSection::Help(message) => format!(
+                "{}help: {}{}{}",
+                if color { style_bold_green!() } else { "" },
+                if color { style_reset!() } else { "" },
+                message,
+                if color { style_reset!() } else { "" }
+            ),
             ErrorSection::Code(source) => {
                 let mut output = String::new();
                 let mut source_file: Vec<char> = strings.get(source.file_content()).chars().collect::<Vec<char>>();
@@ -303,26 +373,46 @@ impl ErrorSection {
                                         marked.insert(i - (position - line_content.len() + 1), true);
                                     }
                                     output.push('\n');
-                                    if !marked.contains(&true) { output.push_str(style_gray!()); }
+                                    if !marked.contains(&true) {
+                                        if color {
+                                            output.push_str(style_gray!());
+                                        }
+                                    }
                                     output.push_str(&format!(" {: >1$}  ", line, displayed_lines_end.to_string().len()));
                                     let mut last_marked: bool = false;
                                     for c in 0..line_content.len() - 1 {
                                         if marked[c] && !last_marked {
-                                            output.push_str(style_dark_red!());
+                                            if color {
+                                                output.push_str(style_dark_red!());
+                                            }
                                             last_marked = true;
                                         } else if !marked[c] && last_marked {
-                                            output.push_str(style_reset!());
+                                            if color {
+                                                output.push_str(style_reset!());
+                                            }
                                             last_marked = false;
                                         }
                                         output.push(line_content[c]);
                                     }
-                                    output.push_str(style_reset!());
+                                    if color {
+                                        output.push_str(style_reset!());
+                                    } else if marked.contains(&true) {
+                                        output.push('\n');
+                                        output.push_str(&" ".repeat(displayed_lines_end.to_string().len() + 3));
+                                        for m in marked {
+                                            output.push(if m { '^' } else { ' ' });
+                                        }
+                                    }
                                 } else if !printed_filler {
                                     output.push('\n');
                                     output.push_str(&format!(" {}  ", " ".repeat(displayed_lines_end.to_string().len())));
-                                    output.push_str(style_gray!());
+                                    if color {
+                                        output.push_str(style_gray!());
+                                    }
                                     output.push_str(&format!("... ({} lines hidden)", source_end_line - source_start_line - 3 /* don't ask where '3' comes from, it just works */));
-                                    output.push_str(style_reset!());
+                                    if color {
+                                        output.push_str(style_reset!());
+                                    }
                                     printed_filler = true;
                                 }
                             }
@@ -353,10 +443,10 @@ impl Error {
         }
     }
 
-    pub fn display(&self, strings: &StringMap) -> String {
+    pub fn display(&self, strings: &StringMap, color: bool) -> String {
         let mut output = String::new();
         for section in &*self.sections {
-            output.push_str(&section.display(strings));
+            output.push_str(&section.display(strings, color));
             output.push('\n');
         }
         output

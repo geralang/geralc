@@ -215,8 +215,7 @@ pub fn lower_typed_ast(
 struct IrGenerator {
     instructions: Vec<Vec<IrInstruction>>,
     variables: Vec<(usize, IrType)>,
-    // reusable: Vec<usize>,
-    closure_captured: Vec<StringIdx>
+    // reusable: Vec<usize>
 }
 
 impl IrGenerator {
@@ -224,8 +223,7 @@ impl IrGenerator {
         IrGenerator { 
             instructions: Vec::new(),
             variables: Vec::new(),
-            // reusable: Vec::new(),
-            closure_captured: Vec::new()
+            // reusable: Vec::new()
         }
     }
 

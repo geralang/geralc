@@ -287,7 +287,7 @@ fn load_native_builtins(
     let file = strings.insert("<builtin>/core.gera");
     if let Err(errors) = process_file(file, src, target_str, strings, modules, type_scope, typed_symbols, external_backings) {
         for error in errors {
-            println!("{}", error.display(strings));
+            println!("{}", error.display(strings, false));
         }
         panic!("builtin file is invalid");
     }

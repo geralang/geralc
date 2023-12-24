@@ -129,24 +129,6 @@ impl IrTypeBank {
     }
     pub fn get_all_indirects(&self) -> &Vec<IrType> { &self.indirect }
 
-    fn for_every_type<F: Fn(&mut IrType)>(&mut self, action: F) {
-        for member_type in &mut self.arrays { (action)(member_type); }
-        for object in &mut self.objects {
-            for (_, member_type) in object { (action)(member_type); }
-        }
-        for concrete_object in &mut self.concrete_objects {
-            for (_, member_type) in concrete_object { (action)(member_type); }
-        }
-        for variants in &mut self.variants {
-            for (_, variant_type) in variants { (action)(variant_type); }
-        }
-        for closure in &mut self.closures {
-            for param_type in &mut closure.0 { (action)(param_type); }
-            (action)(&mut closure.1);
-        }
-        for indirect_type in &mut self.indirect { (action)(indirect_type); }
-    }
-
     pub fn display(&self, strings: &StringMap) -> String {
         fn display_type(t: IrType) -> String {
             match t {
