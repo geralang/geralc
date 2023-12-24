@@ -704,9 +704,14 @@ impl IrGenerator {
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
-                        let return_type = *returns;
+                        let given_return_type = current_type_scope.transfer_into(
+                            node.get_types(), &mut call_type_scope
+                        );
+                        let concrete_return_type = call_type_scope.limit_possible_types(
+                            *returns, given_return_type
+                        ).expect("should have a possible type");
                         let return_ir_type = var_types_to_ir_type(
-                            &call_type_scope, return_type, type_bank, strings,
+                            &call_type_scope, concrete_return_type, type_bank, strings,
                             &mut HashMap::new()
                         );
                         let proc_variant = IrGenerator::find_procedure(

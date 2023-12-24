@@ -72,7 +72,7 @@ impl TypeScope {
     pub fn get_internal_group_count(&self) -> usize {
         self.type_groups.len()
     }
-
+    
     pub fn transfer_into(&self, g: VarTypeIdx, dest: &mut TypeScope) -> VarTypeIdx {
         fn transfer_type_into(src: &TypeScope, t: &Type, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> Type {
             match t {
