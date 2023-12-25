@@ -26,24 +26,31 @@ fn main() {
                 .expect("Failed to set console mode");
         }
     }
-    let mut strings = StringMap::new();
-    if let Err(errors) = do_compilation(&mut strings) {
-        for error in errors {
-            println!("{}", error.display(&mut strings, true));
-        }
+    if let Err(errors) = do_compilation() {
+        println!("{}", errors);
     }
 }
 
-pub fn do_compilation(strings: &mut StringMap) -> Result<(), Vec<Error>> {
+pub fn display_errors(errors: Vec<Error>, strings: &mut StringMap, color: bool) -> String {
+    errors.into_iter()
+        .map(|e| e.display(strings, color))
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+pub fn do_compilation() -> Result<(), String> {
+    let mut strings = StringMap::new();
     // parse cli args
     const CLI_ARG_MAIN: CliArg = CliArg::optional("m", "specifies the path of the main procedure", &["full-main-proc-path"]);
     const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", &["target-format ('c' / 'js')"]);
     const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", &["output-file"]);
+    const CLI_ARG_DISABLE_COLOR: CliArg = CliArg::optional("no-color", "disables colored output", &[]);
     let arg_list = CliArgList::new()
         .add(CLI_ARG_MAIN)
         .add(CLI_ARG_TARGET)
-        .add(CLI_ARG_OUTPUT);
-    let args = CliArgs::parse(&arg_list, &env::args().collect::<Vec<String>>()[1..]).map_err(|e| vec![e])?;
+        .add(CLI_ARG_OUTPUT)
+        .add(CLI_ARG_DISABLE_COLOR);
+    let args = CliArgs::parse(&arg_list, &env::args().collect::<Vec<String>>()[1..]).map_err(|e| display_errors(vec![e], &mut strings, true))?;
     let target_str = args.values(CLI_ARG_TARGET)
         .expect("is required")
         .last()
@@ -56,15 +63,17 @@ pub fn do_compilation(strings: &mut StringMap) -> Result<(), Vec<Error>> {
         .last()
         .expect("is required to have one value")
         .clone();
+    let color = args.values(CLI_ARG_DISABLE_COLOR)
+        .is_none();
     let mut files = HashMap::new();
     for file_path in args.free_values() {
         files.insert(
             strings.insert(file_path),
-            read_file(file_path, strings).map_err(|e| vec![e])?
+            read_file(file_path, &mut strings).map_err(|e| display_errors(vec![e], &mut strings, color))?
         );
     }
-    let output = compiler::compile(strings, files, &target_str, main_proc)?;
-    write_file(&output_file, output).map_err(|e| vec![e])?;
+    let output = compiler::compile(&mut strings, files, &target_str, main_proc).map_err(|e| display_errors(e, &mut strings, color))?;
+    write_file(&output_file, output).map_err(|e| display_errors(vec![e], &mut strings, color))?;
     return Ok(());
 }
 
