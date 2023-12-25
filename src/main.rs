@@ -44,7 +44,7 @@ pub fn do_compilation() -> Result<(), String> {
     const CLI_ARG_MAIN: CliArg = CliArg::optional("m", "specifies the path of the main procedure", &["full-main-proc-path"]);
     const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", &["target-format ('c' / 'js')"]);
     const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", &["output-file"]);
-    const CLI_ARG_DISABLE_COLOR: CliArg = CliArg::optional("no-color", "disables colored output", &[]);
+    const CLI_ARG_DISABLE_COLOR: CliArg = CliArg::optional("c", "disables colored output", &[]);
     let arg_list = CliArgList::new()
         .add(CLI_ARG_MAIN)
         .add(CLI_ARG_TARGET)
