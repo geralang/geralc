@@ -3,20 +3,31 @@ mod core
     
 pub proc range(start, end) {
     mut var i = start
+    var step
+    case start < end -> step = 1
+    else step = -1
     return || {
-        case i >= end -> return #end unit
+        case i == end -> return #end unit
         var c = i
-        i = i + 1
+        i = i + step
         return #next c
     }
 }
 
 pub proc range_incl(start, end) {
     mut var i = start
+    var step
+    case start < end -> step = 1
+    else step = -1
+    mut var done = false
     return || {
-        case i > end -> return #end unit
+        case done -> return #end unit
+        case i == end -> {
+            done = true
+            return #next i
+        }
         var c = i
-        i = i + 1
+        i = i + step
         return #next c
     }
 }
