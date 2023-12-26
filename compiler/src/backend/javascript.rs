@@ -550,47 +550,7 @@ fn emit_instruction(
                 IrSymbol::Procedure { .. } |
                 IrSymbol::BuiltInProcedure { .. } |
                 IrSymbol::ExternalProcedure { .. } => {
-                    let (expected_parameter_types, expected_return_type) =
-                        if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types) {
-                            types.get_closure(closure_idx)
-                        } else { panic!("should be a closure"); };
-                    let mut found_variant = 0;
-                    for symbol in symbols.iter().filter(path_matches) {
-                        match symbol {
-                            IrSymbol::Procedure { variant, parameter_types, return_type, .. } |
-                            IrSymbol::BuiltInProcedure { variant, parameter_types, return_type, .. } => {
-                                let mut params_match = true;
-                                for param_idx in 0..parameter_types.len() {
-                                    if !parameter_types[param_idx].eq(
-                                        &expected_parameter_types[param_idx], types,
-                                        &mut HashMap::new()
-                                    ) {
-                                        params_match = false;
-                                        break;
-                                    }
-                                }
-                                if !params_match { continue; }
-                                if !return_type.eq(expected_return_type, types, &mut HashMap::new()) {
-                                    continue;
-                                }
-                                found_variant = *variant;
-                                break;
-                            }
-                            IrSymbol::ExternalProcedure { .. } => {
-                                break;
-                            }
-                            IrSymbol::Variable { .. } |
-                            IrSymbol::ExternalVariable { .. } => panic!("impossible")
-                        }
-                    }
-                    emit_variable(*into, output);
-                    output.push_str(" = { captures: {}, call: ");
-                    if let Some(backing) = external.get(path) {
-                        output.push_str(strings.get(*backing));
-                    } else {
-                        emit_procedure_name(path, found_variant, strings, output);
-                    }
-                    output.push_str(" };\n");
+                    panic!("Should've been converted to 'IrInstruction::LoadProcedure'!");
                 }
                 IrSymbol::Variable { .. } |
                 IrSymbol::ExternalVariable { .. } => {
@@ -651,6 +611,16 @@ fn emit_instruction(
             body_str.push_str("}\n");
             indent(&body_str, output);
             output.push_str("};\n");
+        }
+        IrInstruction::LoadProcedure { path, variant, into } => {
+            emit_variable(*into, output);
+            output.push_str(" = { captures: {}, call: ");
+            if let Some(backing) = external.get(path) {
+                output.push_str(strings.get(*backing));
+            } else {
+                emit_procedure_name(path, *variant, strings, output);
+            }
+            output.push_str(" };\n");
         }
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);

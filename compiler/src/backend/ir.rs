@@ -1,5 +1,5 @@
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::util::strings::StringMap;
 use crate::util::{
@@ -64,18 +64,19 @@ impl IrTypeBank {
         }
     }
 
+    
     pub fn insert_array(&mut self, element_type: IrType) -> IrArrayTypeIdx {
         self.arrays.iter().enumerate()
-            .find(|(_, t)| (*t).eq(&element_type, self, &mut HashMap::new()))
-            .map(|(i, _)| IrArrayTypeIdx(i))
-            .unwrap_or_else(|| {
-                self.arrays.push(element_type);
-                IrArrayTypeIdx(self.arrays.len() - 1)
-            })     
+        .find(|(_, t)| (*t).eq(&element_type, self, &mut HashMap::new()))
+        .map(|(i, _)| IrArrayTypeIdx(i))
+        .unwrap_or_else(|| {
+            self.arrays.push(element_type);
+            IrArrayTypeIdx(self.arrays.len() - 1)
+        })     
     }
     pub fn get_array(&self, idx: IrArrayTypeIdx) -> &IrType { &self.arrays[idx.0] }
     pub fn get_all_arrays(&self) -> &Vec<IrType> { &self.arrays }
-
+    
     pub fn insert_object(&mut self, member_types: HashMap<StringIdx, IrType>) -> IrObjectTypeIdx {
         for i in 0..self.objects.len() {
             if IrType::objects_eq(&self.objects[i], &member_types, self, &mut HashMap::new()) { return IrObjectTypeIdx(i); }
@@ -85,7 +86,7 @@ impl IrTypeBank {
     }
     pub fn get_object(&self, idx: IrObjectTypeIdx) -> &HashMap<StringIdx, IrType> { &self.objects[idx.0] }
     pub fn get_all_objects(&self) -> &Vec<HashMap<StringIdx, IrType>> { &self.objects }
-
+    
     pub fn insert_concrete_object(&mut self, member_types: Vec<(StringIdx, IrType)>) -> IrConcreteObjectTypeIdx {
         for i in 0..self.concrete_objects.len() {
             if IrType::concrete_objects_eq(&self.concrete_objects[i], &member_types, self, &mut HashMap::new()) { return IrConcreteObjectTypeIdx(i); }
@@ -95,7 +96,7 @@ impl IrTypeBank {
     }
     pub fn get_concrete_object(&self, idx: IrConcreteObjectTypeIdx) -> &Vec<(StringIdx, IrType)> { &self.concrete_objects[idx.0] }
     pub fn get_all_concrete_objects(&self) -> &Vec<Vec<(StringIdx, IrType)>> { &self.concrete_objects }
-
+    
     pub fn insert_variants(&mut self, variant_types: HashMap<StringIdx, IrType>) -> IrVariantTypeIdx {
         for i in 0..self.variants.len() {
             if IrType::variants_eq(&self.variants[i], &variant_types, self, &mut HashMap::new()) { return IrVariantTypeIdx(i); }
@@ -105,7 +106,7 @@ impl IrTypeBank {
     }
     pub fn get_variants(&self, idx: IrVariantTypeIdx) -> &HashMap<StringIdx, IrType> { &self.variants[idx.0] }
     pub fn get_all_variants(&self) -> &Vec<HashMap<StringIdx, IrType>> { &self.variants }
-
+    
     pub fn insert_closure(&mut self, closure: (Vec<IrType>, IrType)) -> IrClosureTypeIdx {
         for i in 0..self.closures.len() {
             if IrType::closures_eq(&self.closures[i], &closure, self, &mut HashMap::new()) { return IrClosureTypeIdx(i); }
@@ -128,7 +129,49 @@ impl IrTypeBank {
         self.indirect[idx.0] = new_type;
     }
     pub fn get_all_indirects(&self) -> &Vec<IrType> { &self.indirect }
-
+    
+    pub fn reinsert(&mut self, t: IrType, encountered: &mut HashSet<IrIndirectTypeIdx>) -> IrType {
+        match t {
+            IrType::Unit | IrType::Boolean | IrType::Integer | IrType::Float | IrType::String => t,
+            IrType::Array(arr_idx) => {
+                let t = self.reinsert(*self.get_array(arr_idx), encountered);
+                IrType::Array(self.insert_array(t))
+            }
+            IrType::Object(obj_idx) => {
+                let mt = self.get_object(obj_idx).clone().into_iter().map(|(mn, mt)| (
+                    (mn, self.reinsert(mt, encountered))
+                )).collect();
+                IrType::Object(self.insert_object(mt))
+            }
+            IrType::ConcreteObject(obj_idx) => {
+                let mt = self.get_concrete_object(obj_idx).clone().into_iter().map(|(mn, mt)| (
+                    (mn, self.reinsert(mt, encountered))
+                )).collect();
+                IrType::ConcreteObject(self.insert_concrete_object(mt))
+            }
+            IrType::Variants(var_idx) => {
+                let vt = self.get_variants(var_idx).clone().into_iter().map(|(vn, vt)| (
+                    (vn, self.reinsert(vt, encountered))
+                )).collect();
+                IrType::Variants(self.insert_variants(vt))
+            }
+            IrType::Closure(clo_idx) => {
+                let (old_param_types, old_return_type) = self.get_closure(clo_idx).clone();
+                let param_types = old_param_types.into_iter()
+                    .map(|pt| self.reinsert(pt, encountered)).collect();
+                let return_type = self.reinsert(old_return_type, encountered);
+                IrType::Closure(self.insert_closure((param_types, return_type)))
+            }
+            IrType::Indirect(ind_idx) => {
+                if encountered.contains(&ind_idx) { return t; }
+                encountered.insert(ind_idx);
+                let t = self.reinsert(*self.get_indirect(ind_idx), encountered);
+                encountered.remove(&ind_idx);
+                IrType::Indirect(self.insert_indirect(t))
+            }
+        }
+    }
+    
     pub fn display(&self, strings: &StringMap) -> String {
         fn display_type(t: IrType) -> String {
             match t {
@@ -157,14 +200,14 @@ impl IrTypeBank {
             &format!(
                 "        [{}]: {{ {} }}\n", i,
                 self.objects[i].iter().map(|(n, t)|
-                    format!("{}: {}", strings.get(*n), display_type(*t))
-                ).collect::<Vec<String>>().join(", ")
-            )
-        ));
-        result.push_str("    ]\n");
-        result.push_str("    concrete_objects [\n");
-        (0..self.concrete_objects.len()).for_each(|i| result.push_str(
-            &format!(
+                format!("{}: {}", strings.get(*n), display_type(*t))
+            ).collect::<Vec<String>>().join(", ")
+        )
+    ));
+    result.push_str("    ]\n");
+    result.push_str("    concrete_objects [\n");
+    (0..self.concrete_objects.len()).for_each(|i| result.push_str(
+        &format!(
                 "        [{}]: {{ {} }}\n", i,
                 self.concrete_objects[i].iter().map(|(n, t)|
                     format!("{}: {}", strings.get(*n), display_type(*t))
@@ -177,17 +220,17 @@ impl IrTypeBank {
             &format!(
                 "        [{}]: {{ {} }}\n", i,
                 self.variants[i].iter().map(|(n, t)|
-                    format!("{}: {}", strings.get(*n), display_type(*t))
-                ).collect::<Vec<String>>().join(", ")
-            )
-        ));
-        result.push_str("    ]\n");
-        result.push_str("    closures [\n");
-        (0..self.closures.len()).for_each(|i| result.push_str(
-            &format!(
-                "        [{}]: ({}) -> {}\n", i,
-                self.closures[i].0.iter().map(|t| display_type(*t))
-                    .collect::<Vec<String>>().join(", "),
+                format!("{}: {}", strings.get(*n), display_type(*t))
+            ).collect::<Vec<String>>().join(", ")
+        )
+    ));
+    result.push_str("    ]\n");
+    result.push_str("    closures [\n");
+    (0..self.closures.len()).for_each(|i| result.push_str(
+        &format!(
+            "        [{}]: ({}) -> {}\n", i,
+            self.closures[i].0.iter().map(|t| display_type(*t))
+            .collect::<Vec<String>>().join(", "),
                 display_type(self.closures[i].1)
             )
         ));
@@ -367,6 +410,7 @@ pub enum IrInstruction {
         parameter_types: Vec<IrType>, return_type: IrType, captured: HashMap<StringIdx, IrVariable>,
         variables: Vec<IrType>, body: Vec<IrInstruction>, into: IrVariable
     },
+    LoadProcedure { path: NamespacePath, variant: usize, into: IrVariable },
     LoadValue { value: Value, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },

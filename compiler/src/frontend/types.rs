@@ -74,6 +74,10 @@ impl TypeScope {
     }
     
     pub fn transfer_into(&self, g: VarTypeIdx, dest: &mut TypeScope) -> VarTypeIdx {
+        return self.transfer_into_internal_idx(self.get_group_internal_index(g), dest);
+    }
+
+    pub fn transfer_into_internal_idx(&self, g: usize, dest: &mut TypeScope) -> VarTypeIdx {
         fn transfer_type_into(src: &TypeScope, t: &Type, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> Type {
             match t {
                 Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String |
@@ -106,16 +110,19 @@ impl TypeScope {
             }
         }
         fn transfer_group_into(src: &TypeScope, g: VarTypeIdx, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> VarTypeIdx {
-            if let Some(ng) = done.get(&src.get_group_internal_index(g)) { return *ng; }
+            return transfer_internal_group_into(src, src.get_group_internal_index(g), dest, done);
+        }
+        fn transfer_internal_group_into(src: &TypeScope, g: usize, dest: &mut TypeScope, done: &mut HashMap<usize, VarTypeIdx>) -> VarTypeIdx {
+            if let Some(ng) = done.get(&g) { return *ng; }
             let ng = dest.register_variable();
-            done.insert(src.get_group_internal_index(g), ng);
-            let ngt = src.get_group_types(g).clone();
+            done.insert(g, ng);
+            let ngt = src.get_group_types_from_internal_index(g).clone();
             *dest.get_group_types_mut(ng) = ngt.map(|types|
                 types.iter().map(|t| transfer_type_into(src, t, dest, done)).collect()
             );
             return ng;
         }
-        return transfer_group_into(self, g, dest, &mut HashMap::new());
+        return transfer_internal_group_into(self, g, dest, &mut HashMap::new());
     }
 
     pub fn limit_possible_types(&mut self, a: VarTypeIdx, b: VarTypeIdx) -> Option<VarTypeIdx> {

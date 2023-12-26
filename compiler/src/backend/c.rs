@@ -1746,83 +1746,7 @@ fn emit_instruction(
                 IrSymbol::Procedure { .. } |
                 IrSymbol::BuiltInProcedure { .. } |
                 IrSymbol::ExternalProcedure { .. } => {
-                    let (closure_idx, (expected_parameter_types, expected_return_type)) =
-                        if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types) {
-                            (closure_idx.0, types.get_closure(closure_idx))
-                        } else { panic!("should be a closure"); };
-                    let mut found_variant = 0;
-                    for symbol in symbols.iter().filter(path_matches) {
-                        match symbol {
-                            IrSymbol::Procedure { variant, parameter_types, return_type, .. } |
-                            IrSymbol::BuiltInProcedure { variant, parameter_types, return_type, .. } => {
-                                let mut params_match = true;
-                                for param_idx in 0..parameter_types.len() {
-                                    if !parameter_types[param_idx].eq(
-                                        &expected_parameter_types[param_idx], types,
-                                        &mut HashMap::new()
-                                    ) {
-                                        params_match = false;
-                                        break;
-                                    }
-                                }
-                                if !params_match { continue; }
-                                if !return_type.eq(expected_return_type, types, &mut HashMap::new()) {
-                                    continue;
-                                }
-                                found_variant = *variant;
-                                break;
-                            }
-                            IrSymbol::ExternalProcedure { .. } => {
-                                break;
-                            }
-                            IrSymbol::Variable { .. } |
-                            IrSymbol::ExternalVariable { .. } => panic!("impossible")
-                        }
-                    }
-                    let mut closure_body = String::new();
-                    let closure_variant = closure_bodies.len();
-                    emit_type(*expected_return_type, types, &mut closure_body);
-                    closure_body.push_str(" ");
-                    emit_closure_body_name(closure_idx, closure_variant, &mut closure_body);
-                    closure_body.push_str("(GeraAllocation* allocation");
-                    for param_idx in 0..expected_parameter_types.len() {
-                        closure_body.push_str(", ");
-                        emit_type(expected_parameter_types[param_idx], types, &mut closure_body);
-                        closure_body.push_str(" param");
-                        closure_body.push_str(&param_idx.to_string());
-                    }
-                    closure_body.push_str(") {\n");
-                    closure_body.push_str("    (void)(allocation);\n");
-                    closure_body.push_str("    return ");
-                    if let Some(backing) = external.get(path) {
-                        closure_body.push_str(strings.get(*backing));
-                    } else {
-                        emit_procedure_name(path, found_variant, strings, &mut closure_body);
-                    }
-                    closure_body.push_str("(");
-                    for param_idx in 0..expected_parameter_types.len() {
-                        if param_idx > 0 { closure_body.push_str(", "); }
-                        closure_body.push_str("param");
-                        closure_body.push_str(&param_idx.to_string());
-                    }
-                    closure_body.push_str(");\n");
-                    closure_body.push_str("}\n");
-                    closure_bodies.push(closure_body);
-                    let mut into_str = String::new();
-                    emit_variable(*into, &mut into_str);
-                    emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-                    output.push_str("    ");
-                    output.push_str("{\n");
-                    output.push_str("    GeraAllocation* allocation = gera___rc_alloc(1, &gera___free_nothing);\n");
-                    output.push_str(&into_str);
-                    output.push_str(".allocation = allocation;\n");
-                    output.push_str("    ");
-                    output.push_str(&into_str);
-                    output.push_str(".procedure = &");
-                    emit_closure_body_name(closure_idx, closure_variant, output);
-                    output.push_str(";\n");
-                    output.push_str("}\n");
-                    free.insert(into.index);
+                    panic!("Should've been converted to 'IrInstruction::LoadProcedure'!")
                 }
                 IrSymbol::Variable { .. } |
                 IrSymbol::ExternalVariable { .. } => {
@@ -1966,13 +1890,13 @@ fn emit_instruction(
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-            output.push_str("    ");
             output.push_str("{\n");
             output.push_str("    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
             emit_closure_captures_name(closure_idx, variant, output);
             output.push_str("), &");
             emit_closure_free_name(closure_idx, variant, output);
             output.push_str(");\n");
+            output.push_str("    ");
             output.push_str(&into_str);
             output.push_str(".allocation = allocation;\n");
             output.push_str("    ");
@@ -2003,6 +1927,55 @@ fn emit_instruction(
                 );
                 indent(&member_value_incr_str, output);
             }
+            output.push_str("}\n");
+            free.insert(into.index);
+        }
+        IrInstruction::LoadProcedure { path, variant, into } => {
+            let (closure_idx, (expected_parameter_types, expected_return_type)) =
+                if let IrType::Closure(closure_idx) = variable_types[into.index].direct(types) {
+                    (closure_idx.0, types.get_closure(closure_idx))
+                } else { panic!("should be a closure"); };
+            let mut closure_body = String::new();
+            let closure_variant = closure_bodies.len();
+            emit_type(*expected_return_type, types, &mut closure_body);
+            closure_body.push_str(" ");
+            emit_closure_body_name(closure_idx, closure_variant, &mut closure_body);
+            closure_body.push_str("(GeraAllocation* allocation");
+            for param_idx in 0..expected_parameter_types.len() {
+                closure_body.push_str(", ");
+                emit_type(expected_parameter_types[param_idx], types, &mut closure_body);
+                closure_body.push_str(" param");
+                closure_body.push_str(&param_idx.to_string());
+            }
+            closure_body.push_str(") {\n");
+            closure_body.push_str("    (void)(allocation);\n");
+            closure_body.push_str("    return ");
+            if let Some(backing) = external.get(path) {
+                closure_body.push_str(strings.get(*backing));
+            } else {
+                emit_procedure_name(path, *variant, strings, &mut closure_body);
+            }
+            closure_body.push_str("(");
+            for param_idx in 0..expected_parameter_types.len() {
+                if param_idx > 0 { closure_body.push_str(", "); }
+                closure_body.push_str("param");
+                closure_body.push_str(&param_idx.to_string());
+            }
+            closure_body.push_str(");\n");
+            closure_body.push_str("}\n");
+            closure_bodies.push(closure_body);
+            let mut into_str = String::new();
+            emit_variable(*into, &mut into_str);
+            emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+            output.push_str("{\n");
+            output.push_str("    ");
+            output.push_str(&into_str);
+            output.push_str(".allocation = NULL;\n");
+            output.push_str("    ");
+            output.push_str(&into_str);
+            output.push_str(".procedure = &");
+            emit_closure_body_name(closure_idx, closure_variant, output);
+            output.push_str(";\n");
             output.push_str("}\n");
             free.insert(into.index);
         }
