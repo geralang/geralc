@@ -217,6 +217,28 @@ impl ExternalMappingParser {
         declared_types: &HashMap<StringIdx, Type>
     ) -> Result<Type, Error> {
         match self.current.token_type {
+            TokenType::Pipe | TokenType::DoublePipe => {
+                let mut arg_types = Vec::new();
+                if let TokenType::Pipe = self.current.token_type {
+                    self.try_next(strings, lexer)?;
+                    loop {
+                        let arg_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
+                        arg_types.push(type_scope.register_with_types(Some(vec![arg_type])));
+                        self.expect_type(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')")?;
+                        if self.current.token_type == TokenType::Pipe { break; }
+                        self.try_next(strings, lexer)?;
+                    }
+                }
+                self.try_next(strings, lexer)?;
+                self.expect_type(&[TokenType::Arrow], "an arrow ('->')")?;
+                self.try_next(strings, lexer)?;
+                let return_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
+                Ok(Type::Closure(
+                    arg_types,
+                    type_scope.register_with_types(Some(vec![return_type])),
+                    None
+                ))
+            }
             TokenType::Identifier | TokenType::KeywordUnit => {
                 let name = self.current.clone();
                 self.try_next(strings, lexer)?;

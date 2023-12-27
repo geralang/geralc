@@ -32,6 +32,17 @@ typedef double gfloat;
 typedef int64_t gint;
 typedef char gbool;
 
+#define GERA_CLOSURE(returns, ...) \
+    struct { \
+        GeraAllocation* captures; \
+        returns (*call)(GeraAllocation*, __VA_ARGS__); \
+    }
+#define GERA_CLOSURE_NOARGS(returns) \
+    struct { \
+        GeraAllocation* captures; \
+        returns (*call)(GeraAllocation*); \
+    }
+
 #define GERA_STRING_NULL_TERM(s_name, d_name) \
     char d_name[s_name.length_bytes + 1]; \
     for(size_t c = 0; c < s_name.length_bytes; c += 1) { \
