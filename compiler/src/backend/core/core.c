@@ -69,10 +69,10 @@ typedef struct GeraStackItem {
     size_t line;
 } GeraStackItem;
 
-static GERACORE_THREAD_LOCAL char stack_initialized = 0;
-static GERACORE_THREAD_LOCAL GeraStackItem* stack_trace = NULL;
-static GERACORE_THREAD_LOCAL size_t stack_trace_msize = 32;
-static GERACORE_THREAD_LOCAL size_t stack_trace_size = 0;
+GERACORE_THREAD_LOCAL char stack_initialized = 0;
+GERACORE_THREAD_LOCAL GeraStackItem* stack_trace = NULL;
+GERACORE_THREAD_LOCAL size_t stack_trace_msize = 32;
+GERACORE_THREAD_LOCAL size_t stack_trace_size = 0;
 
 void gera___st_push(const char* name, const char* file, size_t line) {
     if(!stack_initialized) {
