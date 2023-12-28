@@ -51,7 +51,7 @@ fn collect_externals(symbols: &Vec<IrSymbol>) -> HashMap<NamespacePath, StringId
 }
 
 fn emit_core_library(output: &mut String) {
-    output.push_str(include_str!("./gen_libs/core.js"));
+    output.push_str(include_str!("./core/core.js"));
     output.push_str("\n");
 }
 

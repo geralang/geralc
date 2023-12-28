@@ -71,9 +71,7 @@ pub fn generate_c(
 }
 
 fn emit_core_library(output: &mut String) {
-    output.push_str(include_str!("./gen_libs/gera.h"));
-    output.push_str("\n");
-    output.push_str(include_str!("./gen_libs/core.c"));
+    output.push_str(include_str!("./core/core.c"));
     output.push_str("\n");
 }
 
@@ -145,6 +143,25 @@ fn emit_type_declarations(types: &IrTypeBank, output: &mut String) {
 }
 
 fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut String) {
+    for closure_idx in 0..types.get_all_closures().len() {
+        output.push_str("typedef struct ");
+        emit_closure_name(closure_idx, output);
+        output.push_str(" {\n");
+        output.push_str("    GeraAllocation* allocation;\n");
+        let (parameter_types, return_type) = &types.get_all_closures()[closure_idx];
+        output.push_str("    ");
+        emit_type(*return_type, types, output);
+        output.push_str(" (*procedure)(GeraAllocation*");
+        for parameter_type in parameter_types {
+            if let IrType::Unit = parameter_type.direct(types) { continue; }
+            output.push_str(", ");
+            emit_type(*parameter_type, types, output);
+        }
+        output.push_str(");\n");
+        output.push_str("} ");
+        emit_closure_name(closure_idx, output);
+        output.push_str(";\n");
+    }
     for object_idx in 0..types.get_all_objects().len() {
         output.push_str("typedef struct ");
         emit_object_name(object_idx, output);
@@ -207,25 +224,6 @@ fn emit_type_members(types: &IrTypeBank, strings: &StringMap, output: &mut Strin
         }
         output.push_str("\n} ");
         emit_variants_name(variants_idx, output);
-        output.push_str(";\n");
-    }
-    for closure_idx in 0..types.get_all_closures().len() {
-        output.push_str("typedef struct ");
-        emit_closure_name(closure_idx, output);
-        output.push_str(" {\n");
-        output.push_str("    GeraAllocation* allocation;\n");
-        let (parameter_types, return_type) = &types.get_all_closures()[closure_idx];
-        output.push_str("    ");
-        emit_type(*return_type, types, output);
-        output.push_str(" (*procedure)(GeraAllocation*");
-        for parameter_type in parameter_types {
-            if let IrType::Unit = parameter_type.direct(types) { continue; }
-            output.push_str(", ");
-            emit_type(*parameter_type, types, output);
-        }
-        output.push_str(");\n");
-        output.push_str("} ");
-        emit_closure_name(closure_idx, output);
         output.push_str(";\n");
     }
     for object_idx in 0..types.get_all_objects().len() {
@@ -892,10 +890,15 @@ return param0.length;
         let mut result = String::new();
         result.push_str(r#"
 if(param1 < 0) {
-    size_t error_message_length = snprintf(NULL, 0, "the array length %lld is not valid", (long long) param1);
-    char error_message[error_message_length + 1];
-    sprintf(error_message, "the array length %lld is not valid", (long long) param1);
-    gera___panic(error_message);
+    size_t length_str_len = geracoredeps_display_sint_length(param1);
+    char length_str[length_str_len + 1];
+    geracoredeps_display_sint(param1, length_str);
+    length_str[length_str_len] = '\0';
+    gera___panic_pre();
+    geracoredeps_eprint("the array length ");
+    geracoredeps_eprint(length_str);
+    geracoredeps_eprint(" is not valid");
+    gera___panic_post();
 }"#);
         result.push_str("GeraArray result;\n");
         result.push_str("GeraAllocation* allocation = gera___rc_alloc(");
@@ -948,15 +951,17 @@ return gera___wrap_static_string("<unit>");
 return gera___wrap_static_string(param0? "true" : "false");
 "#),
             IrType::Integer => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "%lld", (long long) param0);
+size_t result_length = geracoredeps_display_sint_length(param0);
 char result[result_length + 1];
-sprintf(result, "%lld", (long long) param0);
+geracoredeps_display_sint(param0, result);
+result[result_length] = '\0';
 return gera___alloc_string(result);
 "#),
             IrType::Float => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "%f", param0);
+size_t result_length = geracoredeps_display_float_length(param0);
 char result[result_length + 1];
-sprintf(result, "%f", param0);
+geracoredeps_display_float(param0, result);
+result[result_length] = '\0';
 return gera___alloc_string(result);
 "#),
             IrType::String => {
@@ -966,15 +971,25 @@ return gera___alloc_string(result);
                 result
             }
             IrType::Array(_) => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "<array %p>", param0.allocation);
+size_t result_length = geracoredeps_display_pointer_length(param0.allocation) + 8;
 char result[result_length + 1];
-sprintf(result, "<array %p>", param0.allocation);
+result[0] = '<'; result[1] = 'a'; result[2] = 'r';
+result[3] = 'r'; result[4] = 'a'; result[5] = 'y';
+result[6] = ' ';
+geracoredeps_display_pointer(param0.allocation, result + 7);
+result[result_length - 1] = '>';
+result[result_length] = '\0';
 return gera___alloc_string(result);
 "#),
             IrType::Object(_) => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "<object %p>", param0.allocation);
+size_t result_length = geracoredeps_display_pointer_length(param0.allocation) + 9;
 char result[result_length + 1];
-sprintf(result, "<object %p>", param0.allocation);
+result[0] = '<'; result[1] = 'o'; result[2] = 'b';
+result[3] = 'j'; result[4] = 'e'; result[5] = 'c';
+result[6] = 't'; result[7] = ' ';
+geracoredeps_display_pointer(param0.allocation, result + 8);
+result[result_length - 1] = '>';
+result[result_length] = '\0';
 return gera___alloc_string(result);
 "#),
             IrType::ConcreteObject(_) => String::from(r#"
@@ -995,9 +1010,14 @@ return gera___wrap_static_string("<object>");
                 result
             }
             IrType::Closure(_) => String::from(r#"
-size_t result_length = snprintf(NULL, 0, "<closure %p>", param0.allocation);
+size_t result_length = geracoredeps_display_pointer_length(param0.allocation) + 10;
 char result[result_length + 1];
-sprintf(result, "<closure %p>", param0.allocation);
+result[0] = '<'; result[1] = 'c'; result[2] = 'l';
+result[3] = 'o'; result[4] = 's'; result[5] = 'u';
+result[6] = 'r'; result[7] = 'e'; result[8] = ' ';
+geracoredeps_display_pointer(param0.allocation, result + 9);
+result[result_length - 1] = '>';
+result[result_length] = '\0';
 return gera___alloc_string(result);
 "#),
             IrType::Indirect(_) => panic!("should be direct"),
@@ -1015,27 +1035,64 @@ return (gfloat) param0;
     });
     builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _| {
         String::from(r#"
-gint start_idx = param1;
+size_t start_idx = param1;
 if(param1 < 0) { start_idx = param0.length + param1; }
 if(start_idx > param0.length) { 
-    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is out of bounds for a string of length %zu", (long long) param1, param0.length);
-    char error_message[error_message_length + 1];
-    sprintf(error_message, "the start index %lld is out of bounds for a string of length %zu", (long long) param1, param0.length);
-    gera___panic(error_message);
+    size_t start_str_len = geracoredeps_display_sint_length(param1);
+    char start_str[start_str_len + 1];
+    geracoredeps_display_sint(param1, start_str);
+    start_str[start_str_len] = '\0';
+    size_t length_str_len = geracoredeps_display_uint_length(param0.length);
+    char length_str[length_str_len + 1];
+    geracoredeps_display_uint(param0.length, length_str);
+    length_str[length_str_len] = '\0';
+    gera___panic_pre();
+    geracoredeps_eprint("the start index ");
+    geracoredeps_eprint(start_str);
+    geracoredeps_eprint(" is out of bounds for a string of length ");
+    geracoredeps_eprint(length_str);
+    gera___panic_post();
 }
-gint end_idx = param2;
+size_t end_idx = param2;
 if(param2 < 0) { end_idx = param0.length + param2; }
 if(end_idx > param0.length) {
-    size_t error_message_length = snprintf(NULL, 0, "the end index %lld is out of bounds for a string of length %zu", (long long) param2, param0.length);
-    char error_message[error_message_length + 1];
-    sprintf(error_message, "the end index %lld is out of bounds for a string of length %zu", (long long) param2, param0.length);
-    gera___panic(error_message);
+    size_t end_str_len = geracoredeps_display_sint_length(param2);
+    char end_str[end_str_len + 1];
+    geracoredeps_display_sint(param2, end_str);
+    end_str[end_str_len] = '\0';
+    size_t length_str_len = geracoredeps_display_uint_length(param0.length);
+    char length_str[length_str_len + 1];
+    geracoredeps_display_uint(param0.length, length_str);
+    length_str[length_str_len] = '\0';
+    gera___panic_pre();
+    geracoredeps_eprint("the end index ");
+    geracoredeps_eprint(end_str);
+    geracoredeps_eprint(" is out of bounds for a string of length ");
+    geracoredeps_eprint(length_str);
+    gera___panic_post();
 }
 if(start_idx > end_idx) {
-    size_t error_message_length = snprintf(NULL, 0, "the start index %lld is larger than the end index %lld (length of string is %zu)", (long long) param1, (long long) param2, param0.length);
-    char error_message[error_message_length + 1];
-    sprintf(error_message, "the start index %lld is larger than the end index %lld (length of string is %zu)", (long long) param1, (long long) param2, param0.length);
-    gera___panic(error_message);
+    size_t start_str_len = geracoredeps_display_sint_length(param1);
+    char start_str[start_str_len + 1];
+    geracoredeps_display_sint(param1, start_str);
+    start_str[start_str_len] = '\0';
+    size_t end_str_len = geracoredeps_display_sint_length(param2);
+    char end_str[end_str_len + 1];
+    geracoredeps_display_sint(param2, end_str);
+    end_str[end_str_len] = '\0';
+    size_t length_str_len = geracoredeps_display_uint_length(param0.length);
+    char length_str[length_str_len + 1];
+    geracoredeps_display_uint(param0.length, length_str);
+    length_str[length_str_len] = '\0';
+    gera___panic_pre();
+    geracoredeps_eprint("the start index ");
+    geracoredeps_eprint(start_str);
+    geracoredeps_eprint(" is larger than the end index ");
+    geracoredeps_eprint(end_str);
+    geracoredeps_eprint(" (length of string is ");
+    geracoredeps_eprint(length_str);
+    geracoredeps_eprint(")");
+    gera___panic_post();
 }
 return gera___substring(param0, start_idx, end_idx);
 "#)
@@ -1049,8 +1106,8 @@ return gera___concat(param0, param1);
         let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
         else { panic!("should be variants"); };
         let mut result = String::new();
-        result.push_str("gfloat value = gera___parse_flt(param0);\n");
-        result.push_str("if(gera___parse_success) { return (");
+        result.push_str("gfloat value = geracoredeps_parse_float(param0);\n");
+        result.push_str("if(geracoredeps_parse_success) { return (");
         emit_variants_name(variant_idx.0, &mut result);
         result.push_str(") { .tag = ");
         result.push_str(&strings.insert("some").0.to_string());
@@ -1066,8 +1123,8 @@ return gera___concat(param0, param1);
         let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
         else { panic!("should be variants"); };
         let mut result = String::new();
-        result.push_str("gint value = gera___parse_int(param0);\n");
-        result.push_str("if(gera___parse_success) { return (");
+        result.push_str("gint value = geracoredeps_parse_sint(param0);\n");
+        result.push_str("if(geracoredeps_parse_success) { return (");
         emit_variants_name(variant_idx.0, &mut result);
         result.push_str(") { .tag = ");
         result.push_str(&strings.insert("some").0.to_string());
@@ -1082,10 +1139,15 @@ return gera___concat(param0, param1);
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 if(param1 < 0) {
-    size_t error_message_length = snprintf(NULL, 0, "the string repetition count %lld is not valid", (long long) param1);
-    char error_message[error_message_length + 1];
-    sprintf(error_message, "the string repetition count %lld is not valid", (long long) param1);
-    gera___panic(error_message);
+    size_t count_str_len = geracoredeps_display_sint_length(param1);
+    char count_str[count_str_len + 1];
+    geracoredeps_display_sint(param1, count_str);
+    count_str[count_str_len] = '\0';
+    gera___panic_pre();
+    geracoredeps_eprint("the string repetition count ");
+    geracoredeps_eprint(length_str);
+    geracoredeps_eprint(" is not valid");
+    gera___panic_post();
 }
 GeraAllocation* allocation = gera___rc_alloc(param1 == 0? 1 : param0.length_bytes * param1, &gera___free_nothing);
 GeraString result;
@@ -1396,7 +1458,6 @@ fn emit_main_function(
     output.push_str("int main(int argc, char** argv) {\n");
     output.push_str("    gera___set_args(argc, argv);\n");
     output.push_str("    gera_init_constants();\n");
-    output.push_str("    gera___st_init();\n");
     output.push_str("    gera___st_push(");
     emit_string_literal(&main_procedure_path.display(strings), output);
     output.push_str(", \"???\", 0);\n");
@@ -1995,11 +2056,16 @@ fn emit_instruction(
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+            let mut accessed_str = String::new();
+            emit_variable(*accessed, &mut accessed_str);
+            output.push_str("gera___rc_lock_read(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
+            let mut access_str = String::new();
             output.push_str(&into_str);
             output.push_str(" = ");
-            let mut access_str = String::new();
             access_str.push_str("(*");
-            emit_variable(*accessed, &mut access_str);
+            access_str.push_str(&accessed_str);
             access_str.push_str(".member");
             access_str.push_str(&member.0.to_string());
             access_str.push_str(")");
@@ -2008,6 +2074,9 @@ fn emit_instruction(
                 strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_read(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
             free.insert(into.index);
         }
@@ -2017,9 +2086,14 @@ fn emit_instruction(
                 .direct(types) {
                 *types.get_object(object_idx).get(member).expect("member should exist")
             } else { panic!("accessed should be an object"); };
+            let mut accessed_str = String::new();
+            emit_variable(*accessed, &mut accessed_str);
+            output.push_str("gera___rc_lock_write(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             let mut member_str = String::new();
             member_str.push_str("(*");
-            emit_variable(*accessed, &mut member_str);
+            member_str.push_str(&accessed_str);
             member_str.push_str(".member");
             member_str.push_str(&member.0.to_string());
             member_str.push_str(")");
@@ -2033,6 +2107,9 @@ fn emit_instruction(
                 strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_write(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             emit_rc_incr(&member_str, member_type, types, strings, output);
         }
         IrInstruction::GetArrayElement { accessed, index, into, source } => {
@@ -2046,6 +2123,9 @@ fn emit_instruction(
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
             let mut accessed_str = String::new();
             emit_variable(*accessed, &mut accessed_str);
+            output.push_str("gera___rc_lock_read(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             let mut index_str = String::new();
             emit_variable(*index, &mut index_str);
             output.push_str(&index_str);
@@ -2075,6 +2155,9 @@ fn emit_instruction(
                 strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_read(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
             free.insert(into.index);
         }
@@ -2086,6 +2169,9 @@ fn emit_instruction(
             } else { panic!("should be an array"); };
             let mut accessed_str = String::new();
             emit_variable(*accessed, &mut accessed_str);
+            output.push_str("gera___rc_lock_write(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             let mut index_str = String::new();
             emit_variable(*index, &mut index_str);
             output.push_str(&index_str);
@@ -2118,6 +2204,9 @@ fn emit_instruction(
                 strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_write(");
+            output.push_str(&accessed_str);
+            output.push_str(".allocation);\n");
             emit_rc_incr(&element_str, element_type, types, strings, output);
         }
         IrInstruction::GetClosureCapture { name, into } => {
@@ -2125,6 +2214,7 @@ fn emit_instruction(
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
+            output.push_str("gera___rc_lock_read(allocation);\n");
             output.push_str(&into_str);
             output.push_str(" = ");
             let mut accessed_str = String::new();
@@ -2135,11 +2225,13 @@ fn emit_instruction(
                 conversions, types, strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_read(allocation);\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
             free.insert(into.index);
         }
         IrInstruction::SetClosureCapture { value, name } => {
             if let IrType::Unit = variable_types[value.index].direct(types) { return; }
+            output.push_str("gera___rc_lock_write(allocation);\n");
             let mut capture_str = String::new();
             capture_str.push_str("captures->");
             capture_str.push_str(strings.get(*name));
@@ -2153,6 +2245,7 @@ fn emit_instruction(
                 conversions, types, strings, output
             );
             output.push_str(";\n");
+            output.push_str("gera___rc_unlock_write(allocation);\n");
             emit_rc_incr(&capture_str, variable_types[value.index], types, strings, output);
         }
         IrInstruction::Move { from, into } => {
