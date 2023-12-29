@@ -931,9 +931,7 @@ if(param1 < 0) {
     });
     builtins.insert(path_from(&["core", "exhaust"], strings), |_, _, _, strings| {
         format!("
-gera___st_push(\"<closure>\", \"???\", 0);
 while(((param0.procedure)(param0.allocation)).tag == {}) {{}}
-gera___st_pop();
 ", strings.insert("next").0)
     });
     builtins.insert(path_from(&["core", "panic"], strings), |_, _, _, _| {
@@ -1458,9 +1456,6 @@ fn emit_main_function(
     output.push_str("int main(int argc, char** argv) {\n");
     output.push_str("    gera___set_args(argc, argv);\n");
     output.push_str("    gera_init_constants();\n");
-    output.push_str("    gera___st_push(");
-    emit_string_literal(&main_procedure_path.display(strings), output);
-    output.push_str(", \"???\", 0);\n");
     output.push_str("    ");
     emit_procedure_name(main_procedure_path, 0, strings, output);
     output.push_str("();\n");
@@ -2506,7 +2501,7 @@ fn emit_instruction(
             }
             output.push_str("\n}\n");
         }
-        IrInstruction::Call { path, variant, arguments, into, source } => {
+        IrInstruction::Call { path, variant, arguments, into, source: _ } => {
             // this is cursed and I hate it
             let (parameter_types, return_type) = match symbols.into_iter().filter(|s| match *s {
                 IrSymbol::Procedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
@@ -2522,15 +2517,6 @@ fn emit_instruction(
                 _ => panic!("should be a procedure")
             };
             // end of cursed part 
-            output.push_str("gera___st_push(");
-            emit_string_literal(&path.display(strings), output);
-            output.push_str(", ");
-            emit_string_literal(strings.get(source.file_name()), output);
-            output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
-                .lines().collect::<Vec<&str>>().len();
-            output.push_str(&source_line.to_string());
-            output.push_str(");\n");
             let returns_value = if let IrType::Unit = return_type.direct(types) { false }
                 else { true };
             let mut value = String::new();
@@ -2571,21 +2557,13 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
-            output.push_str("gera___st_pop();\n");
             free.insert(into.index);
         }
-        IrInstruction::CallClosure { called, arguments, into, source } => {
+        IrInstruction::CallClosure { called, arguments, into, source: _ } => {
             let (parameter_types, return_type) = if let IrType::Closure(p)
                     = variable_types[called.index].direct(types) {
                 types.get_closure(p)
             } else { panic!("should be a closure"); };
-            output.push_str("gera___st_push(\"<closure>\", ");
-            emit_string_literal(strings.get(source.file_name()), output);
-            output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
-                .lines().collect::<Vec<&str>>().len();
-            output.push_str(&source_line.to_string());
-            output.push_str(");\n");
             let returns_value = if let IrType::Unit = return_type.direct(types) { false }
                 else { true };
             let mut value = String::new();
@@ -2625,7 +2603,6 @@ fn emit_instruction(
                 output.push_str(&value);
             }
             output.push_str(";\n");
-            output.push_str("gera___st_pop();\n");
             free.insert(into.index);
         }
         IrInstruction::Return { value } => {
