@@ -9,7 +9,7 @@ use compiler::util::{
     strings::{StringMap, StringIdx}
 };
 
-use std::{fs, env, collections::HashMap};
+use std::{process::exit, fs, env, collections::HashMap};
 
 
 fn main() {
@@ -28,6 +28,7 @@ fn main() {
     }
     if let Err(errors) = do_compilation() {
         println!("{}", errors);
+        exit(1);
     }
 }
 
