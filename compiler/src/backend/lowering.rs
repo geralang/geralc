@@ -739,9 +739,13 @@ impl IrGenerator {
                         let given_return_type = current_type_scope.transfer_into(
                             node.get_types(), &mut call_type_scope
                         );
-                        let concrete_return_type = call_type_scope.limit_possible_types(
-                            *returns, given_return_type
-                        ).expect("should have a possible type");
+                        let concrete_return_type = if let Some(_) = body {
+                            call_type_scope.limit_possible_types(
+                                *returns, given_return_type
+                            ).expect("should have a possible type")
+                        } else {
+                            *returns
+                        };
                         let return_ir_type = call_converted_types.convert(
                             concrete_return_type, &call_type_scope, type_bank, strings,
                             &mut HashMap::new()
