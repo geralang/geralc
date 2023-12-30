@@ -1104,7 +1104,8 @@ return gera___concat(param0, param1);
         let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
         else { panic!("should be variants"); };
         let mut result = String::new();
-        result.push_str("gfloat value = geracoredeps_parse_float(param0);\n");
+        result.push_str("GERA_STRING_NULL_TERM(param0, param0_nt);\n");
+        result.push_str("gfloat value = geracoredeps_parse_float(param0_nt);\n");
         result.push_str("if(geracoredeps_parse_success) { return (");
         emit_variants_name(variant_idx.0, &mut result);
         result.push_str(") { .tag = ");
@@ -1121,7 +1122,8 @@ return gera___concat(param0, param1);
         let variant_idx = if let IrType::Variants(v) = return_type.direct(types) { v }
         else { panic!("should be variants"); };
         let mut result = String::new();
-        result.push_str("gint value = geracoredeps_parse_sint(param0);\n");
+        result.push_str("GERA_STRING_NULL_TERM(param0, param0_nt);\n");
+        result.push_str("gint value = geracoredeps_parse_sint(param0_nt);\n");
         result.push_str("if(geracoredeps_parse_success) { return (");
         emit_variants_name(variant_idx.0, &mut result);
         result.push_str(") { .tag = ");
@@ -1143,7 +1145,7 @@ if(param1 < 0) {
     count_str[count_str_len] = '\0';
     gera___panic_pre();
     geracoredeps_eprint("the string repetition count ");
-    geracoredeps_eprint(length_str);
+    geracoredeps_eprint(count_str);
     geracoredeps_eprint(" is not valid");
     gera___panic_post();
 }
