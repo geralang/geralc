@@ -303,7 +303,7 @@ impl ExternalMappingParser {
         let mut segments = Vec::new();
         self.expect_type(&[TokenType::Identifier], expected)?;
         segments.push(self.current.token_content);
-        while self.try_next(strings, lexer)? && self.current.token_type == TokenType::NamespaceSeparator {
+        while self.try_next(strings, lexer)? && self.current.token_type == TokenType::DoubleColon {
             self.expect_next(strings, lexer, expected)?;
             self.expect_type(&[TokenType::Identifier], expected)?;
             segments.push(self.current.token_content);

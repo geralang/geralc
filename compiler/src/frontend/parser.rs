@@ -33,7 +33,8 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::DoublePipe => Some(7),
         TokenType::DoubleDot |
         TokenType::DoubleDotEquals => Some(8),
-        TokenType::FunctionPipe => Some(9),
+        TokenType::FunctionPipe |
+        TokenType::Colon => Some(9),
         _ => None
     }
 }
@@ -221,6 +222,41 @@ impl Parser {
                     if self.reached_end { return Ok(previous); }
                     continue;
                 }
+                TokenType::Colon => {
+                    let accessed = enforce_previous!("the thing to call a member of");
+                    enforce_next!("the member to call");
+                    enforce_current_type!(&[TokenType::Identifier], "the member to call");
+                    let member = self.current.token_content;
+                    let member_source = self.current.source;
+                    enforce_next!("an opening parenthesis ('(')");
+                    enforce_current_type!(&[TokenType::ParenOpen], "an opening parenthesis ('(')");
+                    enforce_next!("a call parameter or a closing parenthesis (')')");
+                    let mut args = vec![accessed.clone()];
+                    while self.current.token_type != TokenType::ParenClose {
+                        args.push(enforce_expression!(&[TokenType::Comma, TokenType::ParenClose], None, "a call parameter"));
+                        enforce_current_type!(&[TokenType::Comma, TokenType::ParenClose], "a comma (',') or a closing parenthesis (')')");
+                        if self.current.token_type == TokenType::Comma {
+                            enforce_next!("a call parameter or a closing parenthesis (')')");
+                        }
+                    }
+                    let accessed_source = accessed.source();
+                    previous = Some(AstNode::new(
+                        AstNodeVariant::Call {
+                            called: AstNode::new(
+                                AstNodeVariant::ObjectAccess {
+                                    object: accessed.into(),
+                                    member
+                                },
+                                (&accessed_source..&member_source).into()
+                            ).into(),
+                            arguments: args
+                        },
+                        (&accessed_source..&self.current.source).into()
+                    ));
+                    next!();
+                    if self.reached_end { return Ok(previous); }
+                    continue;
+                }
                 TokenType::Equals => {
                     let assigned_to = enforce_previous!("the thing to assign to");
                     let assigned_to_source = assigned_to.source();
@@ -357,6 +393,7 @@ impl Parser {
                         (&called_source..&self.current.source).into()
                     ));
                     next!();
+                    if self.reached_end { return Ok(previous); }
                     continue;
                 }
                 _ => if previous.is_some() {
@@ -367,10 +404,10 @@ impl Parser {
                 TokenType::Identifier => {
                     let start = self.current.clone();
                     match (next!(), self.current.token_type) {
-                        (true, TokenType::NamespaceSeparator) => {
+                        (true, TokenType::DoubleColon) => {
                             let mut path_segments = vec![start.token_content];
                             let mut end_source = start.source;
-                            while self.current.token_type == TokenType::NamespaceSeparator {
+                            while self.current.token_type == TokenType::DoubleColon {
                                 enforce_next!("the path to access");
                                 enforce_current_type!(&[TokenType::Identifier], "the path to access");
                                 path_segments.push(self.current.token_content);
@@ -799,7 +836,7 @@ impl Parser {
                     enforce_current_type!(&[TokenType::Identifier], "the name of the module");
                     path_segments.push(self.current.token_content);
                     let mut end_source = self.current.source;
-                    while next!() && self.current.token_type == TokenType::NamespaceSeparator {
+                    while next!() && self.current.token_type == TokenType::DoubleColon {
                         enforce_next!("the name of the module");
                         enforce_current_type!(&[TokenType::Identifier], "the name of the module");
                         path_segments.push(self.current.token_content);
@@ -864,7 +901,7 @@ impl Parser {
                         enforce_current_type!(&[TokenType::Identifier], "the name of the module");
                         path_segments.push(parser.current.token_content);
                         enforce_next!("the name of the module");
-                        while parser.current.token_type == TokenType::NamespaceSeparator {
+                        while parser.current.token_type == TokenType::DoubleColon {
                             enforce_next!("the name of the module, '(' or '*'");
                             enforce_current_type!(&[TokenType::Identifier, TokenType::ParenOpen, TokenType::Asterisk], "the name of the module, '(' or '*'");
                             match parser.current.token_type {
