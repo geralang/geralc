@@ -18,7 +18,7 @@ The Gera compiler is not intended to be used on its own. It is recommended to pu
 - [x] Modules
 - [x] Type checking
 - [x] Interpreter for constants
-- [x] Headers for external procedures
+- [x] Mapping files for external procedures
 - [x] Lowering of AST into SSA IR
 - [x] C code generation
 - [x] Javascript code generation
