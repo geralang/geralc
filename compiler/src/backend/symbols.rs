@@ -18,9 +18,9 @@ pub fn generate_symbols(
     strings: &mut StringMap
 ) -> String {
     let mut result = json!({
-        "types": serde_json::Value::Array((0..type_scope.get_internal_group_count()).map(|g|
+        "types": serde_json::Value::Array((0..type_scope.internal_groups().len()).map(|g|
             serialize_group_types(
-                type_scope.get_group_types_from_internal_index(g), &type_scope, strings
+                &type_scope.internal_groups()[g].iter().map(|t| *t).collect::<Vec<Type>>(), &type_scope, strings
             )
         ).collect()),
         "modules": json!({}),
@@ -34,22 +34,13 @@ pub fn generate_symbols(
 }
 
 fn serialize_group_types(
-    types: &Option<Vec<Type>>,
+    types: &[Type],
     type_scope: &TypeScope,
     strings: &StringMap
 ) -> serde_json::Value {
-    if let Some(possible_types) = types {
-        json!({
-            "any": false,
-            "types": serde_json::Value::Array(
-                possible_types.iter().map(|t| serialize_type(t, type_scope, strings)).collect()
-            )
-        })
-    } else {
-        json!({
-            "any": true
-        })
-    }
+    serde_json::Value::Array(
+        types.iter().map(|t| serialize_type(t, type_scope, strings)).collect()
+    )
 }
 
 fn serialize_type(
@@ -58,23 +49,27 @@ fn serialize_type(
     strings: &StringMap
 ) -> serde_json::Value {
     match t {
+        Type::Any => json!({ "type": "any" }),
         Type::Unit => json!({ "type": "unit" }),
         Type::Boolean => json!({ "type": "boolean" }),
         Type::Integer => json!({ "type": "integer" }),
         Type::Float => json!({ "type": "float" }),
         Type::String => json!({ "type": "string" }),
-        Type::Panic => json!({ "type": "panic" }),
-        Type::Array(element_types) => json!({ 
-            "type": "array", 
-            "element_types": serde_json::Value::Number(
-                type_scope.get_group_internal_index(*element_types).into()
-            )
-        }),
-        Type::Object(member_types, fixed) => {
+        Type::Array(arr) => {
+            let element_types = type_scope.array(arr);
+            json!({ 
+                "type": "array", 
+                "element_types": serde_json::Value::Number(
+                    type_scope.group_internal_id(element_types).into()
+                )
+            })
+        }
+        Type::Object(obj) => {
+            let (member_types, fixed) = type_scope.object(obj);
             let mut member_stypes = json!({});
             for (mn, mt) in member_types {
                 member_stypes[strings.get(*mn)] = serde_json::Value::Number(
-                    type_scope.get_group_internal_index(*mt).into()
+                    type_scope.group_internal_id(mt).into()
                 );
             }
             json!({
@@ -83,27 +78,38 @@ fn serialize_type(
                 "fixed": *fixed
             })
         }
-        Type::ConcreteObject(member_types) => json!({
-            "type": "concrete_object",
-            "member_types": serde_json::Value::Array(member_types.iter().map(|(mn, mt)| json!({
-                "name": strings.get(*mn),
-                "type": serialize_type(mt, type_scope, strings)
-            })).collect())
-        }),
-        Type::Closure(parameter_types, return_types, _) => json!({
-            "type": "closure",
-            "parameter_types": serde_json::Value::Array(parameter_types.iter().map(|t|
-                serde_json::Value::Number(type_scope.get_group_internal_index(*t).into())
-            ).collect()),
-            "return_types": serde_json::Value::Number(
-                type_scope.get_group_internal_index(*return_types).into()
-            )
-        }),
-        Type::Variants(variant_types, fixed) => {
+        Type::ConcreteObject(obj) => {
+            let member_types = type_scope.concrete_object(obj);
+            let mut member_stypes = json!({});
+            for (mn, mt) in member_types {
+                member_stypes[strings.get(*mn)] = serde_json::Value::Number(
+                    type_scope.group_internal_id(mt).into()
+                );
+            }
+            json!({
+                "type": "object",
+                "member_types": member_stypes,
+                "fixed": false
+            })
+        }
+        Type::Closure(clo) => {
+            let (parameter_types, return_types, _) = type_scope.closure(clo);
+            json!({
+                "type": "closure",
+                "parameter_types": serde_json::Value::Array(parameter_types.iter().map(|t|
+                    serde_json::Value::Number(type_scope.group_internal_id(*t).into())
+                ).collect()),
+                "return_types": serde_json::Value::Number(
+                    type_scope.group_internal_id(*return_types).into()
+                )
+            })
+        }
+        Type::Variants(var) => {
+            let (variant_types, fixed) = type_scope.variants(var);
             let mut variant_stypes = json!({});
             for (vn, vt) in variant_types {
                 variant_stypes[strings.get(*vn)] = serde_json::Value::Number(
-                    type_scope.get_group_internal_index(*vt).into()
+                    type_scope.group_internal_id(*vt).into()
                 );
             }
             json!({
@@ -153,11 +159,11 @@ fn serialize_modules(
                     "parameters": serde_json::Value::Array((0..parameter_names.len()).map(|p| json!({
                         "name": strings.get(parameter_names[p]),
                         "type": serde_json::Value::Number(
-                            type_scope.get_group_internal_index(parameter_types[p]).into()
+                            type_scope.group_internal_id(parameter_types[p]).into()
                         )
                     })).collect()),
                     "return_types": serde_json::Value::Number(
-                        type_scope.get_group_internal_index(*returns).into()
+                        type_scope.group_internal_id(*returns).into()
                     )
                 });
                 if is_external {
@@ -172,7 +178,7 @@ fn serialize_modules(
                     "public": *public,
                     "name": element_name,
                     "types": serde_json::Value::Number(
-                        type_scope.get_group_internal_index(*value_types).into()
+                        type_scope.group_internal_id(*value_types).into()
                     )
                 })
         }

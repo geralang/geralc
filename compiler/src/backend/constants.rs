@@ -3,10 +3,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use crate::util::strings::StringIdx;
-use crate::backend::{
-    ir::{IrType, IrTypeBank},
-    interpreter::Value
-};
+use crate::backend::interpreter::Value;
+use crate::frontend::types::{TypeScope, TypeGroup, Type};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ConstantStringIdx(usize);
@@ -47,17 +45,17 @@ pub enum ConstantValue {
 #[derive(Clone, Debug)]
 enum InternalConstantPoolValue {
     String(Rc<str>),
-    Array(Rc<RefCell<Box<[Value]>>>, Box<[ConstantValue]>, IrType),
-    Object(Rc<RefCell<HashMap<StringIdx, Value>>>, HashMap<StringIdx, (ConstantValue, IrType)>),
-    Variant(StringIdx, ConstantValue, IrType)
+    Array(Rc<RefCell<Box<[Value]>>>, Box<[ConstantValue]>, TypeGroup),
+    Object(Rc<RefCell<HashMap<StringIdx, Value>>>, HashMap<StringIdx, (ConstantValue, TypeGroup)>),
+    Variant(StringIdx, ConstantValue, TypeGroup)
 }
 
 #[derive(Clone, Debug)]
 pub enum ConstantPoolValue<'p> {
     String(&'p str),
-    Array(&'p [ConstantValue], IrType),
-    Object(&'p HashMap<StringIdx, (ConstantValue, IrType)>),
-    Variant(StringIdx, ConstantValue, IrType)
+    Array(&'p [ConstantValue], TypeGroup),
+    Object(&'p HashMap<StringIdx, (ConstantValue, TypeGroup)>),
+    Variant(StringIdx, ConstantValue, TypeGroup)
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +70,7 @@ impl ConstantPool {
         }
     }
 
-    pub fn insert(&mut self, v: &Value, t: IrType, types: &IrTypeBank) -> ConstantValue {
+    pub fn insert(&mut self, v: &Value, t: TypeGroup, types: &TypeScope) -> ConstantValue {
         match v {
             Value::Unit => ConstantValue::Unit,
             Value::Boolean(b) => ConstantValue::Boolean(*b),
@@ -98,7 +96,7 @@ impl ConstantPool {
                         }
                     }
                 }
-                let et = if let IrType::Array(i) = t.direct(types) { *types.get_array(i) }
+                let et = if let Type::Array(i) = types.group_concrete(t) { types.array(i) }
                     else { panic!("type does not match value!"); };
                 let ca = a.borrow()
                     .iter()
@@ -115,7 +113,7 @@ impl ConstantPool {
                         }
                     }
                 }
-                let mt = if let IrType::Object(i) = t.direct(types) { types.get_object(i) }
+                let mt = if let Type::Object(i) = types.group_concrete(t) { types.object(i).0.clone() }
                     else { panic!("type does not match value!"); };
                 let co = o.borrow()
                     .iter()
@@ -129,8 +127,8 @@ impl ConstantPool {
             }
             Value::Closure(_, _, _) => panic!("constant closures are not allowed!"),
             Value::Variant(tag, value) => {
-                let vt = if let IrType::Variants(i) = t.direct(types) {
-                    *types.get_variants(i).get(tag).expect("type should match value!")
+                let vt = if let Type::Variants(i) = types.group_concrete(t) {
+                    *types.variants(i).0.get(tag).expect("type should match value!")
                 } else { panic!("type does not match value!"); };
                 let converted_value = self.insert(value, vt, types);
                 for vi in 0..self.values.len() {
@@ -152,19 +150,19 @@ impl ConstantPool {
         else { panic!("passed illegal index"); }
     }
 
-    pub fn get_array(&self, idx: ConstantArrayIdx) -> (&[ConstantValue], IrType) {
+    pub fn get_array(&self, idx: ConstantArrayIdx) -> (&[ConstantValue], TypeGroup) {
         if let InternalConstantPoolValue::Array(_, values, element_type) = &self.values[idx.0] {
             (&*values, *element_type)
         }
         else { panic!("passed illegal index"); }
     }
 
-    pub fn get_object(&self, idx: ConstantObjectIdx) -> &HashMap<StringIdx, (ConstantValue, IrType)> {
+    pub fn get_object(&self, idx: ConstantObjectIdx) -> &HashMap<StringIdx, (ConstantValue, TypeGroup)> {
         if let InternalConstantPoolValue::Object(_, members) = &self.values[idx.0] { members }
         else { panic!("passed illegal index"); }
     }
 
-    pub fn get_variant(&self, idx: ConstantVariantIdx) -> (StringIdx, ConstantValue, IrType) {
+    pub fn get_variant(&self, idx: ConstantVariantIdx) -> (StringIdx, ConstantValue, TypeGroup) {
         if let InternalConstantPoolValue::Variant(tag, value, value_type) = &self.values[idx.0] {
             (*tag, *value, *value_type)
         }

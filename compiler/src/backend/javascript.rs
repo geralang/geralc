@@ -2,15 +2,18 @@
 use std::collections::HashMap;
 
 use crate::backend::{
-    ir::{IrSymbol, IrTypeBank, IrType, IrInstruction, IrVariable},
+    ir::{IrSymbol, IrInstruction, IrVariable},
     constants::{ConstantValue, ConstantPool, ConstantPoolValue}
 };
-use crate::frontend::modules::NamespacePath;
+use crate::frontend::{
+    modules::NamespacePath,
+    types::{TypeGroup, TypeScope, Type}
+};
 use crate::util::strings::{StringMap, StringIdx};
 
 pub fn generate_javascript(
     symbols: Vec<IrSymbol>,
-    types: IrTypeBank,
+    types: TypeScope,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -57,7 +60,7 @@ fn emit_core_library(output: &mut String) {
 
 fn emit_static_variables(
     symbols: &Vec<IrSymbol>,
-    types: &IrTypeBank,
+    types: &TypeScope,
     constants: &mut ConstantPool,
     strings: &mut StringMap,
     output: &mut String
@@ -85,11 +88,11 @@ fn emit_variable(variable: IrVariable, output: &mut String) {
     output.push_str(&variable.index.to_string());
 }
 
-fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> {
+fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeScope, &mut StringMap) -> String> {
     fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
         NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
     }
-    let mut builtins: HashMap<NamespacePath, fn(&Vec<IrType>, IrType, &IrTypeBank, &mut StringMap) -> String> = HashMap::new();
+    let mut builtins: HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeScope, &mut StringMap) -> String> = HashMap::new();
     builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _| {
         String::from(r#"
 return param0 === param1;
@@ -121,27 +124,27 @@ gera___panic(param0);
 "#)
     });
     builtins.insert(path_from(&["core", "as_str"], strings), |param_types, _, types, strings| {
-        match param_types[0].direct(types) {
-            IrType::Unit => String::from(r#"
+        match types.group_concrete(param_types[0]) {
+            Type::Unit | Type::Any => String::from(r#"
 return "<unit>";
 "#),
-            IrType::Boolean |
-            IrType::Integer |
-            IrType::Float => String::from(r#"
+            Type::Boolean |
+            Type::Integer |
+            Type::Float => String::from(r#"
 return param0.toString();
 "#),
-            IrType::String => String::from(r#"
+            Type::String => String::from(r#"
 return param0;
 "#),
-            IrType::Array(_) => String::from(r#"
+            Type::Array(_) => String::from(r#"
 return "<array>";
 "#),
-            IrType::Object(_) |
-            IrType::ConcreteObject(_) => String::from(r#"
+            Type::Object(_) |
+            Type::ConcreteObject(_) => String::from(r#"
 return "<object>";
 "#),
-            IrType::Variants(variant_idx) => {
-                let variant_types = types.get_variants(variant_idx);
+            Type::Variants(variant_idx) => {
+                let variant_types = &types.variants(variant_idx).0;
                 let mut result = String::from("switch(param0.tag) {\n");
                 for (variant_name, _) in variant_types {
                     result.push_str("    case ");
@@ -153,10 +156,9 @@ return "<object>";
                 result.push_str("}\n");
                 result
             }
-            IrType::Closure(_) => String::from(r#"
+            Type::Closure(_) => String::from(r#"
 return "<closure>";
-"#),
-            IrType::Indirect(_) => panic!("should be direct"),
+"#)
         }
     });
     builtins.insert(path_from(&["core", "as_int"], strings), |_, _, _, _| {
@@ -221,7 +223,7 @@ return gera___hash(param0);
 
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
-    types: &IrTypeBank,
+    types: &TypeScope,
     constants: &mut ConstantPool,
     strings: &mut StringMap,
     external: &HashMap<NamespacePath, StringIdx>,
@@ -408,8 +410,8 @@ fn indent(indent: &str, output: &mut String) {
 
 fn emit_block(
     instructions: &Vec<IrInstruction>,
-    variable_types: &Vec<IrType>,
-    types: &IrTypeBank,
+    variable_types: &Vec<TypeGroup>,
+    types: &TypeScope,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
@@ -429,37 +431,37 @@ fn emit_block(
 
 fn emit_copied(
     copied: &str,
-    copied_type: IrType,
-    types: &IrTypeBank,
+    copied_type: TypeGroup,
+    types: &TypeScope,
     output: &mut String
 ) {
-    match copied_type.direct(types) {
-        IrType::Unit |
-        IrType::Boolean |
-        IrType::Integer |
-        IrType::Float |
-        IrType::String |
-        IrType::Array(_) |
-        IrType::Object(_) |
-        IrType::ConcreteObject(_) |
-        IrType::Closure(_) => {
+    match types.group_concrete(copied_type) {
+        Type::Any |
+        Type::Unit |
+        Type::Boolean |
+        Type::Integer |
+        Type::Float |
+        Type::String |
+        Type::Array(_) |
+        Type::Object(_) |
+        Type::ConcreteObject(_) |
+        Type::Closure(_) => {
             output.push_str(copied);
         }
-        IrType::Variants(_) => {
+        Type::Variants(_) => {
             output.push_str("{ tag: ");
             output.push_str(copied);
             output.push_str(".tag, value: ");
             output.push_str(copied);
             output.push_str(".value }");
         }
-        IrType::Indirect(_) => panic!("should be direct!")
     }
 }
 
 fn emit_copied_variable(
     copied: IrVariable,
-    copied_type: IrType,
-    types: &IrTypeBank,
+    copied_type: TypeGroup,
+    types: &TypeScope,
     output: &mut String
 ) {
     let mut copied_str = String::new();
@@ -469,8 +471,8 @@ fn emit_copied_variable(
 
 fn emit_instruction(
     instruction: &IrInstruction,
-    variable_types: &Vec<IrType>,
-    types: &IrTypeBank,
+    variable_types: &Vec<TypeGroup>,
+    types: &TypeScope,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
@@ -538,7 +540,7 @@ fn emit_instruction(
             output.push_str(" };\n");
         }
         IrInstruction::LoadGlobalVariable { path, into } => {
-            if let IrType::Unit = variable_types[into.index].direct(types) { return; }
+            if let Type::Unit = types.group_concrete(variable_types[into.index]) { return; }
             let path_matches = |s: &&IrSymbol| match s {
                 IrSymbol::Procedure { path: p, .. } |
                 IrSymbol::ExternalProcedure { path: p, .. } |
@@ -718,7 +720,7 @@ fn emit_instruction(
         IrInstruction::Add { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types) {
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" + ");
@@ -734,7 +736,7 @@ fn emit_instruction(
         IrInstruction::Subtract { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types) {
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" - ");
@@ -750,7 +752,7 @@ fn emit_instruction(
         IrInstruction::Multiply { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            if let IrType::Integer = variable_types[a.index].direct(types) {
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
                 output.push_str("BigInt.asIntN(64, ");
                 emit_variable(*a, output);
                 output.push_str(" * ");
@@ -766,7 +768,7 @@ fn emit_instruction(
         IrInstruction::Divide { a, b, into, source } => {    
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
-            if let IrType::Integer = variable_types[a.index].direct(types) {
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
                 output.push_str(", ");
@@ -795,7 +797,7 @@ fn emit_instruction(
         IrInstruction::Modulo { a, b, into, source } => {
             let mut divisor = String::new();
             emit_variable(*b, &mut divisor);
-            if let IrType::Integer = variable_types[a.index].direct(types) {
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
                 output.push_str("gera___verify_integer_divisor(");
                 output.push_str(&divisor);
                 output.push_str(", ");

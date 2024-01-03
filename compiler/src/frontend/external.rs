@@ -97,7 +97,7 @@ impl ExternalMappingParser {
                         if self.current.token_type == TokenType::Comma {
                             self.expect_next(strings, lexer, "a parameter's type or a closing parenthesis (')')")?;
                         }
-                        let parameter_group = type_scope.register_with_types(Some(vec![paramter_type]));
+                        let parameter_group = type_scope.insert_group(&[paramter_type]);
                         parameters.push(parameter_group);
                     }
                     self.expect_next(strings, lexer, "an arrow ('->') or an equals-sign ('=')")?;
@@ -108,7 +108,7 @@ impl ExternalMappingParser {
                     } else {
                         Type::Unit
                     };
-                    let return_type_group = type_scope.register_with_types(Some(vec![return_type]));
+                    let return_type_group = type_scope.insert_group(&[return_type]);
                     self.expect_type(&[TokenType::Equals], "an equals-sign ('=')")?;
                     self.expect_next(strings, lexer, "the name of the external backing procedure")?;
                     self.expect_type(&[TokenType::Identifier], "the name of the external backing procedure")?;
@@ -194,7 +194,7 @@ impl ExternalMappingParser {
                     typed_symbols.insert(variable_path.clone(), Symbol::Constant {
                         public: true,
                         value: None,
-                        value_types: type_scope.register_with_types(Some(vec![variable_type]))
+                        value_types: type_scope.insert_group(&[variable_type])
                     });
                     external_backings.insert(variable_path, backing);
                 }
@@ -223,7 +223,7 @@ impl ExternalMappingParser {
                     self.try_next(strings, lexer)?;
                     loop {
                         let arg_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
-                        arg_types.push(type_scope.register_with_types(Some(vec![arg_type])));
+                        arg_types.push(type_scope.insert_group(&[arg_type]));
                         self.expect_type(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')")?;
                         if self.current.token_type == TokenType::Pipe { break; }
                         self.try_next(strings, lexer)?;
@@ -233,11 +233,12 @@ impl ExternalMappingParser {
                 self.expect_type(&[TokenType::Arrow], "an arrow ('->')")?;
                 self.try_next(strings, lexer)?;
                 let return_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
-                Ok(Type::Closure(
+                let return_tidx = type_scope.insert_group(&[return_type]);
+                Ok(Type::Closure(type_scope.insert_closure(
                     arg_types,
-                    type_scope.register_with_types(Some(vec![return_type])),
+                    return_tidx,
                     None
-                ))
+                )))
             }
             TokenType::Identifier | TokenType::KeywordUnit => {
                 let name = self.current.clone();
@@ -273,17 +274,18 @@ impl ExternalMappingParser {
                     if self.current.token_type == TokenType::Comma {
                         self.expect_next(strings, lexer, "the name of a member or a closing brace ('}')")?;
                     }
-                    members.push((member_name, member_type));
+                    members.push((member_name, type_scope.insert_group(&[member_type])));
                 }
                 self.try_next(strings, lexer)?;
-                Ok(Type::ConcreteObject(members))
+                Ok(Type::ConcreteObject(type_scope.insert_concrete_object(members)))
             }
             TokenType::BracketOpen => {
                 self.expect_next(strings, lexer, "the type of the array's elements")?;
                 let element_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
                 self.expect_type(&[TokenType::BracketClose], "a closing bracket (']')")?;
                 self.try_next(strings, lexer)?;
-                Ok(Type::Array(type_scope.register_with_types(Some(vec![element_type]))))
+                let element_tidx = type_scope.insert_group(&[element_type]);
+                Ok(Type::Array(type_scope.insert_array(element_tidx)))
             }
             _ => {
                 Err(Error::new([

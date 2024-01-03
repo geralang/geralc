@@ -1,6 +1,6 @@
 
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
-use crate::frontend::{modules::NamespacePath, types::VarTypeIdx};
+use crate::frontend::{modules::NamespacePath, types::TypeGroup};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstNode {
@@ -33,12 +33,12 @@ impl HasSource for AstNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedAstNode {
     variant: AstNodeVariant<TypedAstNode>,
-    node_type: VarTypeIdx,
+    node_type: TypeGroup,
     source: SourceRange
 }
 
 impl TypedAstNode {
-    pub fn new(variant: AstNodeVariant<TypedAstNode>, node_type: VarTypeIdx, source: SourceRange) -> TypedAstNode {
+    pub fn new(variant: AstNodeVariant<TypedAstNode>, node_type: TypeGroup, source: SourceRange) -> TypedAstNode {
         TypedAstNode {
             variant,
             node_type,
@@ -47,8 +47,8 @@ impl TypedAstNode {
     }
 
     pub fn replace_source(&mut self, new: SourceRange) { self.source = new; }
-    pub fn get_types(&self) -> VarTypeIdx { self.node_type }
-    pub fn get_types_mut(&mut self) -> &mut VarTypeIdx { &mut self.node_type }
+    pub fn get_types(&self) -> TypeGroup { self.node_type }
+    pub fn get_types_mut(&mut self) -> &mut TypeGroup { &mut self.node_type }
 }
 
 impl HasAstNodeVariant<TypedAstNode> for TypedAstNode {
@@ -73,10 +73,10 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
     Function { arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
-    Variable { public: bool, mutable: bool, name: StringIdx, value_types: Option<VarTypeIdx>, value: Option<Box<T>> },
+    Variable { public: bool, mutable: bool, name: StringIdx, value_types: Option<TypeGroup>, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
-    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, SourceRange, Option<VarTypeIdx>)>, Vec<T>)>, else_body: Option<Vec<T>> },
+    CaseVariant { value: Box<T>, branches: Vec<(StringIdx, Option<(StringIdx, SourceRange, Option<TypeGroup>)>, Vec<T>)>, else_body: Option<Vec<T>> },
     Assignment { variable: Box<T>, value: Box<T> },
     Return { value: Box<T> },
     Call { called: Box<T>, arguments: Vec<T> },

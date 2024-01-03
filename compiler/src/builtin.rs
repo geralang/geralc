@@ -8,15 +8,15 @@ use crate::util::{
 use crate::frontend::{
     modules::{NamespacePath, Module},
     ast::{AstNode, TypedAstNode},
-    types::{TypeScope, VarTypeIdx, Type},
+    types::{TypeScope, TypeGroup, Type},
     type_checking::Symbol
 };
 
 fn register_foreign_builtin(
     procedure_path: NamespacePath,
     parameter_names: &[&'static str],
-    parameter_types: Vec<VarTypeIdx>,
-    return_type: VarTypeIdx,
+    parameter_types: Vec<TypeGroup>,
+    return_type: TypeGroup,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -71,84 +71,94 @@ fn load_foreign_builtins(
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>
 ) {
     {
-        let array_element_type = type_scope.register_variable();
-        let t = type_scope.register_with_types(Some(vec![
-            Type::Object(HashMap::new(), false),
-            Type::Array(array_element_type),
+        let array_element_type = type_scope.insert_group(&[Type::Any]);
+        let object_tidx = type_scope.insert_object(HashMap::new(), false);
+        let array_tidx = type_scope.insert_array(array_element_type);
+        let t = type_scope.insert_group(&[
+            Type::Object(object_tidx),
+            Type::Array(array_tidx),
             Type::String
-        ]));
+        ]);
         register_foreign_builtin(
             path_from(&["core", "addr_eq"], strings),
             &["a", "b"],
             vec![t, t],
-            type_scope.register_with_types(Some(vec![Type::Boolean])),
+            type_scope.insert_group(&[Type::Boolean]),
             strings, modules, typed_symbols
         );
     }
     {
-        let t = type_scope.register_with_types(Some(vec![
-            Type::Variants(HashMap::new(), false)
-        ]));
+        let var_tidx = type_scope.insert_variants(HashMap::new(), false);
+        let t = type_scope.insert_group(&[
+            Type::Variants(var_tidx)
+        ]);
         register_foreign_builtin(
             path_from(&["core", "tag_eq"], strings),
             &["a", "b"],
             vec![t, t],
-            type_scope.register_with_types(Some(vec![Type::Boolean])),
+            type_scope.insert_group(&[Type::Boolean]),
             strings, modules, typed_symbols
         );
     }
     {
-        let array_element_type = type_scope.register_variable();
+        let array_element_type = type_scope.insert_group(&[Type::Any]);
+        let array_tidx = type_scope.insert_array(array_element_type);
         register_foreign_builtin(
             path_from(&["core", "length"], strings),
             &["thing"],
             vec![
-                type_scope.register_with_types(Some(vec![
+                type_scope.insert_group(&[
                     Type::String,
-                    Type::Array(array_element_type)
-                ])),
+                    Type::Array(array_tidx)
+                ]),
             ],
-            type_scope.register_with_types(Some(vec![Type::Integer])),
+            type_scope.insert_group(&[Type::Integer]),
             strings, modules, typed_symbols
         );
     }
     {
-        let array_element_types = type_scope.register_variable();
+        let array_element_types = type_scope.insert_group(&[Type::Any]);
+        let array_tidx = type_scope.insert_array(array_element_types);
         register_foreign_builtin(
             path_from(&["core", "array"], strings),
             &["value", "size"],
             vec![
                 array_element_types,
-                type_scope.register_with_types(Some(vec![Type::Integer]))
+                type_scope.insert_group(&[Type::Integer])
             ],
-            type_scope.register_with_types(Some(vec![
-                Type::Array(array_element_types)
-            ])),
+            type_scope.insert_group(&[
+                Type::Array(array_tidx)
+            ]),
             strings, modules, typed_symbols
         );
     }
     { 
-        let end = type_scope.register_variable();
-        let next = type_scope.register_variable();
-        let exhausted_clore_return_types = type_scope.register_with_types(Some(vec![
-            Type::Variants([
+        let end = type_scope.insert_group(&[Type::Any]);
+        let next = type_scope.insert_group(&[Type::Any]);
+        let var_tidx = type_scope.insert_variants(
+            [
                 (strings.insert("end"), end),
                 (strings.insert("next"), next)
-            ].into(), true)
-        ]));
+            ].into(),
+            true
+        );
+        let exhausted_clore_return_types = type_scope.insert_group(&[
+            Type::Variants(var_tidx)
+        ]);
+        let closure_tidx = type_scope.insert_closure(
+            vec![],
+            exhausted_clore_return_types,
+            None
+        );
         register_foreign_builtin(
             path_from(&["core", "exhaust"], strings),
             &["iter"],
             vec![
-                type_scope.register_with_types(Some(vec![
-                    Type::Closure(
-                        vec![],
-                        exhausted_clore_return_types,
-                        None
-                    )
-                ]))
+                type_scope.insert_group(&[
+                    Type::Closure(closure_tidx)
+                ])
             ],
-            type_scope.register_with_types(Some(vec![Type::Unit])),
+            type_scope.insert_group(&[Type::Unit]),
             strings, modules, typed_symbols
         );
     }
@@ -157,9 +167,9 @@ fn load_foreign_builtins(
             path_from(&["core", "panic"], strings),
             &["message"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::String]))
+                type_scope.insert_group(&[Type::String])
             ],
-            type_scope.register_with_types(Some(vec![Type::Panic])),
+            type_scope.insert_group(&[Type::Any]),
             strings, modules, typed_symbols
         );
     }
@@ -168,9 +178,9 @@ fn load_foreign_builtins(
             path_from(&["core", "as_str"], strings),
             &["thing"],
             vec![
-                type_scope.register_variable()
+                type_scope.insert_group(&[Type::Any])
             ],
-            type_scope.register_with_types(Some(vec![Type::String])),
+            type_scope.insert_group(&[Type::String]),
             strings, modules, typed_symbols
         );
     }
@@ -179,9 +189,9 @@ fn load_foreign_builtins(
             path_from(&["core", "as_int"], strings),
             &["number"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::Integer, Type::Float]))
+                type_scope.insert_group(&[Type::Integer, Type::Float])
             ],
-            type_scope.register_with_types(Some(vec![Type::Integer])),
+            type_scope.insert_group(&[Type::Integer]),
             strings, modules, typed_symbols
         );
     }
@@ -190,15 +200,15 @@ fn load_foreign_builtins(
             path_from(&["core", "as_flt"], strings),
             &["number"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::Integer, Type::Float]))
+                type_scope.insert_group(&[Type::Integer, Type::Float])
             ],
-            type_scope.register_with_types(Some(vec![Type::Float])),
+            type_scope.insert_group(&[Type::Float]),
             strings, modules, typed_symbols
         );
     }
     {
-        let s = type_scope.register_with_types(Some(vec![Type::String]));
-        let i = type_scope.register_with_types(Some(vec![Type::Integer]));
+        let s = type_scope.insert_group(&[Type::String]);
+        let i = type_scope.insert_group(&[Type::Integer]);
         register_foreign_builtin(
             path_from(&["core", "substring"], strings),
             &["source", "start", "end"],
@@ -208,7 +218,7 @@ fn load_foreign_builtins(
         );
     }
     {
-        let s = type_scope.register_with_types(Some(vec![Type::String]));
+        let s = type_scope.insert_group(&[Type::String]);
         register_foreign_builtin(
             path_from(&["core", "concat"], strings),
             &["string_a", "string_b"],
@@ -218,34 +228,42 @@ fn load_foreign_builtins(
         );
     }
     {
-        let i = type_scope.register_with_types(Some(vec![Type::Integer]));
-        let u = type_scope.register_with_types(Some(vec![Type::Unit]));
+        let i = type_scope.insert_group(&[Type::Integer]);
+        let u = type_scope.insert_group(&[Type::Unit]);
+        let var_tidx = type_scope.insert_variants(
+            [
+                (strings.insert("some"), i),
+                (strings.insert("none"), u)
+            ].into(),
+            true
+        );
         register_foreign_builtin(
             path_from(&["core", "parse_int"], strings),
             &["source"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::String]))
+                type_scope.insert_group(&[Type::String])
             ],
-            type_scope.register_with_types(Some(vec![Type::Variants([
-                (strings.insert("some"), i),
-                (strings.insert("none"), u)
-            ].into(), true)])),
+            type_scope.insert_group(&[Type::Variants(var_tidx)]),
             strings, modules, typed_symbols
         );
     }
     {
-        let f = type_scope.register_with_types(Some(vec![Type::Float]));
-        let u = type_scope.register_with_types(Some(vec![Type::Unit]));
+        let f = type_scope.insert_group(&[Type::Float]);
+        let u = type_scope.insert_group(&[Type::Unit]);
+        let var_tidx = type_scope.insert_variants(
+            [
+                (strings.insert("some"), f),
+                (strings.insert("none"), u)
+            ].into(),
+            true
+        );
         register_foreign_builtin(
             path_from(&["core", "parse_flt"], strings),
             &["source"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::String]))
+                type_scope.insert_group(&[Type::String])
             ],
-            type_scope.register_with_types(Some(vec![Type::Variants([
-                (strings.insert("some"), f),
-                (strings.insert("none"), u)
-            ].into(), true)])),
+            type_scope.insert_group(&[Type::Variants(var_tidx)]),
             strings, modules, typed_symbols
         );
     }
@@ -254,10 +272,10 @@ fn load_foreign_builtins(
             path_from(&["core", "string"], strings),
             &["repeated", "times"],
             vec![
-                type_scope.register_with_types(Some(vec![Type::String])),
-                type_scope.register_with_types(Some(vec![Type::Integer]))
+                type_scope.insert_group(&[Type::String]),
+                type_scope.insert_group(&[Type::Integer])
             ],
-            type_scope.register_with_types(Some(vec![Type::String])),
+            type_scope.insert_group(&[Type::String]),
             strings, modules, typed_symbols
         );
     }
@@ -266,10 +284,10 @@ fn load_foreign_builtins(
             path_from(&["core", "hash"], strings),
             &["value"],
             vec![
-                type_scope.register_variable(),
+                type_scope.insert_group(&[Type::Any]),
 
             ],
-            type_scope.register_with_types(Some(vec![Type::Integer])),
+            type_scope.insert_group(&[Type::Integer]),
             strings, modules, typed_symbols
         );
     }
