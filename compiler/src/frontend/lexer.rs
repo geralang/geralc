@@ -71,6 +71,9 @@ impl Lexer {
                         } else {
                             self.make_token("..", TokenType::DoubleDot, string_map)
                         }
+                    } else if self.has() && self.current() == '>' {
+                        self.next();
+                        self.make_token(".>", TokenType::MemberPipe, string_map)
                     } else {
                         self.make_token(".", TokenType::Dot, string_map)
                     }))
@@ -134,14 +137,10 @@ impl Lexer {
                     self.next();
                     return Some(Ok(self.make_token("&&", TokenType::DoubleAmpersand, string_map)))
                 }
-                ':' => {
+                ':' => if self.has_next() && self.peek() == ':' {
                     self.next();
-                    return Some(Ok(if self.has() && self.current() == ':' {
-                        self.next();
-                        self.make_token("::", TokenType::DoubleColon, string_map)
-                    } else {
-                        self.make_token(":", TokenType::Colon, string_map)
-                    }))
+                    self.next();
+                    return Some(Ok(self.make_token("::", TokenType::DoubleColon, string_map)))
                 }
                 '#' => { self.next(); return Some(Ok(self.make_token("#", TokenType::Hashtag, string_map))) }
                 ',' => { self.next(); return Some(Ok(self.make_token(",", TokenType::Comma, string_map))) }

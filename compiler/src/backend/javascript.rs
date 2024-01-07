@@ -13,10 +13,11 @@ use crate::util::strings::{StringMap, StringIdx};
 
 pub fn generate_javascript(
     symbols: Vec<IrSymbol>,
-    types: TypeScope,
+    mut types: TypeScope,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
+    types.replace_any_with_unit();
     let mut output = String::new();
     let externals = collect_externals(&symbols);
     output.push_str("(function() {\n");
@@ -232,7 +233,7 @@ fn emit_procedure_impls(
     let builtin_bodies = get_builtin_bodies(strings);
     for symbol in symbols {
         match symbol {
-            IrSymbol::Procedure { path, variant, parameter_types, return_type: _, variables, body } => {
+            IrSymbol::Procedure { path, variant, parameter_types, return_type: _, variables, body, type_scope: _ } => {
                 output.push_str("function ");
                 emit_procedure_name(path, *variant, strings, output);
                 output.push_str("(");
@@ -256,7 +257,7 @@ fn emit_procedure_impls(
                 indent(&body_str, output);
                 output.push_str("}\n");
             }
-            IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type } => {
+            IrSymbol::BuiltInProcedure { path, variant, parameter_types, return_type, type_scope: _ } => {
                 output.push_str("function ");
                 emit_procedure_name(path, *variant, strings, output);
                 output.push_str("(");
@@ -613,16 +614,6 @@ fn emit_instruction(
             body_str.push_str("}\n");
             indent(&body_str, output);
             output.push_str("};\n");
-        }
-        IrInstruction::LoadProcedure { path, variant, into } => {
-            emit_variable(*into, output);
-            output.push_str(" = { captures: {}, call: ");
-            if let Some(backing) = external.get(path) {
-                output.push_str(strings.get(*backing));
-            } else {
-                emit_procedure_name(path, *variant, strings, output);
-            }
-            output.push_str(" };\n");
         }
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);

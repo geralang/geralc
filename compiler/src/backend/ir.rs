@@ -1,6 +1,7 @@
 
 use std::collections::HashMap;
 
+use crate::frontend::types::TypeScope;
 use crate::util::{
     source::SourceRange,
     strings::StringIdx
@@ -19,17 +20,20 @@ pub enum IrSymbol {
         variant: usize,
         parameter_types: Vec<TypeGroup>, return_type: TypeGroup,
         variables: Vec<TypeGroup>,
-        body: Vec<IrInstruction>
+        body: Vec<IrInstruction>,
+        type_scope: TypeScope
     },
     ExternalProcedure {
         path: NamespacePath,
         backing: StringIdx,
-        parameter_types: Vec<TypeGroup>, return_type: TypeGroup
+        parameter_types: Vec<TypeGroup>, return_type: TypeGroup,
+        type_scope: TypeScope
     },
     BuiltInProcedure {
         path: NamespacePath,
         variant: usize,
-        parameter_types: Vec<TypeGroup>, return_type: TypeGroup
+        parameter_types: Vec<TypeGroup>, return_type: TypeGroup,
+        type_scope: TypeScope
     },
     Variable {
         path: NamespacePath,
@@ -66,7 +70,6 @@ pub enum IrInstruction {
         parameter_types: Vec<TypeGroup>, return_type: TypeGroup, captured: HashMap<StringIdx, IrVariable>,
         variables: Vec<TypeGroup>, body: Vec<IrInstruction>, into: IrVariable
     },
-    LoadProcedure { path: NamespacePath, variant: usize, into: IrVariable },
     LoadValue { value: Value, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },

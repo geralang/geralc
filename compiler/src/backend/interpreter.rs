@@ -508,7 +508,7 @@ impl Interpreter {
             }
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                    if let Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body, source: _ }
+                    if let Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body, source: _, type_scope: _ }
                         = symbols.get(path).expect("symbol should exist") {
                         self.stack_trace_push(path.display(strings), node.source(), strings);
                         let returned = if let Some(body) = body {
@@ -806,7 +806,7 @@ impl Interpreter {
                             value
                         }
                     }
-                    Symbol::Procedure { public: _, parameter_names: _, parameter_types: _, returns: _, body: _, source: _ } => {
+                    Symbol::Procedure { .. } => {
                         Value::Unit
                     }
                 })

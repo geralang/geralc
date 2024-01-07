@@ -46,16 +46,16 @@ pub fn compile(
     ].into())]))?;
     // load builtins
     let mut modules = HashMap::new();
-    let mut type_scope = TypeScope::new();
+    let mut global_type_scope = TypeScope::new();
     let mut typed_symbols = HashMap::new();
     let mut external_backings = HashMap::new();
-    load_builtins(&target_str, strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings);
+    load_builtins(&target_str, strings, &mut modules, &mut global_type_scope, &mut typed_symbols, &mut external_backings);
     // process all files
     let mut file_process_errors = Vec::new();
     for (file_name, file_content) in files {
         process_file(
             file_name, file_content, target_str,
-            strings, &mut modules, &mut type_scope, &mut typed_symbols, &mut external_backings
+            strings, &mut modules, &mut global_type_scope, &mut typed_symbols, &mut external_backings
         ).unwrap_or_else(|mut errors| file_process_errors.append(&mut errors));
     }
     if file_process_errors.len() > 0 { return Err(file_process_errors); }
@@ -71,14 +71,14 @@ pub fn compile(
     //println!("canonicalization done");
     // if target consumes AST, pass it the typed AST and return the result
     if let CompileTarget::AstConsumer(generator) = selected_target {
-        return Ok((generator)(type_scope, modules, external_backings, strings));
+        return Ok((generator)(global_type_scope, modules, external_backings, strings));
     }
     // type check
-    type_check_modules(modules, &strings, &mut type_scope, &mut typed_symbols)?;
+    type_check_modules(modules, &strings, &mut global_type_scope, &mut typed_symbols)?;
     //println!("type checking done");
     // if target consumes typed AST, pass it the typed AST and return the result
     if let CompileTarget::TypedAstConsumer(generator) = selected_target {
-        return Ok((generator)(type_scope, typed_symbols, external_backings, strings));
+        return Ok((generator)(global_type_scope, typed_symbols, external_backings, strings));
     }
     // find main procedure
     let main_proc = main_proc.map(|p| Ok(p)).unwrap_or_else(|| Err(vec![Error::new([
@@ -110,13 +110,13 @@ pub fn compile(
     ].into())]); };
     // lower typed AST
     let ir_symbols = lower_typed_ast(
-        strings, &mut type_scope, &typed_symbols, &external_backings,
+        strings, &mut global_type_scope, &typed_symbols, &external_backings,
         (&main_procedure_path, main_procedure)
     ).map_err(|e| vec![e])?;
     //println!("lowering done");
     // if target consumes IR, pass it the IR and return the result
     if let CompileTarget::IrConsumer(generator) = selected_target {
-        return Ok((generator)(ir_symbols, type_scope, main_procedure_path, strings));
+        return Ok((generator)(ir_symbols, global_type_scope, main_procedure_path, strings));
     }
     // done!
     return Ok(String::new())
@@ -128,7 +128,7 @@ pub fn process_file(
     target_str: &str,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
-    type_scope: &mut TypeScope,
+    global_type_scope: &mut TypeScope,
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &mut HashMap<NamespacePath, StringIdx>
 ) -> Result<(), Vec<Error>> {
@@ -188,7 +188,7 @@ pub fn process_file(
             None => Ok(()),
             Some(Err(error)) => Err(vec![error]),
             Some(Ok(mut parser)) => if let Err(error) = 
-                    parser.parse_header(strings, &mut lexer, modules, type_scope, typed_symbols, external_backings) {
+                    parser.parse_header(strings, &mut lexer, modules, global_type_scope, typed_symbols, external_backings) {
                 Err(vec![error])
             } else {
                 Ok(())

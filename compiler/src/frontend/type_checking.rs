@@ -16,8 +16,20 @@ use crate::frontend::{
 
 #[derive(Debug, Clone)]
 pub enum Symbol<T: Clone + HasSource + HasAstNodeVariant<T>> {
-    Constant { public: bool, value: Option<T>, value_types: TypeGroup },
-    Procedure { public: bool, parameter_names: Vec<StringIdx>, parameter_types: Vec<TypeGroup>, returns: TypeGroup, body: Option<Vec<T>>, source: SourceRange }
+    Constant {
+        public: bool,
+        value: Option<T>,
+        value_types: TypeGroup
+    },
+    Procedure {
+        public: bool,
+        parameter_names: Vec<StringIdx>, 
+        parameter_types: Vec<TypeGroup>,
+        returns: TypeGroup,
+        body: Option<Vec<T>>,
+        source: SourceRange,
+        type_scope: TypeScope
+    }
 }
 
 pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, strings: &StringMap, type_scope: &mut TypeScope, typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>) -> Result<(), Vec<Error>> {
@@ -45,6 +57,7 @@ pub fn type_check_modules(modules: HashMap<NamespacePath, Module<AstNode>>, stri
         else { Ok(()) }
 }
 
+#[derive(Debug, Clone)]
 struct TypeAssertion {
     limited_to: TypeGroup,
     from: SourceRange,
@@ -314,8 +327,8 @@ impl TypeAssertion {
 
 fn type_check_symbol<'s>(
     strings: &StringMap,
-    type_scope: &mut TypeScope,
-    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>)>,
+    global_scope: &mut TypeScope,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>, TypeScope)>,
     untyped_symbols: &mut HashMap<NamespacePath, AstNode>,
     symbols: &'s mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
     name: &NamespacePath
@@ -324,6 +337,7 @@ fn type_check_symbol<'s>(
         let symbol_source = symbol.source();
         match symbol.move_node() {
             AstNodeVariant::Procedure { public, name: _, arguments, body } => {
+                let mut type_scope = TypeScope::new();
                 let untyped_body = body;
                 let mut argument_vars = Vec::new();
                 let mut procedure_variables = HashMap::new();
@@ -341,12 +355,13 @@ fn type_check_symbol<'s>(
                     parameter_types: argument_vars,
                     returns: return_types,
                     body: Some(Vec::new()),
-                    source: symbol_source
+                    source: symbol_source,
+                    type_scope: TypeScope::new()
                 } );
-                rec_procedures.push((name.clone(), vec![Vec::new(); arguments.len()]));
+                rec_procedures.push((name.clone(), vec![Vec::new(); arguments.len()], type_scope));
                 let (typed_body, returns) = match type_check_nodes(
                     strings,
-                    type_scope,
+                    global_scope,
                     rec_procedures,
                     symbol_source,
                     &mut procedure_variables,
@@ -361,8 +376,8 @@ fn type_check_symbol<'s>(
                     Ok(typed_nodes) => typed_nodes,
                     Err(error) => return Err(error),
                 };
-                if let Some(Symbol::Procedure { public: _, parameter_names: _, parameter_types, returns: _, body, source }) = symbols.get_mut(name) {
-                    if let Some((_, arg_groups)) = rec_procedures.pop() {
+                if let Some(Symbol::Procedure { public: _, parameter_names: _, parameter_types, returns: _, body, source, type_scope: symbol_type_scope }) = symbols.get_mut(name) {
+                    if let Some((_, arg_groups, mut type_scope)) = rec_procedures.pop() {
                         fn copy_arg_type_group(t: TypeGroup, mapped: &mut HashMap<usize, TypeGroup>, arg_groups: &Vec<Vec<(TypeGroup, SourceRange)>>, type_scope: &mut TypeScope) -> TypeGroup {
                             if let Some(n) = mapped.get(&type_scope.group_internal_id(t)) {
                                 return *n;
@@ -388,11 +403,11 @@ fn type_check_symbol<'s>(
                             match t {
                                 Type::Any | Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String => *t,
                                 Type::Array(arr) => {
-                                    let element_type = copy_arg_type_group(type_scope.array(arr), mapped, arg_groups, type_scope);
+                                    let element_type = copy_arg_type_group(type_scope.array(*arr), mapped, arg_groups, type_scope);
                                     Type::Array(type_scope.insert_array(element_type))
                                 }
                                 Type::Object(obj) => {
-                                    let (member_types, fixed) = type_scope.object(obj).clone();
+                                    let (member_types, fixed) = type_scope.object(*obj).clone();
                                     let new_member_types = member_types.into_iter().map(|(member_name, member_types)| (
                                         member_name,
                                         copy_arg_type_group(member_types, mapped, arg_groups, type_scope)
@@ -403,7 +418,7 @@ fn type_check_symbol<'s>(
                                     ))
                                 }
                                 Type::ConcreteObject(obj) => {
-                                    let member_types = type_scope.concrete_object(obj).clone();
+                                    let member_types = type_scope.concrete_object(*obj).clone();
                                     let new_member_types = member_types.into_iter().map(|(member_name, member_type)| (
                                         member_name,
                                         copy_arg_type_group(member_type, mapped, arg_groups, type_scope)
@@ -411,7 +426,7 @@ fn type_check_symbol<'s>(
                                     Type::ConcreteObject(type_scope.insert_concrete_object(new_member_types))
                                 }
                                 Type::Closure(clo) => {
-                                    let (parameter_types, return_types, captured) = type_scope.closure(clo).clone();
+                                    let (parameter_types, return_types, captured) = type_scope.closure(*clo).clone();
                                     let new_parameter_types = parameter_types.into_iter().map(|p| copy_arg_type_group(p, mapped, arg_groups, type_scope)).collect();
                                     let new_return_types = copy_arg_type_group(return_types, mapped, arg_groups, type_scope);
                                     let new_captured = captured.as_ref().map(|captured| captured.iter().map(|(capture_name, capture_types)| (
@@ -425,7 +440,7 @@ fn type_check_symbol<'s>(
                                     ))
                                 }
                                 Type::Variants(var) => {
-                                    let (variant_types, fixed) = type_scope.variants(var).clone();
+                                    let (variant_types, fixed) = type_scope.variants(*var).clone();
                                     let new_variant_types = variant_types.into_iter().map(|(variant_name, variant_types)| (
                                         variant_name,
                                         copy_arg_type_group(variant_types, mapped, arg_groups, type_scope)
@@ -438,32 +453,32 @@ fn type_check_symbol<'s>(
                             }
                         }
                         for argument_idx in 0..arguments.len() {
-                            let argument_types = copy_arg_type_group(parameter_types[argument_idx], &mut HashMap::new(), &arg_groups, type_scope);
+                            let argument_types = copy_arg_type_group(parameter_types[argument_idx], &mut HashMap::new(), &arg_groups, &mut type_scope);
                             for (call_param_types, call_param_source) in &arg_groups[argument_idx] {
                                 assert_types(
-                                    TypeAssertion::procedure_parameter(symbol_source, arguments[argument_idx].0, argument_types, type_scope, strings),
-                                    TypeAssertion::call_parameter_value(*call_param_source, *call_param_types, type_scope, strings),
-                                    type_scope
+                                    TypeAssertion::procedure_parameter(symbol_source, arguments[argument_idx].0, argument_types, &mut type_scope, strings),
+                                    TypeAssertion::call_parameter_value(*call_param_source, *call_param_types, &mut type_scope, strings),
+                                    &mut type_scope
                                 )?;
                             }
                         }
-                    }   
-                    if !returns.1 {
-                        assert_types(
-                            TypeAssertion::returned_values(*source, return_types, type_scope, strings),
-                            TypeAssertion::implicit_unit_return(*source, type_scope, strings),
-                            type_scope
-                        )?;
-                    }
-                    *body = Some(typed_body);
+                        if !returns.1 {
+                            let assertion_a = TypeAssertion::returned_values(*source, return_types, &type_scope, strings);
+                            let assertion_b = TypeAssertion::implicit_unit_return(*source, &mut type_scope, strings);
+                            assert_types(assertion_a, assertion_b, &mut type_scope)?;
+                        }
+                        *body = Some(typed_body);
+                        *symbol_type_scope = type_scope;
+                    } else { panic!("procedure stack was illegally modified!"); }
                 } else { panic!("procedure was illegally modified!"); }
             }
             AstNodeVariant::Variable { public, mutable: _, name: _, value_types: _, value } => {
-                let return_types = type_scope.insert_group(&[Type::Any]);
+                rec_procedures.push((NamespacePath::new(Vec::new()), vec![], TypeScope::new()));
+                let return_types = global_scope.insert_group(&[Type::Any]);
                 let value_typed = if let Some(value) = value {
                     match type_check_node(
                         strings,
-                        type_scope,
+                        global_scope,
                         rec_procedures,
                         symbol_source,
                         &mut HashMap::new(),
@@ -481,7 +496,8 @@ fn type_check_symbol<'s>(
                         Err(error) => return Err(error),
                     }
                 } else { panic!("grammar checker failed to see a constant without a value"); };
-                let variable_types = value_typed.get_types();
+                let variable_types = rec_procedures.pop().expect("should still be in there")
+                    .2.transfer_group(value_typed.get_types(), global_scope);
                 symbols.insert(name.clone(), Symbol::Constant {
                     public,
                     value: Some(value_typed),
@@ -505,8 +521,8 @@ type AlwaysReturns = bool;
 
 fn type_check_nodes(
     strings: &StringMap,
-    type_scope: &mut TypeScope,
-    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>)>,
+    global_type_scope: &mut TypeScope,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>, TypeScope)>,
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (TypeGroup, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
@@ -522,7 +538,7 @@ fn type_check_nodes(
     while nodes.len() > 0 {
         match type_check_node(
             strings,
-            type_scope,
+            global_type_scope,
             rec_procedures,
             procedure_source,
             variables,
@@ -613,8 +629,8 @@ fn initalize_variables(
 
 fn type_check_node(
     strings: &StringMap,
-    type_scope: &mut TypeScope,
-    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>)>,
+    global_type_scope: &mut TypeScope,
+    rec_procedures: &mut Vec<(NamespacePath, Vec<Vec<(TypeGroup, SourceRange)>>, TypeScope)>,
     procedure_source: SourceRange,
     variables: &mut HashMap<StringIdx, (TypeGroup, bool, SourceRange)>,
     scope_variables: &mut HashSet<StringIdx>,
@@ -628,24 +644,28 @@ fn type_check_node(
     assignment: bool
 ) -> Result<(TypedAstNode, (SometimesReturns, AlwaysReturns)), Error> {
     let node_source = node.source();
+    macro_rules! type_scope { () => { {
+        let idx = rec_procedures.len() - 1;
+        &mut rec_procedures[idx].2
+    } } }
     macro_rules! type_check_node { ($node: expr, $limited_to: expr) => {
-        match type_check_node(strings, type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
+        match type_check_node(strings, global_type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     }; ($node: expr, $limited_to: expr, $assignment: expr) => {
-        match type_check_node(strings, type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
+        match type_check_node(strings, global_type_scope, rec_procedures, procedure_source, variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     }; ($node: expr, $limited_to: expr, $assignment: expr, $variables: expr) => {
-        match type_check_node(strings, type_scope, rec_procedures, procedure_source, $variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
+        match type_check_node(strings, global_type_scope, rec_procedures, procedure_source, $variables, scope_variables, uninitialized_variables, captured_variables, untyped_symbols, symbols, $node, return_types, $limited_to, $assignment) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
     } }
     macro_rules! type_check_nodes { ($nodes: expr, $variables: expr, $scope_variables: expr, $uninitialized_variables: expr) => {
-        match type_check_nodes(strings, type_scope, rec_procedures, procedure_source, $variables, $scope_variables, $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
+        match type_check_nodes(strings, global_type_scope, rec_procedures, procedure_source, $variables, $scope_variables, $uninitialized_variables, captured_variables, untyped_symbols, symbols, $nodes, return_types) {
             Ok(typed_node) => typed_node,
             Err(error) => return Err(error)
         }
@@ -657,16 +677,16 @@ fn type_check_node(
             let mut closure_scope_variables = HashSet::new();
             let mut closure_args = Vec::new();
             for argument in &arguments {
-                let var_idx = type_scope.insert_group(&[Type::Any]);
+                let var_idx = type_scope!().insert_group(&[Type::Any]);
                 closure_args.push(var_idx);
                 closure_variables.insert(argument.0, (var_idx, false, argument.1));
                 closure_scope_variables.insert(argument.0);
             }
-            let return_types = type_scope.insert_group(&[Type::Any]);
+            let return_types = type_scope!().insert_group(&[Type::Any]);
             let mut captured = HashSet::new();
             let (typed_body, returns) = match type_check_nodes(
                 strings,
-                type_scope,
+                global_type_scope,
                 rec_procedures,
                 procedure_source,
                 &mut closure_variables,
@@ -688,12 +708,12 @@ fn type_check_node(
             }
             if !returns.1 {
                 assert_types(
-                    TypeAssertion::returned_values(node_source, return_types, type_scope, strings),
-                    TypeAssertion::implicit_unit_return(node_source, type_scope, strings),
-                    type_scope
+                    TypeAssertion::returned_values(node_source, return_types, type_scope!(), strings),
+                    TypeAssertion::implicit_unit_return(node_source, type_scope!(), strings),
+                    type_scope!()
                 )?;
             }
-            let closure_tidx = type_scope.insert_closure(
+            let closure_tidx = type_scope!().insert_closure(
                 closure_args,
                 return_types,
                 Some(captured.into_iter().map(|captured_name| (
@@ -701,25 +721,25 @@ fn type_check_node(
                     variables.get(&captured_name).expect("variable should exist").0.clone()
                 )).collect())
             );
-            let closure_type = type_scope.insert_group(&[Type::Closure(closure_tidx)]);
+            let closure_type = type_scope!().insert_group(&[Type::Closure(closure_tidx)]);
+            if let Some(limited_to) = limited_to {
+                assert_types(
+                    TypeAssertion::literal("closure", node_source, closure_type, type_scope!(), strings),
+                    limited_to,
+                    type_scope!()
+                )?;
+            }
             Ok((TypedAstNode::new(
                 AstNodeVariant::Function {
                     arguments,
                     body: typed_body
                 },
-                if let Some(limited_to) = limited_to {
-                    assert_types(
-                        TypeAssertion::literal("closure", node_source, closure_type, type_scope, strings),
-                        limited_to,
-                        type_scope
-                    )?;
-                    closure_type
-                } else { closure_type },
+                closure_type,
                 node_source
             ), (false, false)))
         }
         AstNodeVariant::Variable { public, mutable, name, value_types: _, value } => {
-            let value_types = type_scope.insert_group(&[Type::Any]);
+            let value_types = type_scope!().insert_group(&[Type::Any]);
             let typed_value = if let Some(value) = value {
                 let typed_value = type_check_node!(*value, Some(TypeAssertion::unexplained(value_types))).0;
                 variables.insert(name, (value_types, mutable, node_source));
@@ -735,7 +755,7 @@ fn type_check_node(
                 name,
                 value_types: Some(value_types),
                 value: typed_value
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (false, false)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::CaseBranches { value, branches, else_body } => {
             let typed_value = type_check_node!(*value, None).0;
@@ -748,7 +768,8 @@ fn type_check_node(
                 let mut branch_uninitialized_variables = uninitialized_variables.clone();
                 let (branch_body, branch_returns) = type_check_nodes!(branch_body, &mut branch_variables, &mut scope_variables.clone(), &mut branch_uninitialized_variables);
                 branches_return.push(branch_returns);
-                typed_branches.push((type_check_node!(branch_value, Some(TypeAssertion::matched_value(node_source, typed_value.get_types(), type_scope, strings)), false, &mut HashMap::new()).0, branch_body));
+                let matched_assertion = TypeAssertion::matched_value(node_source, typed_value.get_types(), type_scope!(), strings);
+                typed_branches.push((type_check_node!(branch_value, Some(matched_assertion), false, &mut HashMap::new()).0, branch_body));
                 branches_variables.push(branch_variables);
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
             }
@@ -759,7 +780,7 @@ fn type_check_node(
             branches_variables.push(else_body_variables);
             branches_uninitialized_variables.push(else_body_uninitialized_variables);
             initalize_variables(
-                strings, type_scope, variables, uninitialized_variables,
+                strings, type_scope!(), variables, uninitialized_variables,
                 &branches_variables,
                 &branches_uninitialized_variables,
                 &branches_return
@@ -770,13 +791,14 @@ fn type_check_node(
                     branches: typed_branches,
                     else_body: typed_else_body
                 },
-                type_scope.insert_group(&[Type::Unit]), node_source),
+                type_scope!().insert_group(&[Type::Unit]), node_source),
                 (branches_return.iter().find(|r| r.0).is_some(), branches_return.iter().find(|r| !r.1).is_none())
             ))
         }
         AstNodeVariant::CaseConditon { condition, body, else_body } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
-            let typed_condition = type_check_node!(*condition, Some(TypeAssertion::condition(node_source, boolean, type_scope, strings))).0;
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
+            let cond_assertion = TypeAssertion::condition(node_source, boolean, type_scope!(), strings);
+            let typed_condition = type_check_node!(*condition, Some(cond_assertion)).0;
             let mut body_variables = variables.clone();
             let mut body_uninitialized_variables = uninitialized_variables.clone();
             let (typed_body, body_returns) = type_check_nodes!(body, &mut body_variables, &mut scope_variables.clone(), &mut body_uninitialized_variables);
@@ -784,7 +806,7 @@ fn type_check_node(
             let mut else_body_uninitialized_variables = uninitialized_variables.clone();
             let (typed_else_body, else_returns) = type_check_nodes!(else_body, &mut else_body_variables, &mut scope_variables.clone(), &mut else_body_uninitialized_variables);
             initalize_variables(
-                strings, type_scope, variables, uninitialized_variables,
+                strings, type_scope!(), variables, uninitialized_variables,
                 &[body_variables, else_body_variables],
                 &[body_uninitialized_variables, else_body_uninitialized_variables],
                 &[body_returns, else_returns]
@@ -793,7 +815,7 @@ fn type_check_node(
                 condition: Box::new(typed_condition),
                 body: typed_body,
                 else_body: typed_else_body
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (body_returns.0 || else_returns.0, body_returns.1 && else_returns.1)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (body_returns.0 || else_returns.0, body_returns.1 && else_returns.1)))
         }
         AstNodeVariant::CaseVariant { value, branches, else_body } => {
             let mut typed_branches = Vec::new();
@@ -803,7 +825,7 @@ fn type_check_node(
             let mut variant_types = HashMap::new();
             for (branch_variant_name, branch_variant_variable, branch_body) in branches {
                 let mut branch_variables = variables.clone();
-                let branch_variant_variable_types = type_scope.insert_group(&[Type::Any]);
+                let branch_variant_variable_types = type_scope!().insert_group(&[Type::Any]);
                 let mut branch_scope_variables = scope_variables.clone();
                 if let Some(branch_variant_variable) = &branch_variant_variable {
                     branch_variables.insert(branch_variant_variable.0, (branch_variant_variable_types, false, branch_variant_variable.1));
@@ -817,9 +839,10 @@ fn type_check_node(
                 branches_uninitialized_variables.push(branch_uninitialized_variables);
                 variant_types.insert(branch_variant_name, branch_variant_variable_types);
             }
-            let variant_tidx = type_scope.insert_variants(variant_types, else_body.is_none());
-            let variant_types = type_scope.insert_group(&[Type::Variants(variant_tidx)]);
-            let typed_value = type_check_node!(*value, Some(TypeAssertion::branch_variants(node_source, variant_types, type_scope, strings))).0;
+            let variant_tidx = type_scope!().insert_variants(variant_types, else_body.is_none());
+            let variant_types = type_scope!().insert_group(&[Type::Variants(variant_tidx)]);
+            let variant_assertion = TypeAssertion::branch_variants(node_source, variant_types, type_scope!(), strings);
+            let typed_value = type_check_node!(*value, Some(variant_assertion)).0;
             let typed_else_body = if let Some(else_body) = else_body {
                 let mut else_body_variables = variables.clone();
                 let mut else_body_uninitialized_variables = uninitialized_variables.clone();
@@ -830,7 +853,7 @@ fn type_check_node(
                 Some(typed_else_body)
             } else { None };
             initalize_variables(
-                strings, type_scope, variables, uninitialized_variables,
+                strings, type_scope!(), variables, uninitialized_variables,
                 &branches_variables,
                 &branches_uninitialized_variables,
                 &branches_return
@@ -841,37 +864,33 @@ fn type_check_node(
                     branches: typed_branches,
                     else_body: typed_else_body
                 },
-                type_scope.insert_group(&[Type::Unit]), node_source),
+                type_scope!().insert_group(&[Type::Unit]), node_source),
                 (branches_return.iter().find(|r| r.0).is_some(), branches_return.iter().find(|r| !r.1).is_none())
             ))
         }
         AstNodeVariant::Assignment { variable, value } => {
             let typed_value = type_check_node!(*value, None).0;
-            let typed_variable = type_check_node!(*variable, None, true).0;
-            assert_types(
-                TypeAssertion::variable(typed_variable.source(), typed_variable.get_types(), type_scope, strings),
-                TypeAssertion::assigned_value(typed_value.source(), typed_value.get_types(), type_scope, strings),
-                type_scope
-            )?;
+            let assigned_val_assertion = TypeAssertion::assigned_value(typed_value.source(), typed_value.get_types(), type_scope!(), strings);
+            let typed_variable = type_check_node!(*variable, Some(assigned_val_assertion), true).0;
             Ok((TypedAstNode::new(AstNodeVariant::Assignment {
                 variable: Box::new(typed_variable),
                 value: Box::new(typed_value)
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (false, false)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::Return { value } => {
+            let ret_vals_assertion = TypeAssertion::returned_values(procedure_source, return_types, type_scope!(), strings);
             let typed_value = type_check_node!(
                 *value,
-                Some(TypeAssertion::returned_values(procedure_source, return_types, type_scope, strings))
+                Some(ret_vals_assertion)
             ).0;
-            //limit!(return_types, typed_value.get_types());
             Ok((TypedAstNode::new(AstNodeVariant::Return {
                 value: Box::new(typed_value)
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (true, true)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (true, true)))
         }
         AstNodeVariant::Call { called, mut arguments } => {
             if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                match type_check_symbol(strings, type_scope, rec_procedures, untyped_symbols, symbols, &path).map(|s| s.clone()) {
-                    Ok(Symbol::Procedure { public: _, parameter_names, parameter_types, returns, body: _, source: _ }) => {
+                match type_check_symbol(strings, global_type_scope, rec_procedures, untyped_symbols, symbols, &path).map(|s| s.clone()) {
+                    Ok(Symbol::Procedure { public: _, parameter_names, parameter_types, returns, body: _, source: _, type_scope: symbol_type_scope }) => {
                         if arguments.len() != parameter_types.len() { return Err(Error::new([
                             ErrorSection::Error(ErrorType::InvalidParameterCount(path.display(strings), parameter_types.len(), arguments.len())),
                             ErrorSection::Code(node_source)
@@ -881,19 +900,24 @@ fn type_check_node(
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
                                 let typed_arg = type_check_node!(arguments.remove(0), None).0;
+                                let typed_arg_types = type_scope!().clone().transfer_group(typed_arg.get_types(), &mut rec_procedures[rec_proc_idx].2);
                                 rec_procedures[rec_proc_idx].1[argument_idx].push(
-                                    (typed_arg.get_types(), typed_arg.source())
+                                    (typed_arg_types, typed_arg.source())
                                 );
                                 typed_arguments.push(typed_arg);
                             }
-                            let returned_types = type_scope.duplicate_group(returns);
+                            let returned_types = rec_procedures[rec_proc_idx].2.clone().transfer_group(returns, type_scope!());
                             if let Some(limited_to) = limited_to {
                                 assert_types(
-                                    TypeAssertion::call_return_value(node_source, returned_types, type_scope, strings),
-                                    limited_to, type_scope
+                                    TypeAssertion::call_return_value(node_source, returned_types, type_scope!(), strings),
+                                    limited_to, type_scope!()
                                 )?;
                             }
-                            let called = type_check_node!(*called, None).0;
+                            let called = TypedAstNode::new(
+                                AstNodeVariant::ModuleAccess { path: path.clone() },
+                                type_scope!().insert_group(&[Type::Unit]),
+                                called.source()
+                            );
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
@@ -901,24 +925,29 @@ fn type_check_node(
                         } else {
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
-                                let param_types = type_scope.duplicate_group(parameter_types[argument_idx]);
+                                let param_types = symbol_type_scope.transfer_group(parameter_types[argument_idx], type_scope!());
+                                let call_param_assertion = TypeAssertion::call_parameter(
+                                    node_source, parameter_names[argument_idx],
+                                    param_types,
+                                    type_scope!(), strings
+                                );
                                 typed_arguments.push(type_check_node!(
                                     arguments.remove(0),
-                                    Some(TypeAssertion::call_parameter(
-                                        node_source, parameter_names[argument_idx],
-                                        param_types,
-                                        type_scope, strings
-                                    ))
+                                    Some(call_param_assertion)
                                 ).0);
                             }
-                            let returned_types = type_scope.duplicate_group(returns);
+                            let returned_types = symbol_type_scope.transfer_group(returns, type_scope!());
                             if let Some(limited_to) = limited_to {
                                 assert_types(
-                                    TypeAssertion::call_return_value(node_source, returned_types, type_scope, strings),
-                                    limited_to, type_scope
+                                    TypeAssertion::call_return_value(node_source, returned_types, type_scope!(), strings),
+                                    limited_to, type_scope!()
                                 )?;
                             }
-                            let called = type_check_node!(*called, None).0;
+                            let called = TypedAstNode::new(
+                                AstNodeVariant::ModuleAccess { path: path.clone() },
+                                type_scope!().insert_group(&[Type::Unit]),
+                                called.source()
+                            );
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
@@ -936,37 +965,26 @@ fn type_check_node(
                 passed_arg_vars.push(typed_argument.get_types());
                 typed_arguments.push(typed_argument);
             }
-            let passed_return_type = type_scope.insert_group(&[Type::Any]);
+            let passed_return_type = type_scope!().insert_group(&[Type::Any]);
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::unexplained(passed_return_type),
-                    limited_to, type_scope
+                    limited_to, type_scope!()
                 ).expect("should not fail");
             }
-            let closure_tidx = type_scope.insert_closure(
+            let closure_tidx = type_scope!().insert_closure(
                 passed_arg_vars, passed_return_type, None
             );
-            let closure_types = type_scope.insert_group(&[Type::Closure(closure_tidx)]);
+            let closure_types = type_scope!().insert_group(&[Type::Closure(closure_tidx)]);
+            let called_closure_assertion = TypeAssertion::called_closure(node_source, closure_types, type_scope!(), strings);
             let typed_called = type_check_node!(
                 *called,
-                Some(TypeAssertion::called_closure(node_source, closure_types, type_scope, strings))
+                Some(called_closure_assertion)
             ).0;
-            let result_type = type_scope.insert_group(&[Type::Any]);
-            let possible_types = type_scope.group(typed_called.get_types()).collect::<Vec<Type>>();
-            for possible_type in possible_types {
-                if let Type::Closure(clo) = possible_type {
-                    let return_types = type_scope.closure(clo).1;
-                    if !type_scope.try_merge_groups(result_type, return_types) {
-                        panic!("should not fail");
-                    }
-                } else {
-                    panic!("We called something that's not a closure! Shouln't the call to 'type_check_node!' have already enforced this?");
-                }
-            }
             Ok((TypedAstNode::new(AstNodeVariant::Call {
                 called: Box::new(typed_called),
                 arguments: typed_arguments
-            }, result_type, node_source), (false, false)))
+            }, passed_return_type, node_source), (false, false)))
         }
         AstNodeVariant::Object { values } => {
             let mut member_types = HashMap::new();
@@ -976,12 +994,12 @@ fn type_check_node(
                 member_types.insert(member_name, typed_member_value.get_types().clone());
                 typed_values.push((member_name, typed_member_value));
             }
-            let object_tidx = type_scope.insert_object(member_types, true);
-            let object_type = type_scope.insert_group(&[Type::Object(object_tidx)]);
+            let object_tidx = type_scope!().insert_object(member_types, true);
+            let object_type = type_scope!().insert_group(&[Type::Object(object_tidx)]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("object", node_source, object_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("object", node_source, object_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Object {
@@ -989,18 +1007,19 @@ fn type_check_node(
             }, object_type, node_source), (false, false)))
         }
         AstNodeVariant::Array { values } => {
-            let element_types = type_scope.insert_group(&[Type::Any]);
+            let element_types = type_scope!().insert_group(&[Type::Any]);
             let mut typed_values = Vec::new();
             for value in values {
-                let typed_value = type_check_node!(value, Some(TypeAssertion::array_values(node_source, element_types, type_scope, strings))).0;
+                let array_values_assertion = TypeAssertion::array_values(node_source, element_types, type_scope!(), strings);
+                let typed_value = type_check_node!(value, Some(array_values_assertion)).0;
                 typed_values.push(typed_value);
             }
-            let array_tidx = type_scope.insert_array(element_types);
-            let array_type = type_scope.insert_group(&[Type::Array(array_tidx)]);
+            let array_tidx = type_scope!().insert_array(element_types);
+            let array_type = type_scope!().insert_group(&[Type::Array(array_tidx)]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("array", node_source, array_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("array", node_source, array_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Array {
@@ -1008,61 +1027,40 @@ fn type_check_node(
             }, array_type, node_source), (false, false)))
         }
         AstNodeVariant::ObjectAccess { object, member } => {
-            let accessed_object_member_types = type_scope.insert_group(&[Type::Any]);
-            let accessed_object_tidx = type_scope.insert_object([(member, accessed_object_member_types)].into(), false);
-            let accessed_object_types = type_scope.insert_group(&[Type::Object(accessed_object_tidx)]);
-            let typed_object = type_check_node!(*object, Some(TypeAssertion::accessed_object(node_source, accessed_object_types, type_scope, strings)), false).0;
-            let result_types = type_scope.insert_group(&[Type::Any]);
-            for possible_type in type_scope.group(typed_object.get_types()).collect::<Vec<Type>>() {
-                if let Type::Object(obj) = possible_type {
-                    let member_types = type_scope.object(obj).0.clone();
-                    if !type_scope.try_merge_groups(
-                        result_types,
-                        *member_types.get(&member).expect("We accessed an invalid member! Shouln't the first call to 'type_check_node!' have already enforced this?")
-                    ) { panic!("should be valid"); }   
-                } else {
-                    panic!("We accessed a member of something that's not an object! Shouln't the first call to 'type_check_node!' have already enforced this?");
-                }
-            }
+            let accessed_object_member_types = type_scope!().insert_group(&[Type::Any]);
+            let accessed_object_tidx = type_scope!().insert_object([(member, accessed_object_member_types)].into(), false);
+            let accessed_object_types = type_scope!().insert_group(&[Type::Object(accessed_object_tidx)]);
+            let accessed_object_assertion = TypeAssertion::accessed_object(node_source, accessed_object_types, type_scope!(), strings);
+            let typed_object = type_check_node!(*object, Some(accessed_object_assertion), false).0;
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::access_result(node_source, result_types, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::access_result(node_source, accessed_object_member_types, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::ObjectAccess {
                 object: Box::new(typed_object),
                 member
-            }, result_types, node_source), (false, false)))
+            }, accessed_object_member_types, node_source), (false, false)))
         }
         AstNodeVariant::ArrayAccess { array, index } => {
-            let accessed_array_element_types = type_scope.insert_group(&[Type::Any]);
-            let accessed_array_tidx = type_scope.insert_array(accessed_array_element_types);
-            let accessed_array_types = type_scope.insert_group(&[Type::Array(accessed_array_tidx)]);
+            let accessed_array_element_types = type_scope!().insert_group(&[Type::Any]);
+            let accessed_array_tidx = type_scope!().insert_array(accessed_array_element_types);
+            let accessed_array_types = type_scope!().insert_group(&[Type::Array(accessed_array_tidx)]);
             let typed_array = type_check_node!(*array, Some(TypeAssertion::accessed_array(node_source, accessed_array_types)), false).0;
-            let index_types = type_scope.insert_group(&[Type::Integer]);
-            let typed_index = type_check_node!(*index, Some(TypeAssertion::array_index(node_source, index_types, type_scope, strings)), false).0;
-            let result_types = type_scope.insert_group(&[Type::Any]);
-            for possible_type in type_scope.group(typed_array.get_types()).collect::<Vec<Type>>() {
-                if let Type::Array(arr) = possible_type {
-                    let element_type = type_scope.array(arr);
-                    if !type_scope.try_merge_groups(result_types, element_type) {
-                        panic!("should be valid");
-                    }
-                } else {
-                    panic!("We indexed into something that's not an array! Shouln't the first call to 'type_check_node!' have already enforced this?");
-                }
-            }
+            let index_types = type_scope!().insert_group(&[Type::Integer]);
+            let array_index_assertion = TypeAssertion::array_index(node_source, index_types, type_scope!(), strings);
+            let typed_index = type_check_node!(*index, Some(array_index_assertion), false).0;
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::access_result(node_source, result_types, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::access_result(node_source, accessed_array_element_types, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::ArrayAccess {
                 array: Box::new(typed_array),
                 index: Box::new(typed_index)
-            }, result_types, node_source), (false, false)))
+            }, accessed_array_element_types, node_source), (false, false)))
         }
         AstNodeVariant::VariableAccess { name } => {
             if !scope_variables.contains(&name) {
@@ -1078,8 +1076,8 @@ fn type_check_node(
                 } else {
                     if let Some(limited_to) = limited_to {
                         assert_types(
-                            TypeAssertion::variable(*variable_source, variable_types, type_scope, strings), 
-                            limited_to, type_scope
+                            TypeAssertion::variable(*variable_source, variable_types, type_scope!(), strings), 
+                            limited_to, type_scope!()
                         )?;
                     }
                     Ok((TypedAstNode::new(
@@ -1090,6 +1088,12 @@ fn type_check_node(
                 }
             } else if let Some((variable_types, variable_mutable, variable_source)) = uninitialized_variables.remove(&name) {
                 if assignment {
+                    if let Some(limited_to) = limited_to {
+                        assert_types(
+                            TypeAssertion::variable(variable_source, variable_types, type_scope!(), strings), 
+                            limited_to, type_scope!()
+                        )?;
+                    }
                     variables.insert(name, (variable_types, variable_mutable, variable_source));
                     Ok((TypedAstNode::new(
                         AstNodeVariant::VariableAccess { name },
@@ -1110,11 +1114,11 @@ fn type_check_node(
             }
         }
         AstNodeVariant::BooleanLiteral { value } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("boolean", node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("boolean", node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1124,11 +1128,11 @@ fn type_check_node(
             ), (false, false)))
         }
         AstNodeVariant::IntegerLiteral { value } => {
-            let integer = type_scope.insert_group(&[Type::Integer]);
+            let integer = type_scope!().insert_group(&[Type::Integer]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("integer", node_source, integer, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("integer", node_source, integer, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1138,11 +1142,11 @@ fn type_check_node(
             ), (false, false)))
         }
         AstNodeVariant::FloatLiteral { value } => {
-            let float = type_scope.insert_group(&[Type::Float]);
+            let float = type_scope!().insert_group(&[Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("float", node_source, float, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("float", node_source, float, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1152,11 +1156,11 @@ fn type_check_node(
             ), (false, false)))
         }
         AstNodeVariant::StringLiteral { value } => {
-            let string = type_scope.insert_group(&[Type::String]);
+            let string = type_scope!().insert_group(&[Type::String]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("string", node_source, string, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("string", node_source, string, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1166,11 +1170,11 @@ fn type_check_node(
             ), (false, false)))
         }
         AstNodeVariant::UnitLiteral => {
-            let unit = type_scope.insert_group(&[Type::Unit]);
+            let unit = type_scope!().insert_group(&[Type::Unit]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("unit", node_source, unit, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("unit", node_source, unit, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1180,228 +1184,243 @@ fn type_check_node(
             ), (false, false)))
         }
         AstNodeVariant::Add { a, b } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Add {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::Subtract { a, b } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Subtract {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::Multiply { a, b } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Multiply {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::Divide { a, b } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Divide {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::Modulo { a, b } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Modulo {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::Negate { x } => {
-            let op_type = type_scope.insert_group(&[Type::Integer, Type::Float]);
+            let op_type = type_scope!().insert_group(&[Type::Integer, Type::Float]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::arithmetic_result(node_source, op_type, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let x_typed = type_check_node!(*x, Some(TypeAssertion::arithmetic_argument(node_source, op_type, type_scope, strings))).0;
+            let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, type_scope!(), strings);
+            let x_typed = type_check_node!(*x, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Negate {
                 x: Box::new(x_typed),
             }, op_type, node_source), (false, false)))
         }
         AstNodeVariant::LessThan { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Integer, Type::Float]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Integer, Type::Float]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::LessThan {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::LessThanEqual { a , b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Integer, Type::Float]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Integer, Type::Float]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::LessThanEqual {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::GreaterThan { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Integer, Type::Float]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Integer, Type::Float]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::GreaterThan {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::GreaterThanEqual { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Integer, Type::Float]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Integer, Type::Float]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::GreaterThanEqual {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::Equals { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Any]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Any]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Equals {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::NotEquals { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::comparison_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::comparison_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let arg_types = type_scope.insert_group(&[Type::Any]);
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::comparison_argument(node_source, arg_types, type_scope, strings))).0;
+            let arg_types = type_scope!().insert_group(&[Type::Any]);
+            let assertion = TypeAssertion::comparison_argument(node_source, arg_types, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::NotEquals {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::And { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::logical_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::logical_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::logical_argument(node_source, boolean, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::logical_argument(node_source, boolean, type_scope, strings))).0;
+            let assertion = TypeAssertion::logical_argument(node_source, boolean, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::And {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::Or { a, b } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::logical_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::logical_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let a_typed = type_check_node!(*a, Some(TypeAssertion::logical_argument(node_source, boolean, type_scope, strings))).0;
-            let b_typed = type_check_node!(*b, Some(TypeAssertion::logical_argument(node_source, boolean, type_scope, strings))).0;
+            let assertion = TypeAssertion::logical_argument(node_source, boolean, type_scope!(), strings);
+            let a_typed = type_check_node!(*a, Some(assertion.clone())).0;
+            let b_typed = type_check_node!(*b, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Or {
                 a: Box::new(a_typed),
                 b: Box::new(b_typed)
             }, boolean, node_source), (false, false)))
         }
         AstNodeVariant::Not { x } => {
-            let boolean = type_scope.insert_group(&[Type::Boolean]);
+            let boolean = type_scope!().insert_group(&[Type::Boolean]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::logical_result(node_source, boolean, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::logical_result(node_source, boolean, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
-            let x_typed = type_check_node!(*x, Some(TypeAssertion::logical_argument(node_source, boolean, type_scope, strings))).0;
+            let assertion = TypeAssertion::logical_argument(node_source, boolean, type_scope!(), strings);
+            let x_typed = type_check_node!(*x, Some(assertion)).0;
             Ok((TypedAstNode::new(AstNodeVariant::Not {
                 x: Box::new(x_typed),
             }, boolean, node_source), (false, false)))
@@ -1409,39 +1428,52 @@ fn type_check_node(
         AstNodeVariant::Module { path } => {
             Ok((TypedAstNode::new(AstNodeVariant::Module {
                 path
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (false, false)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::ModuleAccess { path } => {
-            match type_check_symbol(strings, type_scope, rec_procedures, untyped_symbols, symbols, &path) {
+            match type_check_symbol(strings, global_type_scope, rec_procedures, untyped_symbols, symbols, &path) {
                 Ok(Symbol::Constant { public: _, value: _, value_types }) => {
+                    let value_types = global_type_scope.transfer_group(*value_types, type_scope!());
                     if let Some(limited_to) = limited_to {
                         assert_types(
-                            TypeAssertion::constant(node_source, *value_types, type_scope, strings),
-                            limited_to, type_scope
+                            TypeAssertion::constant(node_source, value_types, type_scope!(), strings),
+                            limited_to, type_scope!()
                         )?;
                     }
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
                         path
-                    }, value_types.clone(), node_source), (false, false)))
+                    }, value_types, node_source), (false, false)))
                 }
-                Ok(Symbol::Procedure { public: _, parameter_names: _, parameter_types, returns, body: _, source: _ }) => {
-                    let closure_param_types = parameter_types.iter().map(|t| type_scope.duplicate_group(*t)).collect();
-                    let closure_return_type = type_scope.duplicate_group(*returns);
-                    let closure_tidx = type_scope.insert_closure(
-                        closure_param_types,
-                        closure_return_type,
-                        None
-                    );
-                    let closure_type = type_scope.insert_group(&[Type::Closure(closure_tidx)]);
-                    if let Some(limited_to) = limited_to {
-                        assert_types(
-                            TypeAssertion::constant(node_source, closure_type, type_scope, strings),
-                            limited_to, type_scope
-                        )?;
-                    }
-                    Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
-                        path
-                    }, closure_type, node_source), (false, false)))
+                Ok(Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body: _, source: _, type_scope: _ }) => {
+                    // 'io::println' --> '|x| io::println(x)'
+                    let parameter_names = parameter_names.clone();
+                    Ok(type_check_node!(AstNode::new(
+                        AstNodeVariant::Function {
+                            arguments: parameter_names.iter().map(|n| (*n, node_source))
+                                .collect(),
+                            body: vec![AstNode::new(
+                                AstNodeVariant::Return {
+                                    value: AstNode::new(
+                                        AstNodeVariant::Call {
+                                            called: AstNode::new(
+                                                AstNodeVariant::ModuleAccess { path },
+                                                node_source
+                                            ).into(),
+                                            arguments: parameter_names.iter()
+                                                .map(|n| AstNode::new(
+                                                    AstNodeVariant::VariableAccess { name: *n },
+                                                    node_source
+                                                ))
+                                                .collect()
+                                        },
+                                        node_source
+                                    ).into()
+                                },
+                                node_source
+                            )]
+                        },
+                        node_source
+                    ), None))
                 }
                 Err(error) => return Err(error)
             }
@@ -1449,18 +1481,18 @@ fn type_check_node(
         AstNodeVariant::Use { paths } => {
             Ok((TypedAstNode::new(AstNodeVariant::Use {
                 paths
-            }, type_scope.insert_group(&[Type::Unit]), node_source), (false, false)))
+            }, type_scope!().insert_group(&[Type::Unit]), node_source), (false, false)))
         }
         AstNodeVariant::Variant { name, value } => {
             let value_typed = type_check_node!(*value, None).0;
-            let variant_tidx = type_scope.insert_variants(
+            let variant_tidx = type_scope!().insert_variants(
                 [(name, value_typed.get_types().clone())].into(), false
             );
-            let variant_types = type_scope.insert_group(&[Type::Variants(variant_tidx)]);
+            let variant_types = type_scope!().insert_group(&[Type::Variants(variant_tidx)]);
             if let Some(limited_to) = limited_to {
                 assert_types(
-                    TypeAssertion::literal("tag", node_source, variant_types, type_scope, strings),
-                    limited_to, type_scope
+                    TypeAssertion::literal("tag", node_source, variant_types, type_scope!(), strings),
+                    limited_to, type_scope!()
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Variant {
@@ -1530,26 +1562,26 @@ pub fn display_types(
             Type::Integer |
             Type::Float |
             Type::String => {}
-            Type::Array(arr) => collect_letters(letters, type_scope.array(arr), type_scope),
+            Type::Array(arr) => collect_letters(letters, type_scope.array(*arr), type_scope),
             Type::Object(obj) => {
-                for member_types in type_scope.object(obj).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
+                for member_types in type_scope.object(*obj).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
                     collect_letters(letters, member_types, type_scope);
                 }
             }
             Type::ConcreteObject(obj) => {
-                for (_, member_types) in type_scope.concrete_object(obj) {
+                for (_, member_types) in type_scope.concrete_object(*obj) {
                     collect_letters(letters, *member_types, type_scope);
                 }
             }
             Type::Closure(clo) => {
-                let (parameter_types, return_types, _) = type_scope.closure(clo);
+                let (parameter_types, return_types, _) = type_scope.closure(*clo);
                 for parameter_types in parameter_types {
                     collect_letters(letters, *parameter_types, type_scope);
                 }
                 collect_letters(letters, *return_types, type_scope);
             }
             Type::Variants(var) => {
-                for variant_types in type_scope.variants(var).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
+                for variant_types in type_scope.variants(*var).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
                     collect_letters(letters, variant_types, type_scope);
                 }
             }
@@ -1589,10 +1621,10 @@ pub fn display_types(
             Type::String => String::from("string"),
             Type::Array(arr) => format!(
                 "[{}]",
-                display_types_internal(strings, type_scope, type_scope.array(arr), letters)
+                display_types_internal(strings, type_scope, type_scope.array(*arr), letters)
             ),
             Type::Object(obj) => {
-                let (member_types, fixed) = type_scope.object(obj);
+                let (member_types, fixed) = type_scope.object(*obj);
                 format!(
                     "{{ {}{} }}",
                     member_types.iter().map(|(member_name, member_type)| { format!(
@@ -1605,14 +1637,14 @@ pub fn display_types(
             }
             Type::ConcreteObject(obj) => format!(
                 "{{ {}, ... }}",
-                type_scope.concrete_object(obj).iter().map(|(member_name, member_type)| { format!(
+                type_scope.concrete_object(*obj).iter().map(|(member_name, member_type)| { format!(
                     "{} = {}",
                     strings.get(*member_name),
                     display_types_internal(strings, type_scope, *member_type, letters)
                 ) }).collect::<Vec<String>>().join(", ")
             ),
             Type::Closure(clo) => {
-                let (arg_groups, returned_group, _) = type_scope.closure(clo);
+                let (arg_groups, returned_group, _) = type_scope.closure(*clo);
                 let mut result: String = String::from("(");
                 for a in 0..arg_groups.len() {
                     if a > 0 { result.push_str(", "); }
@@ -1623,7 +1655,7 @@ pub fn display_types(
                 result
             },
             Type::Variants(var) => {
-                let (variant_types, fixed) = type_scope.variants(var);
+                let (variant_types, fixed) = type_scope.variants(*var);
                 format!(
                     "({}{})",
                     variant_types.iter().map(|(variant_name, variant_type)| {

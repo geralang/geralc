@@ -34,7 +34,7 @@ fn get_operator_precedence(token_type: TokenType) -> Option<usize> {
         TokenType::DoubleDot |
         TokenType::DoubleDotEquals => Some(8),
         TokenType::FunctionPipe |
-        TokenType::Colon => Some(9),
+        TokenType::MemberPipe => Some(9),
         _ => None
     }
 }
@@ -222,7 +222,7 @@ impl Parser {
                     if self.reached_end { return Ok(previous); }
                     continue;
                 }
-                TokenType::Colon => {
+                TokenType::MemberPipe => {
                     let accessed = enforce_previous!("the thing to call a member of");
                     enforce_next!("the member to call");
                     enforce_current_type!(&[TokenType::Identifier], "the member to call");

@@ -56,7 +56,7 @@ fn serialize_type(
         Type::Float => json!({ "type": "float" }),
         Type::String => json!({ "type": "string" }),
         Type::Array(arr) => {
-            let element_types = type_scope.array(arr);
+            let element_types = type_scope.array(*arr);
             json!({ 
                 "type": "array", 
                 "element_types": serde_json::Value::Number(
@@ -65,11 +65,11 @@ fn serialize_type(
             })
         }
         Type::Object(obj) => {
-            let (member_types, fixed) = type_scope.object(obj);
+            let (member_types, fixed) = type_scope.object(*obj);
             let mut member_stypes = json!({});
             for (mn, mt) in member_types {
                 member_stypes[strings.get(*mn)] = serde_json::Value::Number(
-                    type_scope.group_internal_id(mt).into()
+                    type_scope.group_internal_id(*mt).into()
                 );
             }
             json!({
@@ -79,11 +79,11 @@ fn serialize_type(
             })
         }
         Type::ConcreteObject(obj) => {
-            let member_types = type_scope.concrete_object(obj);
+            let member_types = type_scope.concrete_object(*obj);
             let mut member_stypes = json!({});
             for (mn, mt) in member_types {
                 member_stypes[strings.get(*mn)] = serde_json::Value::Number(
-                    type_scope.group_internal_id(mt).into()
+                    type_scope.group_internal_id(*mt).into()
                 );
             }
             json!({
@@ -93,7 +93,7 @@ fn serialize_type(
             })
         }
         Type::Closure(clo) => {
-            let (parameter_types, return_types, _) = type_scope.closure(clo);
+            let (parameter_types, return_types, _) = type_scope.closure(*clo);
             json!({
                 "type": "closure",
                 "parameter_types": serde_json::Value::Array(parameter_types.iter().map(|t|
@@ -105,7 +105,7 @@ fn serialize_type(
             })
         }
         Type::Variants(var) => {
-            let (variant_types, fixed) = type_scope.variants(var);
+            let (variant_types, fixed) = type_scope.variants(*var);
             let mut variant_stypes = json!({});
             for (vn, vt) in variant_types {
                 variant_stypes[strings.get(*vn)] = serde_json::Value::Number(
@@ -150,7 +150,7 @@ fn serialize_modules(
         // symbol is in this module
         let element_name = strings.get(element_name);
         match symbol {
-            Symbol::Procedure { public, parameter_names, parameter_types, returns, body, source: _ } => {
+            Symbol::Procedure { public, parameter_names, parameter_types, returns, body, source: _, type_scope: _ } => {
                 let is_external = body.is_none() && external_backings.contains_key(symbol_path);
                 let mut procedure = json!({
                     "public": *public,

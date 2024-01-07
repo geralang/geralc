@@ -67,7 +67,7 @@ impl ExternalMappingParser {
         strings: &mut StringMap,
         lexer: &mut Lexer,
         modules: &mut HashMap<NamespacePath, Module<AstNode>>,
-        type_scope: &mut TypeScope,
+        global_type_scope: &mut TypeScope,
         typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
         external_backings: &mut HashMap<NamespacePath, StringIdx>
     ) -> Result<(), Error> {
@@ -81,10 +81,11 @@ impl ExternalMappingParser {
                     self.expect_next(strings, lexer, "an equals-sign ('=')")?;
                     self.expect_type(&[TokenType::Equals], "an equals-sign ('=')")?;
                     self.expect_next(strings, lexer, "the type to give the name to")?;
-                    let type_replacement = self.parse_type(strings, lexer, type_scope, &declared_types)?;
+                    let type_replacement = self.parse_type(strings, lexer, global_type_scope, &declared_types)?;
                     declared_types.insert(type_name, type_replacement);
                 }
                 "proc" => {
+                    let mut symbol_type_scope = TypeScope::new();
                     let source_start = self.current.source;
                     self.expect_next(strings, lexer, "the full path of the procedure")?;
                     let procedure_path = self.parse_path(strings, lexer, "the full path of the procedure")?;
@@ -92,23 +93,25 @@ impl ExternalMappingParser {
                     self.expect_next(strings, lexer, "a parameter's type or a closing parenthesis (')')")?;
                     let mut parameters = Vec::new();
                     while self.current.token_type != TokenType::ParenClose {
-                        let paramter_type = self.parse_type(strings, lexer, type_scope, &declared_types)?; 
+                        let paramter_type = self.parse_type(strings, lexer, global_type_scope, &declared_types)?; 
                         self.expect_type(&[TokenType::ParenClose, TokenType::Comma], "a comma (',') or a closing parenthesis (')')")?;
                         if self.current.token_type == TokenType::Comma {
                             self.expect_next(strings, lexer, "a parameter's type or a closing parenthesis (')')")?;
                         }
-                        let parameter_group = type_scope.insert_group(&[paramter_type]);
+                        let global_parameter_group = global_type_scope.insert_group(&[paramter_type]);
+                        let parameter_group = global_type_scope.transfer_group(global_parameter_group, &mut symbol_type_scope);
                         parameters.push(parameter_group);
                     }
                     self.expect_next(strings, lexer, "an arrow ('->') or an equals-sign ('=')")?;
                     self.expect_type(&[TokenType::Arrow, TokenType::Equals], "an arrow ('->') or an equals-sign ('=')")?;
-                    let return_type = if self.current.token_type == TokenType::Arrow {
+                    let global_return_type = if self.current.token_type == TokenType::Arrow {
                         self.expect_next(strings, lexer, "the return type")?;
-                        self.parse_type(strings, lexer, type_scope, &declared_types)?
+                        self.parse_type(strings, lexer, global_type_scope, &declared_types)?
                     } else {
                         Type::Unit
                     };
-                    let return_type_group = type_scope.insert_group(&[return_type]);
+                    let global_return_type_group = global_type_scope.insert_group(&[global_return_type]);
+                    let return_type = global_type_scope.transfer_group(global_return_type_group, &mut symbol_type_scope);
                     self.expect_type(&[TokenType::Equals], "an equals-sign ('=')")?;
                     self.expect_next(strings, lexer, "the name of the external backing procedure")?;
                     self.expect_type(&[TokenType::Identifier], "the name of the external backing procedure")?;
@@ -147,9 +150,10 @@ impl ExternalMappingParser {
                         public: true,
                         parameter_names: parameters.iter().enumerate().map(|(i, _)| strings.insert(&i.to_string())).collect(),
                         parameter_types: parameters,
-                        returns: return_type_group,
+                        returns: return_type,
                         body: None,
-                        source: SourceRange::new(external_str, external_str, 0, 0)
+                        source: SourceRange::new(external_str, external_str, 0, 0),
+                        type_scope: symbol_type_scope
                     });
                     external_backings.insert(procedure_path, backing);
                 }
@@ -157,7 +161,7 @@ impl ExternalMappingParser {
                     let source_start = self.current.source;
                     self.expect_next(strings, lexer, "the full path of the constant")?;
                     let variable_path = self.parse_path(strings, lexer, "the full path of the constant")?;
-                    let variable_type = self.parse_type(strings, lexer, type_scope, &declared_types)?;
+                    let variable_type = self.parse_type(strings, lexer, global_type_scope, &declared_types)?;
                     self.expect_type(&[TokenType::Equals], "an equals-sign ('=')")?;
                     self.expect_next(strings, lexer, "the name of the external backing constant")?;
                     self.expect_type(&[TokenType::Identifier], "the name of the external backing constant")?;
@@ -194,7 +198,7 @@ impl ExternalMappingParser {
                     typed_symbols.insert(variable_path.clone(), Symbol::Constant {
                         public: true,
                         value: None,
-                        value_types: type_scope.insert_group(&[variable_type])
+                        value_types: global_type_scope.insert_group(&[variable_type])
                     });
                     external_backings.insert(variable_path, backing);
                 }
@@ -213,7 +217,7 @@ impl ExternalMappingParser {
         &mut self,
         strings: &mut StringMap,
         lexer: &mut Lexer,
-        type_scope: &mut TypeScope,
+        global_type_scope: &mut TypeScope,
         declared_types: &HashMap<StringIdx, Type>
     ) -> Result<Type, Error> {
         match self.current.token_type {
@@ -222,8 +226,8 @@ impl ExternalMappingParser {
                 if let TokenType::Pipe = self.current.token_type {
                     self.try_next(strings, lexer)?;
                     loop {
-                        let arg_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
-                        arg_types.push(type_scope.insert_group(&[arg_type]));
+                        let arg_type = self.parse_type(strings, lexer, global_type_scope, declared_types)?;
+                        arg_types.push(global_type_scope.insert_group(&[arg_type]));
                         self.expect_type(&[TokenType::Comma, TokenType::Pipe], "a comma (',') or a pipe ('|')")?;
                         if self.current.token_type == TokenType::Pipe { break; }
                         self.try_next(strings, lexer)?;
@@ -232,9 +236,9 @@ impl ExternalMappingParser {
                 self.try_next(strings, lexer)?;
                 self.expect_type(&[TokenType::Arrow], "an arrow ('->')")?;
                 self.try_next(strings, lexer)?;
-                let return_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
-                let return_tidx = type_scope.insert_group(&[return_type]);
-                Ok(Type::Closure(type_scope.insert_closure(
+                let return_type = self.parse_type(strings, lexer, global_type_scope, declared_types)?;
+                let return_tidx = global_type_scope.insert_group(&[return_type]);
+                Ok(Type::Closure(global_type_scope.insert_closure(
                     arg_types,
                     return_tidx,
                     None
@@ -269,23 +273,23 @@ impl ExternalMappingParser {
                     self.expect_next(strings, lexer, "an equals-sign ('=')")?;
                     self.expect_type(&[TokenType::Equals], "an equals-sign ('=')")?;
                     self.expect_next(strings, lexer, "the type of the member")?;
-                    let member_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
+                    let member_type = self.parse_type(strings, lexer, global_type_scope, declared_types)?;
                     self.expect_type(&[TokenType::BraceClose, TokenType::Comma], "a comma (',') or a closing brace ('}')")?;
                     if self.current.token_type == TokenType::Comma {
                         self.expect_next(strings, lexer, "the name of a member or a closing brace ('}')")?;
                     }
-                    members.push((member_name, type_scope.insert_group(&[member_type])));
+                    members.push((member_name, global_type_scope.insert_group(&[member_type])));
                 }
                 self.try_next(strings, lexer)?;
-                Ok(Type::ConcreteObject(type_scope.insert_concrete_object(members)))
+                Ok(Type::ConcreteObject(global_type_scope.insert_concrete_object(members)))
             }
             TokenType::BracketOpen => {
                 self.expect_next(strings, lexer, "the type of the array's elements")?;
-                let element_type = self.parse_type(strings, lexer, type_scope, declared_types)?;
+                let element_type = self.parse_type(strings, lexer, global_type_scope, declared_types)?;
                 self.expect_type(&[TokenType::BracketClose], "a closing bracket (']')")?;
                 self.try_next(strings, lexer)?;
-                let element_tidx = type_scope.insert_group(&[element_type]);
-                Ok(Type::Array(type_scope.insert_array(element_tidx)))
+                let element_tidx = global_type_scope.insert_group(&[element_type]);
+                Ok(Type::Array(global_type_scope.insert_array(element_tidx)))
             }
             _ => {
                 Err(Error::new([
