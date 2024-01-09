@@ -788,7 +788,14 @@ fn emit_implicit_conversion(
                         member_value.push_str("from.member");
                         member_value.push_str(&member_name.0.to_string());
                         let from_member_type = final_type_scope.object(from_object_idx).0.get(&member_name)
-                            .unwrap_or_else(|| panic!("Object conversion is invalid! '{}' does not exist?", strings.get(member_name)));
+                            .unwrap_or_else(||
+                                panic!(
+                                    "Object conversion is invalid! '{}' does not exist? (while converting from {} to {})",
+                                    strings.get(member_name),
+                                    crate::frontend::type_checking::display_types(strings, final_type_scope, from_type),
+                                    crate::frontend::type_checking::display_types(strings, final_type_scope, to_type)
+                                )
+                            );
                         emit_implicit_conversion(
                             &member_value, *from_member_type, to_member_type, conversions, final_type_scope,
                             strings, &mut conversion_function_str
