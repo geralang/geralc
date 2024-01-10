@@ -1,4 +1,7 @@
-<p align="center"><img src="./banner.png" height=400/></p>
+<img src="logo.png" height="200" align="left"/>
+
+# `gerac`
+*The compiler for the Gera programming language.*
 
 The Gera compiler is not intended to be used on its own. It is recommended to put `gerac` into the PATH and use `gerap` (the Gera package manager) to build / run code.
 
