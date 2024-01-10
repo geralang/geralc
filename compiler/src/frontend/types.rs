@@ -3,8 +3,10 @@ use std::collections::{HashMap, HashSet};
 use crate::util::strings::StringIdx;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TypeGroup(usize, usize);
-impl TypeGroup { pub fn scope_id(&self) -> usize { self.1 } }
+pub struct TypeGroup(usize);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TypeScope(usize);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ArrayType(usize);
@@ -41,13 +43,11 @@ pub enum Type {
     Variants(VariantsType)
 }
 
-static mut NEXT_ID: usize = 0;
-
 #[derive(Debug, Clone)]
-pub struct TypeScope {
-    id: usize,
+pub struct TypeMap {
+    next_scope_id: usize,
     groups: Vec<usize>,
-    group_types: Vec<HashSet<Type>>,
+    internal_groups: Vec<(HashSet<Type>, HashSet<usize>)>,
     arrays: Vec<TypeGroup>,
     objects: Vec<(HashMap<StringIdx, TypeGroup>, bool)>,
     concrete_objects: Vec<Vec<(StringIdx, TypeGroup)>>,
@@ -57,17 +57,12 @@ pub struct TypeScope {
     variants: Vec<(HashMap<StringIdx, TypeGroup>, bool)>
 }
 
-impl TypeScope {
-    pub fn new() -> TypeScope {
-        let id;
-        unsafe {
-            id = NEXT_ID;
-            NEXT_ID += 1;
-        }
-        TypeScope {
-            id,
+impl TypeMap {
+    pub fn new() -> TypeMap {
+        TypeMap {
+            next_scope_id: 0,
             groups: Vec::new(),
-            group_types: Vec::new(),
+            internal_groups: Vec::new(),
             arrays: Vec::new(),
             objects: Vec::new(),
             concrete_objects: Vec::new(),
@@ -76,7 +71,11 @@ impl TypeScope {
         }
     }
 
-    pub fn id(&self) -> usize { self.id }
+    pub fn create_scope(&mut self) -> TypeScope {
+        let id = self.next_scope_id;
+        self.next_scope_id += 1;
+        return TypeScope(id);
+    }
 
     pub fn internal_arrays(&self) -> &Vec<TypeGroup> { &self.arrays }
     pub fn insert_array(
@@ -88,7 +87,7 @@ impl TypeScope {
     }
     pub fn insert_dedup_array(&mut self, v: TypeGroup) -> ArrayType {
         for idx in 0..self.arrays.len() {
-            if !TypeScope::internal_arrays_eq(
+            if !TypeMap::internal_arrays_eq(
                 self.arrays[idx], self, v, self, &mut HashSet::new()
             ) { continue; }
             return ArrayType(idx);
@@ -111,7 +110,7 @@ impl TypeScope {
     }
     pub fn insert_dedup_object(&mut self, v: (HashMap<StringIdx, TypeGroup>, bool)) -> ObjectType {
         for idx in 0..self.objects.len() {
-            if !TypeScope::internal_objects_eq(
+            if !TypeMap::internal_objects_eq(
                 &self.objects[idx], self, &v, self, &mut HashSet::new()
             ) { continue; }
             return ObjectType(idx);
@@ -139,7 +138,7 @@ impl TypeScope {
         &mut self, v: Vec<(StringIdx, TypeGroup)>
     ) -> ConcreteObjectType {
         for idx in 0..self.concrete_objects.len() {
-            if !TypeScope::internal_concrete_objects_eq(
+            if !TypeMap::internal_concrete_objects_eq(
                 &self.concrete_objects[idx], self, &v, self, &mut HashSet::new()
             ) { continue; }
             return ConcreteObjectType(idx);
@@ -170,7 +169,7 @@ impl TypeScope {
         &mut self, v: (Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>)
     ) -> ClosureType {
         for idx in 0..self.closures.len() {
-            if !TypeScope::internal_closures_eq(
+            if !TypeMap::internal_closures_eq(
                 &self.closures[idx], self, &v, self, &mut HashSet::new()
             ) { continue; }
             return ClosureType(idx);
@@ -194,7 +193,7 @@ impl TypeScope {
     }
     pub fn insert_dedup_variants(&mut self, v: (HashMap<StringIdx, TypeGroup>, bool)) -> VariantsType {
         for idx in 0..self.variants.len() {
-            if !TypeScope::internal_variants_eq(
+            if !TypeMap::internal_variants_eq(
                 &self.variants[idx], self, &v, self, &mut HashSet::new()
             ) { continue; }
             return VariantsType(idx);
@@ -208,46 +207,88 @@ impl TypeScope {
     }
 
     pub fn internal_groups(&self)
-        -> &Vec<HashSet<Type>> { &self.group_types }
-    pub fn insert_group(&mut self, types: &[Type]) -> TypeGroup {
-        let internal_idx = self.group_types.len();
-        self.group_types.push(types.iter().map(|t| *t).collect());
+        -> &Vec<(HashSet<Type>, HashSet<usize>)> { &self.internal_groups }
+    pub fn insert_group(&mut self, types: &[Type], scope: TypeScope) -> TypeGroup {
+        let internal_idx = self.internal_groups.len();
+        self.internal_groups.push((types.iter().map(|t| *t).collect(), [scope.0].into()));
         let group_idx = self.groups.len();
         self.groups.push(internal_idx);
-        return TypeGroup(group_idx, self.id);
+        return TypeGroup(group_idx);
+    }
+    pub fn insert_group_with_scopes(&mut self, types: &[Type], scopes: &[TypeScope]) -> TypeGroup {
+        let group = self.insert_group(types, TypeScope(0));
+        self.internal_groups[self.groups[group.0]].1 = scopes.iter().map(|s| s.0).collect();
+        return group;
+    }
+    pub fn add_scope(&mut self, group: TypeGroup, scope: TypeScope) {
+        self.internal_groups[self.groups[group.0]].1.insert(scope.0);
+    }
+    pub fn add_scope_rec(&mut self, group: TypeGroup, scope: TypeScope) {
+        self.internal_groups[self.groups[group.0]].1.insert(scope.0);
+        for t in self.group(group).collect::<Vec<Type>>() {
+            self.add_scope_type_rec(t, scope);
+        }
+    }
+    fn add_scope_type_rec(&mut self, t: Type, scope: TypeScope) {
+        match t {
+            Type::Any | Type::Unit | Type::Boolean | Type::Integer | Type::Float |
+            Type::String => {}
+            Type::Array(arr) => {
+                self.add_scope_rec(self.array(arr), scope);
+            }
+            Type::Object(obj) => {
+                for (_, member_t) in self.object(obj).0.clone() {
+                    self.add_scope_rec(member_t, scope);
+                }
+            }
+            Type::ConcreteObject(obj) => {
+                for (_, member_t) in self.concrete_object(obj).clone() {
+                    self.add_scope_rec(member_t, scope);
+                }
+            }
+            Type::Closure(clo) => {
+                let (param_types, return_t, capture_types) = self.closure(clo).clone();
+                for param_t in param_types {
+                    self.add_scope_rec(param_t, scope);
+                }
+                self.add_scope_rec(return_t, scope);
+                if let Some(capture_types) = capture_types {
+                    for (_, capture_t) in capture_types {
+                        self.add_scope_rec(capture_t, scope);
+                    }
+                }
+            }
+            Type::Variants(var) => {
+                for (_, var_t) in self.variants(var).0.clone() {
+                    self.add_scope_rec(var_t, scope);
+                }
+            }
+        }
     }
     pub fn group(
         &self, group: TypeGroup
     ) -> impl Iterator<Item = Type> + '_ {
-        if group.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, group.1);
-        }
         let internal_idx = self.groups[group.0];
-        return self.group_types[internal_idx].iter().map(|t| *t);
+        return self.internal_groups[internal_idx].0.iter().map(|t| *t);
+    }
+    pub fn group_scopes(&self, group: TypeGroup) -> impl Iterator<Item = TypeScope> + '_ {
+        let internal_idx = self.groups[group.0];
+        return self.internal_groups[internal_idx].1.iter().map(|s| TypeScope(*s));
     }
     pub fn group_concrete(
         &self, group: TypeGroup
     ) -> Type {
-        if group.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, group.1);
-        }
         let t = self.group(group).next().expect("was assumed to be concrete!");
         if let Type::Any = t { Type::Unit } else { t }
     }
     pub fn group_internal_id(&self, group: TypeGroup) -> usize {
-        if group.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, group.1);
-        }
         return self.groups[group.0];
     }
     pub fn set_group_types(
         &mut self, group: TypeGroup, new_types: &[Type]
     ) {
-        if group.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, group.1);
-        }
         let internal_id = self.group_internal_id(group);
-        self.group_types[internal_id] = new_types.iter()
+        self.internal_groups[internal_id].0 = new_types.iter()
             .map(|t| *t).collect()
     }
 
@@ -255,14 +296,8 @@ impl TypeScope {
         &mut self,
         a: TypeGroup, b: TypeGroup
     ) -> bool {
-        if a.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, a.1);
-        }
-        if b.1 != self.id {
-            panic!("Type group was used on a type scope it does not belong to! (scope has ID {}, group belongs to ID {})", self.id, b.1);
-        }
         let mut merged_groups = HashSet::new();
-        if !self.try_merge_groups_internal(a, b, &mut Vec::new(), &mut merged_groups) {
+        if !self.try_merge_groups_internal(a, true, b, true, &mut Vec::new(), &mut merged_groups) {
             return false;
         }
         for (group_a, group_b) in merged_groups {
@@ -282,16 +317,26 @@ impl TypeScope {
     fn try_merge_groups_internal(
         &mut self,
         a: TypeGroup,
+        a_mut: bool,
         b: TypeGroup,
+        b_mut: bool,
         encountered: &mut Vec<usize>,
         merged: &mut HashSet<(TypeGroup, TypeGroup)>
     ) -> bool {
         let a_internal = self.group_internal_id(a);
         let b_internal = self.group_internal_id(b);
         if encountered.contains(&a_internal)
-            && encountered.contains(&b_internal) {
+        && encountered.contains(&b_internal) {
             return true
         }
+        let mergable = self.internal_groups[a_internal].1.iter()
+            .find(|s| self.internal_groups[b_internal].1.contains(*s))
+            .is_some()
+            || self.internal_groups[b_internal].1.iter()
+            .find(|s| self.internal_groups[a_internal].1.contains(*s))
+            .is_some();
+        let a_mut = a_mut && mergable;
+        let b_mut = b_mut && mergable;
         encountered.push(a_internal);
         encountered.push(b_internal);
         let mut merged_types = HashSet::new();
@@ -300,16 +345,22 @@ impl TypeScope {
         for a_type in &a_types {
             for b_type in &b_types {
                 if let Some(r_type) = self.try_merge_types_internal(
-                    *a_type, *b_type, encountered, merged
+                    *a_type, a_mut, *b_type, b_mut, encountered, merged
                 ) {
                     merged_types.insert(r_type);
                 }
             }
         }
         if merged_types.is_empty() { return false; }
-        self.group_types[a_internal] = merged_types.clone();
-        self.group_types[b_internal] = merged_types;
-        merged.insert((a, b));
+        if a_mut {
+            self.internal_groups[a_internal].0 = merged_types.clone();
+        }
+        if b_mut {
+            self.internal_groups[b_internal].0 = merged_types;
+        }
+        if a_mut && b_mut {
+            merged.insert((a, b));
+        }
         encountered.pop();
         encountered.pop();
         true
@@ -317,7 +368,7 @@ impl TypeScope {
 
     fn try_merge_types_internal(
         &mut self,
-        a: Type, b: Type,
+        a: Type, a_mut: bool, b: Type, b_mut: bool,
         encountered: &mut Vec<usize>,
         merged: &mut HashSet<(TypeGroup, TypeGroup)>
     ) -> Option<Type> {
@@ -329,19 +380,19 @@ impl TypeScope {
                     self.concrete_object(obj_a).iter().map(|e| *e).collect(),
                     false
                 ));
-                self.try_merge_types_internal(obj_type, b, encountered, merged)
+                self.try_merge_types_internal(obj_type, a_mut, b, b_mut, encountered, merged)
             }
             (a, Type::ConcreteObject(obj_b)) => {
                 let obj_type = Type::Object(self.insert_object(
                     self.concrete_object(obj_b).iter().map(|e| *e).collect(),
                     false
                 ));
-                self.try_merge_types_internal(a, obj_type, encountered, merged)
+                self.try_merge_types_internal(a, a_mut, obj_type, b_mut, encountered, merged)
             }
             (Type::Array(arr_a), Type::Array(arr_b)) => {
                 if self.try_merge_groups_internal(
-                    self.array(arr_a),
-                    self.array(arr_b),
+                    self.array(arr_a), a_mut,
+                    self.array(arr_b), b_mut,
                     encountered, merged
                 ) { Some(a) } else { None }
             }
@@ -358,7 +409,8 @@ impl TypeScope {
                     ) {
                         (Some(member_type_a), Some(member_type_b)) => {
                             if self.try_merge_groups_internal(
-                                *member_type_a, *member_type_b,
+                                *member_type_a, a_mut,
+                                *member_type_b, b_mut,
                                 encountered, merged
                             ) {
                                 new_members.insert(member_name, *member_type_a);
@@ -387,12 +439,13 @@ impl TypeScope {
                 if params_a.len() != params_b.len() { return None }
                 for p in 0..params_a.len() {
                     if !self.try_merge_groups_internal(
-                        params_a[p], params_b[p],
+                        params_a[p], a_mut,
+                        params_b[p], b_mut,
                         encountered, merged
                     ) { return None; }
                 }
                 if !self.try_merge_groups_internal(
-                    return_a, return_b, encountered, merged
+                    return_a, a_mut, return_b, b_mut, encountered, merged
                 ) { return None; }
                 Some(Type::Closure(self.insert_closure(
                     params_a.clone(),
@@ -414,7 +467,7 @@ impl TypeScope {
                     ) {
                         (Some(variant_type_a), Some(variant_type_b)) => {
                             if self.try_merge_groups_internal(
-                                *variant_type_a, *variant_type_b,
+                                *variant_type_a, a_mut, *variant_type_b, b_mut,
                                 encountered, merged
                             ) {
                                 new_variants.insert(variant_name, *variant_type_a);
@@ -447,107 +500,107 @@ impl TypeScope {
         }
     }
 
-    pub fn transfer_group(
-        &self, group: TypeGroup, dest: &mut TypeScope
-    ) -> TypeGroup {       
-        self.transfer_group_internal(group, dest, &mut HashMap::new())
-    }
+    // pub fn transfer_group(
+    //     &self, group: TypeGroup, dest: &mut TypeMap
+    // ) -> TypeGroup {       
+    //     self.transfer_group_internal(group, dest, &mut HashMap::new())
+    // }
 
-    fn transfer_group_internal(
-        &self, group: TypeGroup, dest: &mut TypeScope,
-        encountered: &mut HashMap<usize, TypeGroup>
-    ) -> TypeGroup {
-        let internal_idx = self.group_internal_id(group);
-        if let Some(transferred_group) = encountered.get(&internal_idx) {
-            return *transferred_group;
-        }
-        let transferred_group = dest.insert_group(&[]);
-        encountered.insert(internal_idx, transferred_group);
-        let transferred_types = self.group(group)
-            .collect::<Vec<Type>>().into_iter()
-            .map(|t| self.transfer_type_internal(t, dest, encountered))
-            .collect::<Vec<Type>>(); 
-        dest.set_group_types(transferred_group, &transferred_types);
-        transferred_group
-    }
+    // fn transfer_group_internal(
+    //     &self, group: TypeGroup, dest: &mut TypeMap,
+    //     encountered: &mut HashMap<usize, TypeGroup>
+    // ) -> TypeGroup {
+    //     let internal_idx = self.group_internal_id(group);
+    //     if let Some(transferred_group) = encountered.get(&internal_idx) {
+    //         return *transferred_group;
+    //     }
+    //     let transferred_group = dest.insert_group(&[]);
+    //     encountered.insert(internal_idx, transferred_group);
+    //     let transferred_types = self.group(group)
+    //         .collect::<Vec<Type>>().into_iter()
+    //         .map(|t| self.transfer_type_internal(t, dest, encountered))
+    //         .collect::<Vec<Type>>(); 
+    //     dest.set_group_types(transferred_group, &transferred_types);
+    //     transferred_group
+    // }
 
-    fn transfer_type_internal(
-        &self, t: Type, dest: &mut TypeScope, encountered: &mut HashMap<usize, TypeGroup>
-    ) -> Type {
-        match t {
-            Type::Array(arr) => {
-                let t = self.transfer_group_internal(
-                    self.array(arr), dest, encountered
-                );
-                Type::Array(dest.insert_array(t))
-            },
-            Type::Object(obj) => {
-                let (old_members, fixed) = self.object(obj).clone();
-                let new_members = old_members.into_iter().map(|(mn, mt)| (
-                    mn,
-                    self.transfer_group_internal(
-                        mt, dest, encountered
-                    )
-                )).collect();
-                Type::Object(dest.insert_object(new_members, fixed))
-            }
-            Type::ConcreteObject(obj) => {
-                let old_members = self.concrete_object(obj).clone();
-                let new_members = old_members.into_iter().map(|(mn, mt)| (
-                    mn,
-                    self.transfer_group_internal(
-                        mt, dest, encountered
-                    )
-                )).collect();
-                Type::ConcreteObject(dest.insert_concrete_object(new_members))
-            }
-            Type::Closure(clo) => {
-                let (old_param_types, old_return_type, old_captures) = self.closure(clo).clone();
-                let new_param_types = old_param_types.into_iter().map(|t| self.transfer_group_internal(
-                    t, dest, encountered
-                )).collect();
-                let new_return_type = self.transfer_group_internal(old_return_type, dest, encountered);
-                let new_captures = old_captures.map(|c| c.into_iter().map(|(cn, ct)| (
-                    cn,
-                    self.transfer_group_internal(ct, dest, encountered)
-                )).collect());
-                Type::Closure(dest.insert_closure(
-                    new_param_types, 
-                    new_return_type, 
-                    new_captures
-                ))
-            }
-            Type::Variants(var) => {
-                let (old_variants, fixed) = self.variants(var).clone();
-                let new_variants = old_variants.into_iter().map(|(vn, vt)| (
-                    vn,
-                    self.transfer_group_internal(
-                        vt, dest, encountered
-                    )
-                )).collect();
-                Type::Variants(dest.insert_variants(
-                    new_variants,
-                    fixed
-                ))
-            }
-            _ => t
-        }
-    }
+    // fn transfer_type_internal(
+    //     &self, t: Type, dest: &mut TypeMap, encountered: &mut HashMap<usize, TypeGroup>
+    // ) -> Type {
+    //     match t {
+    //         Type::Array(arr) => {
+    //             let t = self.transfer_group_internal(
+    //                 self.array(arr), dest, encountered
+    //             );
+    //             Type::Array(dest.insert_array(t))
+    //         },
+    //         Type::Object(obj) => {
+    //             let (old_members, fixed) = self.object(obj).clone();
+    //             let new_members = old_members.into_iter().map(|(mn, mt)| (
+    //                 mn,
+    //                 self.transfer_group_internal(
+    //                     mt, dest, encountered
+    //                 )
+    //             )).collect();
+    //             Type::Object(dest.insert_object(new_members, fixed))
+    //         }
+    //         Type::ConcreteObject(obj) => {
+    //             let old_members = self.concrete_object(obj).clone();
+    //             let new_members = old_members.into_iter().map(|(mn, mt)| (
+    //                 mn,
+    //                 self.transfer_group_internal(
+    //                     mt, dest, encountered
+    //                 )
+    //             )).collect();
+    //             Type::ConcreteObject(dest.insert_concrete_object(new_members))
+    //         }
+    //         Type::Closure(clo) => {
+    //             let (old_param_types, old_return_type, old_captures) = self.closure(clo).clone();
+    //             let new_param_types = old_param_types.into_iter().map(|t| self.transfer_group_internal(
+    //                 t, dest, encountered
+    //             )).collect();
+    //             let new_return_type = self.transfer_group_internal(old_return_type, dest, encountered);
+    //             let new_captures = old_captures.map(|c| c.into_iter().map(|(cn, ct)| (
+    //                 cn,
+    //                 self.transfer_group_internal(ct, dest, encountered)
+    //             )).collect());
+    //             Type::Closure(dest.insert_closure(
+    //                 new_param_types, 
+    //                 new_return_type, 
+    //                 new_captures
+    //             ))
+    //         }
+    //         Type::Variants(var) => {
+    //             let (old_variants, fixed) = self.variants(var).clone();
+    //             let new_variants = old_variants.into_iter().map(|(vn, vt)| (
+    //                 vn,
+    //                 self.transfer_group_internal(
+    //                     vt, dest, encountered
+    //                 )
+    //             )).collect();
+    //             Type::Variants(dest.insert_variants(
+    //                 new_variants,
+    //                 fixed
+    //             ))
+    //         }
+    //         _ => t
+    //     }
+    // }
 
     pub fn groups_eq(
         &self, a: TypeGroup, b: TypeGroup
     ) -> bool {
-        TypeScope::internal_groups_eq(a, self, b, self, &mut HashSet::new())
+        TypeMap::internal_groups_eq(a, self, b, self, &mut HashSet::new())
     }
 
-    pub fn sep_groups_eq(
-        &self, a: TypeGroup, other_scope: &TypeScope, b: TypeGroup
-    ) -> bool {
-        TypeScope::internal_groups_eq(a, self, b, other_scope, &mut HashSet::new())
-    }
+    // pub fn sep_groups_eq(
+    //     &self, a: TypeGroup, other_scope: &TypeMap, b: TypeGroup
+    // ) -> bool {
+    //     TypeMap::internal_groups_eq(a, self, b, other_scope, &mut HashSet::new())
+    // }
 
     fn internal_groups_eq(
-        a: TypeGroup, a_scope: &TypeScope, b: TypeGroup, b_scope: &TypeScope,
+        a: TypeGroup, a_scope: &TypeMap, b: TypeGroup, b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         let a_internal = a_scope.group_internal_id(a);
@@ -560,7 +613,7 @@ impl TypeScope {
         for group_a_t in a_scope.group(a).into_iter() {
             let mut found = false;
             for group_b_t in b_scope.group(b).into_iter() {
-                if !TypeScope::internal_types_eq(
+                if !TypeMap::internal_types_eq(
                     group_a_t, a_scope, group_b_t, b_scope, encountered
                 ) { continue; }
                 found = true;
@@ -576,13 +629,13 @@ impl TypeScope {
     }
 
     fn internal_types_eq(
-        a: Type, a_scope: &TypeScope, b: Type, b_scope: &TypeScope,
+        a: Type, a_scope: &TypeMap, b: Type, b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         match (a, b) {
             (Type::Array(arr_a), Type::Array(arr_b)) => {
                 if arr_a.get_internal_id() == arr_b.get_internal_id() { return true; }
-                TypeScope::internal_arrays_eq(
+                TypeMap::internal_arrays_eq(
                     a_scope.array(arr_a), a_scope,
                     b_scope.array(arr_b), b_scope,
                     encountered
@@ -590,7 +643,7 @@ impl TypeScope {
             }
             (Type::Object(obj_a), Type::Object(obj_b)) => {
                 if obj_a.get_internal_id() == obj_b.get_internal_id() { return true; }
-                TypeScope::internal_objects_eq(
+                TypeMap::internal_objects_eq(
                     a_scope.object(obj_a), a_scope,
                     b_scope.object(obj_b), b_scope,
                     encountered
@@ -598,7 +651,7 @@ impl TypeScope {
             }
             (Type::ConcreteObject(obj_a), Type::ConcreteObject(obj_b)) => {
                 if obj_a.get_internal_id() == obj_b.get_internal_id() { return true; }
-                TypeScope::internal_concrete_objects_eq(
+                TypeMap::internal_concrete_objects_eq(
                     a_scope.concrete_object(obj_a), a_scope,
                     b_scope.concrete_object(obj_b), b_scope,
                     encountered
@@ -606,7 +659,7 @@ impl TypeScope {
             }
             (Type::Closure(clo_a), Type::Closure(clo_b)) => {
                 if clo_a.get_internal_id() == clo_b.get_internal_id() { return true; }
-                TypeScope::internal_closures_eq(
+                TypeMap::internal_closures_eq(
                     a_scope.closure(clo_a), a_scope,
                     b_scope.closure(clo_b), b_scope,
                     encountered
@@ -614,7 +667,7 @@ impl TypeScope {
             }
             (Type::Variants(var_a), Type::Variants(var_b)) => {
                 if var_a.get_internal_id() == var_b.get_internal_id() { return true; }
-                TypeScope::internal_variants_eq(
+                TypeMap::internal_variants_eq(
                     a_scope.variants(var_a), a_scope,
                     b_scope.variants(var_b), b_scope,
                     encountered
@@ -627,22 +680,22 @@ impl TypeScope {
     }
 
     fn internal_arrays_eq(
-        a: TypeGroup, a_scope: &TypeScope, b: TypeGroup, b_scope: &TypeScope,
+        a: TypeGroup, a_scope: &TypeMap, b: TypeGroup, b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
-        TypeScope::internal_groups_eq(a, a_scope, b, b_scope, encountered)
+        TypeMap::internal_groups_eq(a, a_scope, b, b_scope, encountered)
     }
 
     fn internal_objects_eq(
-        a: &(HashMap<StringIdx, TypeGroup>, bool), a_scope: &TypeScope,
-        b: &(HashMap<StringIdx, TypeGroup>, bool), b_scope: &TypeScope,
+        a: &(HashMap<StringIdx, TypeGroup>, bool), a_scope: &TypeMap,
+        b: &(HashMap<StringIdx, TypeGroup>, bool), b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         let a = &a.0;
         let b = &b.0;
         for member in a.keys() {
             if !b.contains_key(member) { return false; }
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 *a.get(member).expect("key from above"), a_scope,
                 *b.get(member).expect("checked above"), b_scope,
                 encountered
@@ -650,7 +703,7 @@ impl TypeScope {
         }
         for member in b.keys() {
             if !a.contains_key(member) { return false; }
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 *a.get(member).expect("checked above"), a_scope,
                 *b.get(member).expect("key from above"), b_scope,
                 encountered
@@ -660,13 +713,13 @@ impl TypeScope {
     }
 
     fn internal_concrete_objects_eq(
-        a: &Vec<(StringIdx, TypeGroup)>, a_scope: &TypeScope,
-        b: &Vec<(StringIdx, TypeGroup)>, b_scope: &TypeScope,
+        a: &Vec<(StringIdx, TypeGroup)>, a_scope: &TypeMap,
+        b: &Vec<(StringIdx, TypeGroup)>, b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         if a.len() != b.len() { return false; }
         for member_idx in 0..a.len() {
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 a[member_idx].1, a_scope,
                 b[member_idx].1, b_scope,
                 encountered
@@ -676,33 +729,33 @@ impl TypeScope {
     }
 
     fn internal_closures_eq(
-        a: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>), a_scope: &TypeScope,
-        b: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>), b_scope: &TypeScope,
+        a: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>), a_scope: &TypeMap,
+        b: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>), b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         let (a_params, a_return, _) = a;
         let (b_params, b_return, _) = b;
         if a_params.len() != b_params.len() { return false; }
         for p in 0..a_params.len() {
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 a_params[p], a_scope, b_params[p], b_scope, encountered
             ) { return false; }
         }
-        return TypeScope::internal_groups_eq(
+        return TypeMap::internal_groups_eq(
             *a_return, a_scope, *b_return, b_scope, encountered
         );
     }
 
     fn internal_variants_eq(
-        a: &(HashMap<StringIdx, TypeGroup>, bool), a_scope: &TypeScope,
-        b: &(HashMap<StringIdx, TypeGroup>, bool), b_scope: &TypeScope,
+        a: &(HashMap<StringIdx, TypeGroup>, bool), a_scope: &TypeMap,
+        b: &(HashMap<StringIdx, TypeGroup>, bool), b_scope: &TypeMap,
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
         let a = &a.0;
         let b = &b.0;
         for variant in a.keys() {
             if !b.contains_key(variant) { return false; }
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 *a.get(variant).expect("key from above"), a_scope,
                 *b.get(variant).expect("checked above"), b_scope,
                 encountered
@@ -710,7 +763,7 @@ impl TypeScope {
         }
         for variant in b.keys() {
             if !a.contains_key(variant) { return false; }
-            if !TypeScope::internal_groups_eq(
+            if !TypeMap::internal_groups_eq(
                 *a.get(variant).expect("checked above"), a_scope,
                 *b.get(variant).expect("key from above"), b_scope,
                 encountered
@@ -719,15 +772,101 @@ impl TypeScope {
         return true;
     }
 
-    fn deduplicated(&self) -> TypeScope {
-        let mut new = TypeScope::new();
-        new.id = self.id;
+    pub fn duplicate_group(
+        &mut self, group: TypeGroup, scope: TypeScope
+    ) -> TypeGroup {       
+        self.duplicate_group_internal(group, scope, &mut HashMap::new())
+    }
+
+    fn duplicate_group_internal(
+        &mut self, group: TypeGroup, scope: TypeScope,
+        encountered: &mut HashMap<usize, TypeGroup>
+    ) -> TypeGroup {
+        let internal_idx = self.group_internal_id(group);
+        if let Some(transferred_group) = encountered.get(&internal_idx) {
+            return *transferred_group;
+        }
+        let transferred_group = self.insert_group(&[], scope);
+        encountered.insert(internal_idx, transferred_group);
+        let transferred_types = self.group(group)
+            .collect::<Vec<Type>>().into_iter()
+            .map(|t| self.duplicate_type_internal(t, scope, encountered))
+            .collect::<Vec<Type>>(); 
+        self.set_group_types(transferred_group, &transferred_types);
+        transferred_group
+    }
+
+    fn duplicate_type_internal(
+        &mut self, t: Type, scope: TypeScope, encountered: &mut HashMap<usize, TypeGroup>
+    ) -> Type {
+        match t {
+            Type::Array(arr) => {
+                let t = self.duplicate_group_internal(
+                    self.array(arr), scope, encountered
+                );
+                Type::Array(self.insert_array(t))
+            },
+            Type::Object(obj) => {
+                let (old_members, fixed) = self.object(obj).clone();
+                let new_members = old_members.into_iter().map(|(mn, mt)| (
+                    mn,
+                    self.duplicate_group_internal(
+                        mt, scope, encountered
+                    )
+                )).collect();
+                Type::Object(self.insert_object(new_members, fixed))
+            }
+            Type::ConcreteObject(obj) => {
+                let old_members = self.concrete_object(obj).clone();
+                let new_members = old_members.into_iter().map(|(mn, mt)| (
+                    mn,
+                    self.duplicate_group_internal(
+                        mt, scope, encountered
+                    )
+                )).collect();
+                Type::ConcreteObject(self.insert_concrete_object(new_members))
+            }
+            Type::Closure(clo) => {
+                let (old_param_types, old_return_type, old_captures) = self.closure(clo).clone();
+                let new_param_types = old_param_types.into_iter().map(|t| self.duplicate_group_internal(
+                    t, scope, encountered
+                )).collect();
+                let new_return_type = self.duplicate_group_internal(old_return_type, scope, encountered);
+                let new_captures = old_captures.map(|c| c.into_iter().map(|(cn, ct)| (
+                    cn,
+                    self.duplicate_group_internal(ct, scope, encountered)
+                )).collect());
+                Type::Closure(self.insert_closure(
+                    new_param_types, 
+                    new_return_type, 
+                    new_captures
+                ))
+            }
+            Type::Variants(var) => {
+                let (old_variants, fixed) = self.variants(var).clone();
+                let new_variants = old_variants.into_iter().map(|(vn, vt)| (
+                    vn,
+                    self.duplicate_group_internal(
+                        vt, scope, encountered
+                    )
+                )).collect();
+                Type::Variants(self.insert_variants(
+                    new_variants,
+                    fixed
+                ))
+            }
+            _ => t
+        }
+    }
+
+    fn deduplicated(&self) -> TypeMap {
+        let mut new = TypeMap::new();
         // deduplicate arrays
         let mut mapped_arrays = HashMap::new();
         for og_array_idx in 0..self.arrays.len() {
             let mut found = false;
             for new_array_idx in 0..new.arrays.len() {
-                if !TypeScope::internal_arrays_eq(
+                if !TypeMap::internal_arrays_eq(
                     self.arrays[og_array_idx], self,
                     new.arrays[new_array_idx], self,
                     &mut HashSet::new()
@@ -746,7 +885,7 @@ impl TypeScope {
         for og_object_idx in 0..self.objects.len() {
             let mut found = false;
             for new_object_idx in 0..new.objects.len() {
-                if !TypeScope::internal_objects_eq(
+                if !TypeMap::internal_objects_eq(
                     &self.objects[og_object_idx], self,
                     &new.objects[new_object_idx], self,
                     &mut HashSet::new()
@@ -765,7 +904,7 @@ impl TypeScope {
         for og_concrete_object_idx in 0..self.concrete_objects.len() {
             let mut found = false;
             for new_concrete_object_idx in 0..new.concrete_objects.len() {
-                if !TypeScope::internal_concrete_objects_eq(
+                if !TypeMap::internal_concrete_objects_eq(
                     &self.concrete_objects[og_concrete_object_idx], self,
                     &new.concrete_objects[new_concrete_object_idx], self,
                     &mut HashSet::new()
@@ -784,7 +923,7 @@ impl TypeScope {
         for og_closure_idx in 0..self.closures.len() {
             let mut found = false;
             for new_closure_idx in 0..new.closures.len() {
-                if !TypeScope::internal_closures_eq(
+                if !TypeMap::internal_closures_eq(
                     &self.closures[og_closure_idx], self,
                     &new.closures[new_closure_idx], self,
                     &mut HashSet::new()
@@ -803,7 +942,7 @@ impl TypeScope {
         for og_variants_idx in 0..self.variants.len() {
             let mut found = false;
             for new_variants_idx in 0..new.variants.len() {
-                if !TypeScope::internal_variants_eq(
+                if !TypeMap::internal_variants_eq(
                     &self.variants[og_variants_idx], self,
                     &new.variants[new_variants_idx], self,
                     &mut HashSet::new()
@@ -845,13 +984,16 @@ impl TypeScope {
             }
         } }
         new.groups = self.groups.clone();
-        new.group_types = self.group_types.iter()
-            .map(|types| types.iter().map(|t|
-                apply_mappings_type(
-                    *t, &mapped_arrays, &mapped_objects, &mapped_concrete_objects, &mapped_closures,
-                    &mapped_variants
-                )
-            ).collect())
+        new.internal_groups = self.internal_groups.iter()
+            .map(|(types, scopes)| (
+                types.iter().map(|t|
+                    apply_mappings_type(
+                        *t, &mapped_arrays, &mapped_objects, &mapped_concrete_objects,
+                        &mapped_closures, &mapped_variants
+                    )
+                ).collect(),
+                scopes.clone()
+            ))
             .collect();
         // done
         return new;
@@ -862,7 +1004,7 @@ impl TypeScope {
     }
 
     pub fn replace_any_with_unit(&mut self) {
-        for group in &mut self.group_types {
+        for (group, _) in &mut self.internal_groups {
             *group = group.iter().map(|t|
                 if let Type::Any = *t { Type::Unit } else { *t }
             ).collect();

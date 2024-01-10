@@ -9,7 +9,7 @@ use crate::util::{
 };
 use crate::frontend::{
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
-    types::{TypeScope, TypeGroup, Type},
+    types::{TypeMap, TypeScope, TypeGroup, Type},
     type_checking::Symbol,
     modules::NamespacePath
 };
@@ -43,7 +43,7 @@ fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<()
 
 pub fn lower_typed_ast(
     strings: &mut StringMap,
-    global_type_scope: &mut TypeScope,
+    types: &mut TypeMap,
     typed_symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &HashMap<NamespacePath, StringIdx>,
     main_procedure: (&NamespacePath, &Symbol<TypedAstNode>)
@@ -57,12 +57,11 @@ pub fn lower_typed_ast(
         body, source: _,
         type_scope
     } = main_procedure.1 {
-        let mut type_scope = type_scope.clone();
         let mut generator = IrGenerator::new();
         let body = generator.lower_nodes(
             body.as_ref().expect("should not be external"),
             &HashMap::new(),
-            &mut type_scope, global_type_scope, HashMap::new(), typed_symbols, strings,
+            types, *type_scope, HashMap::new(), typed_symbols, strings,
             external_backings, &(HashMap::new(), Vec::new()), &mut interpreter, &mut ir_symbols
         )?;
         ir_symbols.push(IrSymbol::Procedure {
@@ -74,12 +73,12 @@ pub fn lower_typed_ast(
                 .map(|v| v.1)
                 .collect(),
             body,
-            type_scope
+            type_scope: *type_scope
         });
     } else { panic!("should be a procedure"); }
     for (symbol_path, typed_symbol) in typed_symbols {
         match typed_symbol {
-            Symbol::Constant { public: _, value, value_types } => {
+            Symbol::Constant { public: _, value, value_types, type_scope: _ } => {
                 if let Some(value) = value {
                     let v = if let Some(value) = interpreter.get_constant_value(symbol_path) {
                         value.clone()
@@ -128,8 +127,8 @@ impl IrGenerator {
         &mut self,
         nodes: &[TypedAstNode],
         captured: &HashMap<StringIdx, TypeGroup>,
-        type_scope: &mut TypeScope,
-        global_type_scope: &mut TypeScope,
+        types: &mut TypeMap,
+        type_scope: TypeScope,
         mut named_variables: HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -141,7 +140,7 @@ impl IrGenerator {
         self.enter();
         for node in nodes {
             self.lower_node(
-                node, None, captured, type_scope, global_type_scope, &mut named_variables,
+                node, None, captured, types, type_scope, &mut named_variables,
                 symbols, strings, external_backings, call_parameters, interpreter,
                 ir_symbols
             )?;
@@ -226,8 +225,8 @@ impl IrGenerator {
 
     fn find_procedure(
         path: &NamespacePath,
-        mut type_scope: TypeScope,
-        global_type_scope: &mut TypeScope,
+        types: &mut TypeMap,
+        type_scope: TypeScope,
         call_parameter_types: Vec<TypeGroup>,
         call_return_type: TypeGroup,
         parameter_names: &Vec<StringIdx>,
@@ -250,19 +249,19 @@ impl IrGenerator {
                 }   
                 IrSymbol::Procedure {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
-                    type_scope: symbol_type_scope, ..
+                    type_scope: _, ..
                 } | IrSymbol::BuiltInProcedure {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
-                    type_scope: symbol_type_scope
+                    type_scope: _
                 } => {
                     if path != proc_path { continue; }
                     found_variant = found_variant.max(*proc_variant + 1);
                     if parameter_types.len() != call_parameter_types.len() { continue; }
                     let mut params_eq = true;
                     for param_idx in 0..parameter_types.len() {
-                        if type_scope.sep_groups_eq(
+                        if types.groups_eq(
                             call_parameter_types[param_idx],
-                            &symbol_type_scope, parameter_types[param_idx]
+                            parameter_types[param_idx]
                         ) {
                             continue;
                         }
@@ -271,7 +270,7 @@ impl IrGenerator {
                     }
                     if !params_eq { continue; }
                     {
-                        if !type_scope.sep_groups_eq(call_return_type, &symbol_type_scope, *return_type) {
+                        if !types.groups_eq(call_return_type, *return_type) {
                             continue;
                         }
                     }
@@ -303,7 +302,7 @@ impl IrGenerator {
                     });
                     let new_body = generator.lower_nodes(
                         body, captured,
-                        &mut type_scope, global_type_scope, HashMap::new(), symbols, strings,
+                        types, type_scope, HashMap::new(), symbols, strings,
                         external_backings, &call_parameters, interpreter, 
                         ir_symbols
                     )?;
@@ -344,8 +343,8 @@ impl IrGenerator {
         node: &TypedAstNode,
         into: Option<IrVariable>,
         captured: &HashMap<StringIdx, TypeGroup>,
-        type_scope: &mut TypeScope,
-        global_type_scope: &mut TypeScope,
+        types: &mut TypeMap,
+        type_scope: TypeScope,
         named_variables: &mut HashMap<StringIdx, usize>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         strings: &mut StringMap,
@@ -356,7 +355,7 @@ impl IrGenerator {
     ) -> Result<Option<IrVariable>, Error> {
         macro_rules! lower_node { ($node: expr, $into: expr) => {
             self.lower_node(
-                $node, $into, captured, type_scope, global_type_scope, named_variables,
+                $node, $into, captured, types, type_scope, named_variables,
                 symbols, strings, external_backings, call_parameters, interpreter, ir_symbols
             )?.expect("should result in a value")
         } }
@@ -366,8 +365,8 @@ impl IrGenerator {
         match node.node_variant() {
             AstNodeVariant::Function { arguments, body } => {
                 let (parameter_types, return_type, body_captures) =
-                    if let Type::Closure(clo) = type_scope.group_concrete(node.get_types()) {
-                    let t = type_scope.closure(clo);
+                    if let Type::Closure(clo) = types.group_concrete(node.get_types()) {
+                    let t = types.closure(clo);
                     (t.0.clone(), t.1, t.2.clone().expect("node type should be a closure with capture info"))
                 } else { panic!("should be a closure!"); };
                 let mut body_captured = HashMap::new();
@@ -399,7 +398,7 @@ impl IrGenerator {
                 }
                 let body = generator.lower_nodes(
                     body, &body_captures,
-                    type_scope, global_type_scope, HashMap::new(), symbols, strings,
+                    types, type_scope, HashMap::new(), symbols, strings,
                     external_backings, &parameters, interpreter, ir_symbols
                 )?;
                 let into = into_given_or_alloc!(node.get_types());
@@ -435,7 +434,7 @@ impl IrGenerator {
                     )?;
                     enforce_valid_constant_value(&branch_value, branch.0.source())?;
                     let branch_body = self.lower_nodes(
-                        &branch.1, captured, type_scope, global_type_scope,
+                        &branch.1, captured, types, type_scope,
                         named_variables.clone(), symbols, strings, external_backings,
                         call_parameters, interpreter, ir_symbols
                     )?;
@@ -443,7 +442,7 @@ impl IrGenerator {
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = self.lower_nodes(
-                    &else_body, captured, type_scope, global_type_scope,
+                    &else_body, captured, types, type_scope,
                     named_variables.clone(), symbols, strings, external_backings, call_parameters,
                     interpreter, ir_symbols
                 )?;
@@ -461,14 +460,14 @@ impl IrGenerator {
                 let mut branch_scopes = Vec::new();
                 let branches = vec![
                     (Value::Boolean(true), self.lower_nodes(
-                        &body, captured, type_scope, global_type_scope,
+                        &body, captured, types, type_scope,
                         named_variables.clone(), symbols, strings, external_backings,
                         call_parameters, interpreter, ir_symbols
                     )?)
                 ];
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 let else_branch = self.lower_nodes(
-                    &else_body, captured, type_scope, global_type_scope,
+                    &else_body, captured, types, type_scope,
                     named_variables.clone(), symbols, strings, external_backings, call_parameters,
                     interpreter, ir_symbols
                 )?;
@@ -494,7 +493,7 @@ impl IrGenerator {
                         Some(variant_var)
                     } else { None };
                     let branch_body = self.lower_nodes(
-                        &branch.2, captured, type_scope, global_type_scope,
+                        &branch.2, captured, types, type_scope,
                         branch_variables, symbols, strings, external_backings, call_parameters,
                         interpreter, ir_symbols
                     )?;
@@ -503,7 +502,7 @@ impl IrGenerator {
                 }
                 let else_branch = if let Some(else_body) = else_body {
                     self.lower_nodes(
-                        &else_body, captured, type_scope, global_type_scope,
+                        &else_body, captured, types, type_scope,
                         named_variables.clone(), symbols, strings, external_backings,
                         call_parameters, interpreter, ir_symbols
                     )?
@@ -559,39 +558,29 @@ impl IrGenerator {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure {
                         public: _, parameter_names, parameter_types, returns, body, source: _,
-                        type_scope: symbol_type_scope
+                        type_scope: _
                     } = symbols.get(path).expect("symbol should exist") {
-                        let mut call_type_scope = symbol_type_scope.clone();
-                        let mut call_parameter_types = Vec::new(); // inside of 'call_type_scope'!
+                        let call_type_scope = types.create_scope();
+                        let mut call_parameter_types = Vec::new();
                         let mut parameter_values = Vec::new();
                         for argument_idx in 0..arguments.len() {
-                            let param_type = type_scope.transfer_group(
-                                arguments[argument_idx].get_types(), &mut call_type_scope
-                            );
-                            call_type_scope.try_merge_groups(
-                                param_type, parameter_types[argument_idx]
-                            );
+                            let param_type = arguments[argument_idx].get_types();
+                            types.add_scope(param_type, call_type_scope);
+                            types.try_merge_groups(param_type, parameter_types[argument_idx]);
                             call_parameter_types.push(param_type);
-                            let og_param_type = call_type_scope.transfer_group(param_type, type_scope);
-                            type_scope.try_merge_groups(og_param_type, arguments[argument_idx].get_types());
                             parameter_values.push(
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
-                        let call_return_type = type_scope.transfer_group(
-                            node.get_types(), &mut call_type_scope
-                        );
-                        call_type_scope.try_merge_groups(call_return_type, *returns);
-                        let og_returns = call_type_scope.transfer_group(
-                            call_return_type, type_scope
-                        );
-                        type_scope.try_merge_groups(og_returns, node.get_types());
+                        let call_return_type = node.get_types();
+                        types.add_scope(call_return_type, call_type_scope);
+                        types.try_merge_groups(call_return_type, *returns);
                         let proc_variant = IrGenerator::find_procedure(
-                            path, call_type_scope, global_type_scope, call_parameter_types,
+                            path, types, call_type_scope, call_parameter_types,
                             call_return_type, parameter_names, body, captured, symbols, strings,
                             external_backings, interpreter, ir_symbols
                         )?;
-                        let into = into_given_or_alloc!(og_returns);
+                        let into = into_given_or_alloc!(call_return_type);
                         self.add(IrInstruction::Call {
                             path: path.clone(),
                             variant: proc_variant,

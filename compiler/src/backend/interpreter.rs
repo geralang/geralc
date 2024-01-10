@@ -789,7 +789,7 @@ impl Interpreter {
             }
             AstNodeVariant::ModuleAccess { path } => {
                 Ok(match symbols.get(path).expect("symbol should exist") {
-                    Symbol::Constant { public: _, value, value_types: _ } => {
+                    Symbol::Constant { public: _, value, value_types: _, type_scope: _ } => {
                         if let Some(value) = self.constants.get(path) {
                             value.clone()
                         } else {

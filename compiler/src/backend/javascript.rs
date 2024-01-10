@@ -7,13 +7,13 @@ use crate::backend::{
 };
 use crate::frontend::{
     modules::NamespacePath,
-    types::{TypeGroup, TypeScope, Type}
+    types::{TypeGroup, TypeMap, Type}
 };
 use crate::util::strings::{StringMap, StringIdx};
 
 pub fn generate_javascript(
     symbols: Vec<IrSymbol>,
-    mut types: TypeScope,
+    mut types: TypeMap,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -61,7 +61,7 @@ fn emit_core_library(output: &mut String) {
 
 fn emit_static_variables(
     symbols: &Vec<IrSymbol>,
-    types: &TypeScope,
+    types: &TypeMap,
     constants: &mut ConstantPool,
     strings: &mut StringMap,
     output: &mut String
@@ -89,11 +89,11 @@ fn emit_variable(variable: IrVariable, output: &mut String) {
     output.push_str(&variable.index.to_string());
 }
 
-fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeScope, &mut StringMap) -> String> {
+fn get_builtin_bodies(strings: &mut StringMap) -> HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeMap, &mut StringMap) -> String> {
     fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
         NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
     }
-    let mut builtins: HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeScope, &mut StringMap) -> String> = HashMap::new();
+    let mut builtins: HashMap<NamespacePath, fn(&Vec<TypeGroup>, TypeGroup, &TypeMap, &mut StringMap) -> String> = HashMap::new();
     builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, _, _| {
         String::from(r#"
 return param0 === param1;
@@ -224,7 +224,7 @@ return gera___hash(param0);
 
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
-    types: &TypeScope,
+    types: &TypeMap,
     constants: &mut ConstantPool,
     strings: &mut StringMap,
     external: &HashMap<NamespacePath, StringIdx>,
@@ -412,7 +412,7 @@ fn indent(indent: &str, output: &mut String) {
 fn emit_block(
     instructions: &Vec<IrInstruction>,
     variable_types: &Vec<TypeGroup>,
-    types: &TypeScope,
+    types: &TypeMap,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
@@ -433,7 +433,7 @@ fn emit_block(
 fn emit_copied(
     copied: &str,
     copied_type: TypeGroup,
-    types: &TypeScope,
+    types: &TypeMap,
     output: &mut String
 ) {
     match types.group_concrete(copied_type) {
@@ -462,7 +462,7 @@ fn emit_copied(
 fn emit_copied_variable(
     copied: IrVariable,
     copied_type: TypeGroup,
-    types: &TypeScope,
+    types: &TypeMap,
     output: &mut String
 ) {
     let mut copied_str = String::new();
@@ -473,7 +473,7 @@ fn emit_copied_variable(
 fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<TypeGroup>,
-    types: &TypeScope,
+    types: &TypeMap,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,

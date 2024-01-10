@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use crate::util::strings::StringIdx;
 use crate::backend::interpreter::Value;
-use crate::frontend::types::{TypeScope, TypeGroup, Type};
+use crate::frontend::types::{TypeMap, TypeGroup, Type};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ConstantStringIdx(usize);
@@ -70,7 +70,7 @@ impl ConstantPool {
         }
     }
 
-    pub fn insert(&mut self, v: &Value, t: TypeGroup, types: &TypeScope) -> ConstantValue {
+    pub fn insert(&mut self, v: &Value, t: TypeGroup, types: &TypeMap) -> ConstantValue {
         match v {
             Value::Unit => ConstantValue::Unit,
             Value::Boolean(b) => ConstantValue::Boolean(*b),
@@ -83,7 +83,6 @@ impl ConstantPool {
                             return ConstantValue::String(ConstantStringIdx(vi));
                         }
                     }
-                    
                 }
                 self.values.push(InternalConstantPoolValue::String(s.clone()));
                 ConstantValue::String(ConstantStringIdx(self.values.len() - 1))
