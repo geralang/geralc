@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::frontend::types::ScopedTypeGroup;
 use crate::process_file;
 use crate::util::{
     strings::{StringMap, StringIdx},
@@ -76,7 +77,7 @@ fn load_foreign_builtins(
         let type_scope = types.create_scope();
         let array_element_type = types.insert_group(&[Type::Any], type_scope);
         let object_tidx = types.insert_object(HashMap::new(), false);
-        let array_tidx = types.insert_array(array_element_type);
+        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_type, type_scope));
         let t = types.insert_group(&[
             Type::Object(object_tidx),
             Type::Array(array_tidx)
@@ -106,7 +107,7 @@ fn load_foreign_builtins(
     {
         let type_scope = types.create_scope();
         let array_element_type = types.insert_group(&[Type::Any], type_scope);
-        let array_tidx = types.insert_array(array_element_type);
+        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_type, type_scope));
         register_foreign_builtin(
             path_from(&["core", "length"], strings),
             &["thing"],
@@ -123,7 +124,7 @@ fn load_foreign_builtins(
     {
         let type_scope = types.create_scope();
         let array_element_types = types.insert_group(&[Type::Any], type_scope);
-        let array_tidx = types.insert_array(array_element_types);
+        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_types, type_scope));
         register_foreign_builtin(
             path_from(&["core", "array"], strings),
             &["value", "size"],
@@ -143,17 +144,17 @@ fn load_foreign_builtins(
         let next = types.insert_group(&[Type::Any], type_scope);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("end"), end),
-                (strings.insert("next"), next)
+                (strings.insert("end"), ScopedTypeGroup::new(end, type_scope)),
+                (strings.insert("next"), ScopedTypeGroup::new(next, type_scope))
             ].into(),
             true
         );
-        let exhausted_clore_return_types = types.insert_group(&[
+        let exhausted_closure_return_types = types.insert_group(&[
             Type::Variants(var_tidx)
         ], type_scope);
         let closure_tidx = types.insert_closure(
             vec![],
-            exhausted_clore_return_types,
+            ScopedTypeGroup::new(exhausted_closure_return_types, type_scope),
             None
         );
         register_foreign_builtin(
@@ -245,8 +246,8 @@ fn load_foreign_builtins(
         let u = types.insert_group(&[Type::Unit], type_scope);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("some"), i),
-                (strings.insert("none"), u)
+                (strings.insert("some"), ScopedTypeGroup::new(i, type_scope)),
+                (strings.insert("none"), ScopedTypeGroup::new(u, type_scope))
             ].into(),
             true
         );
@@ -266,8 +267,8 @@ fn load_foreign_builtins(
         let u = types.insert_group(&[Type::Unit], type_scope);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("some"), f),
-                (strings.insert("none"), u)
+                (strings.insert("some"), ScopedTypeGroup::new(f, type_scope)),
+                (strings.insert("none"), ScopedTypeGroup::new(u, type_scope))
             ].into(),
             true
         );

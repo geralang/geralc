@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde_json::json;
 
 use crate::frontend::{
-    types::{TypeMap, Type},
+    types::TypeMap,
     type_checking::Symbol,
     ast::TypedAstNode,
     modules::NamespacePath
@@ -17,109 +17,110 @@ pub fn generate_symbols(
     external_backings: HashMap<NamespacePath, StringIdx>,
     strings: &mut StringMap
 ) -> String {
-    let mut result = json!({
-        "types": serde_json::Value::Array((0..types.internal_groups().len()).map(|g|
-            serialize_group_types(
-                &types.internal_groups()[g].0.iter().map(|t| *t).collect::<Vec<Type>>(), &types, strings
-            )
-        ).collect()),
-        "modules": json!({}),
-        "procedures": json!({}),
-        "constants": json!({})
-    });
-    serialize_modules(
-        &[], &types, &typed_symbols, &external_backings, strings, &mut result
-    );
-    return result.to_string()
+    todo!("symbols compilation target")
+    // let mut result = json!({
+    //     "types": serde_json::Value::Array((0..types.internal_groups().len()).map(|g|
+    //         serialize_group_types(
+    //             &types.internal_groups()[g].0.iter().map(|t| *t).collect::<Vec<Type>>(), &types, strings
+    //         )
+    //     ).collect()),
+    //     "modules": json!({}),
+    //     "procedures": json!({}),
+    //     "constants": json!({})
+    // });
+    // serialize_modules(
+    //     &[], &types, &typed_symbols, &external_backings, strings, &mut result
+    // );
+    // return result.to_string()
 }
 
-fn serialize_group_types(
-    t: &[Type],
-    types: &TypeMap,
-    strings: &StringMap
-) -> serde_json::Value {
-    serde_json::Value::Array(
-        t.iter().map(|t| serialize_type(t, types, strings)).collect()
-    )
-}
+// fn serialize_group_types(
+//     t: &[Type],
+//     types: &TypeMap,
+//     strings: &StringMap
+// ) -> serde_json::Value {
+//     serde_json::Value::Array(
+//         t.iter().map(|t| serialize_type(t, types, strings)).collect()
+//     )
+// }
 
-fn serialize_type(
-    t: &Type,
-    types: &TypeMap,
-    strings: &StringMap
-) -> serde_json::Value {
-    match t {
-        Type::Any => json!({ "type": "any" }),
-        Type::Unit => json!({ "type": "unit" }),
-        Type::Boolean => json!({ "type": "boolean" }),
-        Type::Integer => json!({ "type": "integer" }),
-        Type::Float => json!({ "type": "float" }),
-        Type::String => json!({ "type": "string" }),
-        Type::Array(arr) => {
-            let element_types = types.array(*arr);
-            json!({ 
-                "type": "array", 
-                "element_types": serde_json::Value::Number(
-                    types.group_internal_id(element_types).into()
-                )
-            })
-        }
-        Type::Object(obj) => {
-            let (member_types, fixed) = types.object(*obj);
-            let mut member_stypes = json!({});
-            for (mn, mt) in member_types {
-                member_stypes[strings.get(*mn)] = serde_json::Value::Number(
-                    types.group_internal_id(*mt).into()
-                );
-            }
-            json!({
-                "type": "object",
-                "member_types": member_stypes,
-                "fixed": *fixed
-            })
-        }
-        Type::ConcreteObject(obj) => {
-            let member_types = types.concrete_object(*obj);
-            let mut member_stypes = json!({});
-            for (mn, mt) in member_types {
-                member_stypes[strings.get(*mn)] = serde_json::Value::Number(
-                    types.group_internal_id(*mt).into()
-                );
-            }
-            json!({
-                "type": "object",
-                "member_types": member_stypes,
-                "fixed": false
-            })
-        }
-        Type::Closure(clo) => {
-            let (parameter_types, return_types, _) = types.closure(*clo);
-            json!({
-                "type": "closure",
-                "parameter_types": serde_json::Value::Array(parameter_types.iter().map(|t|
-                    serde_json::Value::Number(types.group_internal_id(*t).into())
-                ).collect()),
-                "return_types": serde_json::Value::Number(
-                    types.group_internal_id(*return_types).into()
-                )
-            })
-        }
-        Type::Variants(var) => {
-            let (variant_types, fixed) = types.variants(*var);
-            let mut variant_stypes = json!({});
-            for (vn, vt) in variant_types {
-                variant_stypes[strings.get(*vn)] = serde_json::Value::Number(
-                    types.group_internal_id(*vt).into()
-                );
-            }
-            json!({
-                "type": "variants",
-                "variant_types": variant_stypes,
-                "fixed": *fixed
-            })
-        }
-    }
-}
+// fn serialize_type(
+//     t: &Type,
+//     types: &TypeMap,
+//     strings: &StringMap
+// ) -> serde_json::Value {
+//     match t {
+//         Type::Any => json!({ "type": "any" }),
+//         Type::Unit => json!({ "type": "unit" }),
+//         Type::Boolean => json!({ "type": "boolean" }),
+//         Type::Integer => json!({ "type": "integer" }),
+//         Type::Float => json!({ "type": "float" }),
+//         Type::String => json!({ "type": "string" }),
+//         Type::Array(arr) => {
+//             let element_types = types.array(*arr);
+//             json!({ 
+//                 "type": "array", 
+//                 "element_types": serde_json::Value::Number(
+//                     types.group_internal_id(element_types).into()
+//                 )
+//             })
+//         }
+//         Type::Object(obj) => {
+//             let (member_types, fixed) = types.object(*obj);
+//             let mut member_stypes = json!({});
+//             for (mn, mt) in member_types {
+//                 member_stypes[strings.get(*mn)] = serde_json::Value::Number(
+//                     types.group_internal_id(*mt).into()
+//                 );
+//             }
+//             json!({
+//                 "type": "object",
+//                 "member_types": member_stypes,
+//                 "fixed": *fixed
+//             })
+//         }
+//         Type::ConcreteObject(obj) => {
+//             let member_types = types.concrete_object(*obj);
+//             let mut member_stypes = json!({});
+//             for (mn, mt) in member_types {
+//                 member_stypes[strings.get(*mn)] = serde_json::Value::Number(
+//                     types.group_internal_id(*mt).into()
+//                 );
+//             }
+//             json!({
+//                 "type": "object",
+//                 "member_types": member_stypes,
+//                 "fixed": false
+//             })
+//         }
+//         Type::Closure(clo) => {
+//             let (parameter_types, return_types, _) = types.closure(*clo);
+//             json!({
+//                 "type": "closure",
+//                 "parameter_types": serde_json::Value::Array(parameter_types.iter().map(|t|
+//                     serde_json::Value::Number(types.group_internal_id(*t).into())
+//                 ).collect()),
+//                 "return_types": serde_json::Value::Number(
+//                     types.group_internal_id(*return_types).into()
+//                 )
+//             })
+//         }
+//         Type::Variants(var) => {
+//             let (variant_types, fixed) = types.variants(*var);
+//             let mut variant_stypes = json!({});
+//             for (vn, vt) in variant_types {
+//                 variant_stypes[strings.get(*vn)] = serde_json::Value::Number(
+//                     types.group_internal_id(*vt).into()
+//                 );
+//             }
+//             json!({
+//                 "type": "variants",
+//                 "variant_types": variant_stypes,
+//                 "fixed": *fixed
+//             })
+//         }
+//     }
+// }
 
 fn serialize_modules(
     element_of: &[StringIdx],

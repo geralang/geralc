@@ -38,12 +38,14 @@ pub enum IrSymbol {
     Variable {
         path: NamespacePath,
         value_type: TypeGroup,
-        value: Value
+        value: Value,
+        type_scope: TypeScope
     },
     ExternalVariable {
         path: NamespacePath,
         backing: StringIdx,
-        value_type: TypeGroup
+        value_type: TypeGroup,
+        type_scope: TypeScope
     }
 }
 
