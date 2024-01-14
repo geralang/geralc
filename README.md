@@ -1,16 +1,11 @@
 <img src="logo.png" height="200" align="left"/>
 
 # `gerac`
-*The compiler for the Gera programming language.*
+*The compiler for [the Gera programming language](https://github.com/geralang).*
 
 The Gera compiler is not intended to be used on its own. It is recommended to put `gerac` into the PATH and use `gerap` (the Gera package manager) to build / run code.
 
-### Links
-
-- [Package manager](https://github.com/typesafeschwalbe/gerap)
-- [Standard library](https://github.com/typesafeschwalbe/gerastd)
-- [VS Code extension](https://github.com/typesafeschwalbe/vscode-gera)
-- [C target core dependencies](https://github.com/typesafeschwalbe/geraccoredeps)
+<br>
 
 ### Progress
 
