@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::frontend::types::ScopedTypeGroup;
 use crate::process_file;
 use crate::util::{
     strings::{StringMap, StringIdx},
@@ -9,7 +8,7 @@ use crate::util::{
 use crate::frontend::{
     modules::{NamespacePath, Module},
     ast::{AstNode, TypedAstNode},
-    types::{TypeMap, TypeGroup, Type, TypeScope},
+    types::{TypeMap, TypeGroup, Type},
     type_checking::Symbol
 };
 
@@ -18,7 +17,6 @@ fn register_foreign_builtin(
     parameter_names: &[&'static str],
     parameter_types: Vec<TypeGroup>,
     return_type: TypeGroup,
-    type_scope: TypeScope,
     strings: &mut StringMap,
     modules: &mut HashMap<NamespacePath, Module<AstNode>>,
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>,
@@ -46,8 +44,7 @@ fn register_foreign_builtin(
         parameter_types: parameter_types,
         returns: return_type,
         body: None,
-        source: SourceRange::new(builtin_str, builtin_str, 0, 0),
-        type_scope
+        source: SourceRange::new(builtin_str, builtin_str, 0, 0)
     });
 }
 
@@ -74,40 +71,37 @@ fn load_foreign_builtins(
     typed_symbols: &mut HashMap<NamespacePath, Symbol<TypedAstNode>>
 ) {
     {
-        let type_scope = types.create_scope();
-        let array_element_type = types.insert_group(&[Type::Any], type_scope);
+        let array_element_type = types.insert_group(&[Type::Any]);
         let object_tidx = types.insert_object(HashMap::new(), false);
-        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_type, type_scope));
+        let array_tidx = types.insert_array(array_element_type);
         let t = types.insert_group(&[
             Type::Object(object_tidx),
             Type::Array(array_tidx)
-        ], type_scope);
+        ]);
         register_foreign_builtin(
             path_from(&["core", "addr_eq"], strings),
             &["a", "b"],
             vec![t, t],
-            types.insert_group(&[Type::Boolean], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Boolean]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         let var_tidx = types.insert_variants(HashMap::new(), false);
         let t = types.insert_group(&[
             Type::Variants(var_tidx)
-        ], type_scope);
+        ]);
         register_foreign_builtin(
             path_from(&["core", "tag_eq"], strings),
             &["a", "b"],
             vec![t, t],
-            types.insert_group(&[Type::Boolean], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Boolean]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let array_element_type = types.insert_group(&[Type::Any], type_scope);
-        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_type, type_scope));
+        let array_element_type = types.insert_group(&[Type::Any]);
+        let array_tidx = types.insert_array(array_element_type);
         register_foreign_builtin(
             path_from(&["core", "length"], strings),
             &["thing"],
@@ -115,46 +109,44 @@ fn load_foreign_builtins(
                 types.insert_group(&[
                     Type::String,
                     Type::Array(array_tidx)
-                ], type_scope),
+                ]),
             ],
-            types.insert_group(&[Type::Integer], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Integer]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let array_element_types = types.insert_group(&[Type::Any], type_scope);
-        let array_tidx = types.insert_array(ScopedTypeGroup::new(array_element_types, type_scope));
+        let array_element_types = types.insert_group(&[Type::Any]);
+        let array_tidx = types.insert_array(array_element_types);
         register_foreign_builtin(
             path_from(&["core", "array"], strings),
             &["value", "size"],
             vec![
                 array_element_types,
-                types.insert_group(&[Type::Integer], type_scope)
+                types.insert_group(&[Type::Integer])
             ],
             types.insert_group(&[
                 Type::Array(array_tidx)
-            ], type_scope),
-            type_scope, strings, modules, typed_symbols
+            ]),
+            strings, modules, typed_symbols
         );
     }
     { 
-        let type_scope = types.create_scope();
-        let end = types.insert_group(&[Type::Any], type_scope);
-        let next = types.insert_group(&[Type::Any], type_scope);
+        let end = types.insert_group(&[Type::Any]);
+        let next = types.insert_group(&[Type::Any]);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("end"), ScopedTypeGroup::new(end, type_scope)),
-                (strings.insert("next"), ScopedTypeGroup::new(next, type_scope))
+                (strings.insert("end"), end),
+                (strings.insert("next"), next)
             ].into(),
             true
         );
         let exhausted_closure_return_types = types.insert_group(&[
             Type::Variants(var_tidx)
-        ], type_scope);
+        ]);
         let closure_tidx = types.insert_closure(
             vec![],
-            ScopedTypeGroup::new(exhausted_closure_return_types, type_scope),
+            exhausted_closure_return_types,
             None
         );
         register_foreign_builtin(
@@ -163,91 +155,84 @@ fn load_foreign_builtins(
             vec![
                 types.insert_group(&[
                     Type::Closure(closure_tidx)
-                ], type_scope)
+                ])
             ],
-            types.insert_group(&[Type::Unit], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Unit]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "panic"], strings),
             &["message"],
             vec![
-                types.insert_group(&[Type::String], type_scope)
+                types.insert_group(&[Type::String])
             ],
-            types.insert_group(&[Type::Any], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Any]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "as_str"], strings),
             &["thing"],
             vec![
-                types.insert_group(&[Type::Any], type_scope)
+                types.insert_group(&[Type::Any])
             ],
-            types.insert_group(&[Type::String], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::String]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "as_int"], strings),
             &["number"],
             vec![
-                types.insert_group(&[Type::Integer, Type::Float], type_scope)
+                types.insert_group(&[Type::Integer, Type::Float])
             ],
-            types.insert_group(&[Type::Integer], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Integer]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "as_flt"], strings),
             &["number"],
             vec![
-                types.insert_group(&[Type::Integer, Type::Float], type_scope)
+                types.insert_group(&[Type::Integer, Type::Float])
             ],
-            types.insert_group(&[Type::Float], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Float]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let s = types.insert_group(&[Type::String], type_scope);
-        let i = types.insert_group(&[Type::Integer], type_scope);
+        let s = types.insert_group(&[Type::String]);
+        let i = types.insert_group(&[Type::Integer]);
         register_foreign_builtin(
             path_from(&["core", "substring"], strings),
             &["source", "start", "end"],
             vec![s, i, i],
             s,
-            type_scope, strings, modules, typed_symbols
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let s = types.insert_group(&[Type::String], type_scope);
+        let s = types.insert_group(&[Type::String]);
         register_foreign_builtin(
             path_from(&["core", "concat"], strings),
             &["string_a", "string_b"],
             vec![s, s],
             s,
-            type_scope, strings, modules, typed_symbols
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let i = types.insert_group(&[Type::Integer], type_scope);
-        let u = types.insert_group(&[Type::Unit], type_scope);
+        let i = types.insert_group(&[Type::Integer]);
+        let u = types.insert_group(&[Type::Unit]);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("some"), ScopedTypeGroup::new(i, type_scope)),
-                (strings.insert("none"), ScopedTypeGroup::new(u, type_scope))
+                (strings.insert("some"), i),
+                (strings.insert("none"), u)
             ].into(),
             true
         );
@@ -255,20 +240,19 @@ fn load_foreign_builtins(
             path_from(&["core", "parse_int"], strings),
             &["source"],
             vec![
-                types.insert_group(&[Type::String], type_scope)
+                types.insert_group(&[Type::String])
             ],
-            types.insert_group(&[Type::Variants(var_tidx)], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Variants(var_tidx)]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
-        let f = types.insert_group(&[Type::Float], type_scope);
-        let u = types.insert_group(&[Type::Unit], type_scope);
+        let f = types.insert_group(&[Type::Float]);
+        let u = types.insert_group(&[Type::Unit]);
         let var_tidx = types.insert_variants(
             [
-                (strings.insert("some"), ScopedTypeGroup::new(f, type_scope)),
-                (strings.insert("none"), ScopedTypeGroup::new(u, type_scope))
+                (strings.insert("some"), f),
+                (strings.insert("none"), u)
             ].into(),
             true
         );
@@ -276,36 +260,34 @@ fn load_foreign_builtins(
             path_from(&["core", "parse_flt"], strings),
             &["source"],
             vec![
-                types.insert_group(&[Type::String], type_scope)
+                types.insert_group(&[Type::String])
             ],
-            types.insert_group(&[Type::Variants(var_tidx)], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Variants(var_tidx)]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "string"], strings),
             &["repeated", "times"],
             vec![
-                types.insert_group(&[Type::String], type_scope),
-                types.insert_group(&[Type::Integer], type_scope)
+                types.insert_group(&[Type::String]),
+                types.insert_group(&[Type::Integer])
             ],
-            types.insert_group(&[Type::String], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::String]),
+            strings, modules, typed_symbols
         );
     }
     {
-        let type_scope = types.create_scope();
         register_foreign_builtin(
             path_from(&["core", "hash"], strings),
             &["value"],
             vec![
-                types.insert_group(&[Type::Any], type_scope),
+                types.insert_group(&[Type::Any]),
 
             ],
-            types.insert_group(&[Type::Integer], type_scope),
-            type_scope, strings, modules, typed_symbols
+            types.insert_group(&[Type::Integer]),
+            strings, modules, typed_symbols
         );
     }
 }

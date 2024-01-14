@@ -307,4 +307,3 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
         }
     }
 }
-
