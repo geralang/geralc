@@ -434,6 +434,17 @@ impl TypeMap {
         )
     }
 
+    pub fn duplicate_call_signature(
+        &mut self, param_types: &[TypeGroup], return_type: TypeGroup
+    ) -> (Vec<TypeGroup>, TypeGroup) {
+        let mut encountered = HashMap::new();
+        let param_types = param_types.iter()
+            .map(|t| self.internal_duplicate_group(*t, &mut encountered))
+            .collect();
+        let return_type = self.internal_duplicate_group(return_type, &mut encountered);
+        return (param_types, return_type);
+    }
+
     fn internal_duplicate_group(
         &mut self,
         src: TypeGroup,

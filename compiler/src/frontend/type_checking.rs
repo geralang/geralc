@@ -915,12 +915,12 @@ fn type_check_node(
                                 arguments: typed_arguments
                             }, returned_types, node_source), (false, false)));
                         } else {
+                            let (symbol_param_types, symbol_return_type) = types.duplicate_call_signature(&parameter_types, returns);
                             let mut typed_arguments = Vec::new();
                             for argument_idx in 0..arguments.len() {
-                                let parameter_type = types.duplicate_group(parameter_types[argument_idx]);
                                 let call_param_assertion = TypeAssertion::call_parameter(
                                     node_source, parameter_names[argument_idx],
-                                    parameter_type, types, strings
+                                    symbol_param_types[argument_idx], types, strings
                                 );
                                 let typed_argument = type_check_node!(
                                     arguments.remove(0),
@@ -928,10 +928,9 @@ fn type_check_node(
                                 ).0;
                                 typed_arguments.push(typed_argument);
                             }
-                            let return_type = types.duplicate_group(returns);
                             if let Some(limited_to) = limited_to {
                                 assert_types(
-                                    TypeAssertion::call_return_value(node_source, return_type, types, strings),
+                                    TypeAssertion::call_return_value(node_source, symbol_return_type, types, strings),
                                     limited_to, types
                                 )?;
                             }
@@ -943,7 +942,7 @@ fn type_check_node(
                             return Ok((TypedAstNode::new(AstNodeVariant::Call {
                                 called: Box::new(called),
                                 arguments: typed_arguments
-                            }, return_type, node_source), (false, false)));
+                            }, symbol_return_type, node_source), (false, false)));
                         }
                     }
                     Ok(_) => {}

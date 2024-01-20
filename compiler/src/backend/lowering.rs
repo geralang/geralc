@@ -683,6 +683,7 @@ impl IrGenerator {
                         let dup_symbol_return_type = types.duplicate_group(*returns);
                         let expected_return_type = type_mapping.map(node.get_types(), types);
                         types.try_merge_groups(expected_return_type, dup_symbol_return_type);
+                        println!("processing return type of call to '{}', has type {}", path.display(strings), crate::frontend::type_checking::display_types(strings, types, expected_return_type));
                         call_type_mapping.add(*returns, expected_return_type, types);
                         let proc_variant = IrGenerator::find_procedure(
                             path, types, &mut call_type_mapping, call_parameter_types,
