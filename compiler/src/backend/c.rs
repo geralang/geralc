@@ -1909,41 +1909,49 @@ fn emit_instruction(
             );
             let variant = closure_bodies.len();
             // emit closure captures struct
-            closure_body.push_str("typedef struct ");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str(" {\n");
+            let mut captures_typedef = String::new();
+            captures_typedef.push_str("typedef struct ");
+            emit_closure_captures_name(closure_idx, variant, &mut captures_typedef);
+            captures_typedef.push_str(" {\n");
+            let mut has_capture = false;
             for (capture_name, capture_variable) in captured {
                 let capture_type = variable_types[capture_variable.index];
                 if let Type::Unit = types.group_concrete(capture_type) { continue; }
-                closure_body.push_str("    ");
-                emit_type(capture_type, types, &mut closure_body);
-                closure_body.push_str(" ");
-                closure_body.push_str(strings.get(*capture_name));
-                closure_body.push_str(";\n");
+                has_capture = true;
+                captures_typedef.push_str("    ");
+                emit_type(capture_type, types, &mut captures_typedef);
+                captures_typedef.push_str(" ");
+                captures_typedef.push_str(strings.get(*capture_name));
+                captures_typedef.push_str(";\n");
             }
-            closure_body.push_str("} ");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str(";\n");
+            captures_typedef.push_str("} ");
+            emit_closure_captures_name(closure_idx, variant, &mut captures_typedef);
+            captures_typedef.push_str(";\n");
+            if has_capture {
+                closure_body.push_str(&captures_typedef);
+            }
             // emit closure captures free
-            closure_body.push_str("void ");
-            emit_closure_free_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str("(char* data, size_t size) {\n");
-            closure_body.push_str("    ");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str("* captures = (");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str("*) data;\n");
-            for (capture_name, capture_variable) in captured {
-                let capture_type = variable_types[capture_variable.index];
-                if let Type::Unit = types.group_concrete(capture_type) { continue; }
-                let mut capture_rc_decr = String::new();
-                emit_rc_decr(
-                    &format!("captures->{}", strings.get(*capture_name)),
-                    capture_type, types, strings, &mut capture_rc_decr
-                );
-                indent(&capture_rc_decr, &mut closure_body);
+            if has_capture {
+                closure_body.push_str("void ");
+                emit_closure_free_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("(char* data, size_t size) {\n");
+                closure_body.push_str("    ");
+                emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("* captures = (");
+                emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("*) data;\n");
+                for (capture_name, capture_variable) in captured {
+                    let capture_type = variable_types[capture_variable.index];
+                    if let Type::Unit = types.group_concrete(capture_type) { continue; }
+                    let mut capture_rc_decr = String::new();
+                    emit_rc_decr(
+                        &format!("captures->{}", strings.get(*capture_name)),
+                        capture_type, types, strings, &mut capture_rc_decr
+                    );
+                    indent(&capture_rc_decr, &mut closure_body);
+                }
+                closure_body.push_str("}\n");
             }
-            closure_body.push_str("}\n");
             // emit closure body procedure
             emit_type(*return_type, types, &mut closure_body);
             closure_body.push_str(" ");
@@ -1958,11 +1966,13 @@ fn emit_instruction(
                 closure_body.push_str(&param_idx.to_string());
             }
             closure_body.push_str(") {\n");
-            closure_body.push_str("    ");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str("* captures = (");
-            emit_closure_captures_name(closure_idx, variant, &mut closure_body);
-            closure_body.push_str("*) allocation->data;\n");
+            if has_capture {
+                closure_body.push_str("    ");
+                emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("* captures = (");
+                emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("*) allocation->data;\n");
+            }
             for variable_idx in 0..variables.len() {
                 let var_type = variables[variable_idx];
                 if let Type::Unit = types.group_concrete(var_type) { continue; }
@@ -1994,11 +2004,16 @@ fn emit_instruction(
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
             output.push_str("{\n");
-            output.push_str("    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
-            emit_closure_captures_name(closure_idx, variant, output);
-            output.push_str("), &");
-            emit_closure_free_name(closure_idx, variant, output);
-            output.push_str(");\n");
+            output.push_str("    GeraAllocation* allocation = ");
+            if has_capture {
+                output.push_str("gera___rc_alloc(sizeof(");
+                emit_closure_captures_name(closure_idx, variant, output);
+                output.push_str("), &");
+                emit_closure_free_name(closure_idx, variant, output);
+                output.push_str(");\n");
+            } else {
+                output.push_str("NULL;\n");
+            }
             output.push_str("    ");
             output.push_str(&into_str);
             output.push_str(".allocation = allocation;\n");
@@ -2007,28 +2022,30 @@ fn emit_instruction(
             output.push_str(".procedure = &");
             emit_closure_body_name(closure_idx, variant, output);
             output.push_str(";\n");
-            output.push_str("    ");
-            emit_closure_captures_name(closure_idx, variant, output);
-            output.push_str("* captures = (");
-            emit_closure_captures_name(closure_idx, variant, output);
-            output.push_str("*) allocation->data;\n");
-            for (capture_name, capture_value) in captured {
-                if let Type::Unit = types.group_concrete(variable_types[capture_value.index]) {
-                    continue;
+            if has_capture {
+                output.push_str("    ");
+                emit_closure_captures_name(closure_idx, variant, output);
+                output.push_str("* captures = (");
+                emit_closure_captures_name(closure_idx, variant, output);
+                output.push_str("*) allocation->data;\n");
+                for (capture_name, capture_value) in captured {
+                    if let Type::Unit = types.group_concrete(variable_types[capture_value.index]) {
+                        continue;
+                    }
+                    output.push_str("    captures->");
+                    output.push_str(strings.get(*capture_name));
+                    output.push_str(" = ");
+                    let mut capture_value_str = String::new();
+                    emit_variable(*capture_value, &mut capture_value_str);
+                    output.push_str(&capture_value_str);
+                    output.push_str(";\n");
+                    let mut member_value_incr_str = String::new();
+                    emit_rc_incr(
+                        &capture_value_str, variable_types[capture_value.index], types, strings,
+                        &mut member_value_incr_str
+                    );
+                    indent(&member_value_incr_str, output);
                 }
-                output.push_str("    captures->");
-                output.push_str(strings.get(*capture_name));
-                output.push_str(" = ");
-                let mut capture_value_str = String::new();
-                emit_variable(*capture_value, &mut capture_value_str);
-                output.push_str(&capture_value_str);
-                output.push_str(";\n");
-                let mut member_value_incr_str = String::new();
-                emit_rc_incr(
-                    &capture_value_str, variable_types[capture_value.index], types, strings,
-                    &mut member_value_incr_str
-                );
-                indent(&member_value_incr_str, output);
             }
             output.push_str("}\n");
             free.insert(into.index);
@@ -2389,42 +2406,71 @@ fn emit_instruction(
             output.push_str(";\n");
         }
         IrInstruction::BranchOnValue { value, branches, else_branch } => {
-            output.push_str("{");
-            for branch_idx in 0..branches.len() {
-                if let Type::Unit = types.group_concrete(variable_types[value.index]) { continue; }
-                output.push_str("\n    ");
-                emit_type(variable_types[value.index], types, output);
-                output.push_str(" branchval");
-                output.push_str(&branch_idx.to_string());
-                output.push_str(" = ");
-                let bvalue = constants.insert(&branches[branch_idx].0, variable_types[value.index], types);
-                emit_value(bvalue, variable_types[value.index], types, constants, strings, output);
-                output.push_str(";");
+            match types.group_concrete(variable_types[value.index]) {
+                Type::Integer | Type::Boolean => {
+                    output.push_str("switch(");
+                    emit_variable(*value, output);
+                    output.push_str(") {\n");
+                    for (branch_value, branch_body) in branches {
+                        output.push_str("    case ");
+                        let bvalue = constants.insert(branch_value, variable_types[value.index], types);
+                        emit_value(bvalue, variable_types[value.index], types, constants, strings, output);
+                        output.push_str(":\n");
+                        let mut branch = String::new();
+                        for instruction in branch_body {
+                            emit_instruction(
+                                instruction, variable_types, return_type, free, capture_types,
+                                closure_bodies, conversions, types,
+                                constants, external, symbols, strings, &mut branch
+                            );
+                        }
+                        let mut branch_indented = String::new();
+                        indent(&branch, &mut branch_indented);
+                        indent(&branch_indented, output);
+                        output.push_str("        break;\n");
+                    }
+                    if else_branch.len() > 0 {
+                        output.push_str("    default:\n");
+                        let mut else_branch_str = String::new();
+                        for instruction in else_branch {
+                            emit_instruction(
+                                instruction, variable_types, return_type, free, capture_types,
+                                closure_bodies, conversions, types,
+                                constants, external, symbols, strings, &mut else_branch_str
+                            );
+                        }
+                        let mut else_branch_indented = String::new();
+                        indent(&else_branch_str, &mut else_branch_indented);
+                        indent(&else_branch_indented, output);
+                    }
+                    output.push_str("}\n");
+                }
+                _ => {
+                    let mut v_str = String::new();
+                    emit_variable(*value, &mut v_str);
+                    for branch_idx in 0..branches.len() {
+                        output.push_str("if(");
+                        let mut b_str = String::new();
+                        let bvalue = constants.insert(&branches[branch_idx].0, variable_types[value.index], types);
+                        emit_value(bvalue, variable_types[value.index], types, constants, strings, &mut b_str);
+                        emit_equality(&v_str, &b_str, variable_types[value.index], types, output);
+                        output.push_str(") ");
+                        emit_block(
+                            &branches[branch_idx].1, variable_types, return_type, free, capture_types,
+                            closure_bodies, conversions, types,
+                            constants, external, symbols, strings, output
+                        );
+                        output.push_str(" else ");
+                    }
+                    emit_block(
+                        else_branch, variable_types, return_type, free, capture_types, closure_bodies,
+                        conversions, types, constants,
+                        external, symbols, strings, output
+                    );
+                    output.push_str("\n");
+                }
             }
-            output.push_str("\n");
-            let mut v_str = String::new();
-            emit_variable(*value, &mut v_str);
-            let mut branches_str = String::new();
-            for branch_idx in 0..branches.len() {
-                branches_str.push_str("if(");
-                let mut b_str = String::from("branchval");
-                b_str.push_str(&branch_idx.to_string());
-                emit_equality(&v_str, &b_str, variable_types[value.index], types, &mut branches_str);
-                branches_str.push_str(") ");
-                emit_block(
-                    &branches[branch_idx].1, variable_types, return_type, free, capture_types,
-                    closure_bodies, conversions, types,
-                    constants, external, symbols, strings, &mut branches_str
-                );
-                branches_str.push_str(" else ");
-            }
-            emit_block(
-                else_branch, variable_types, return_type, free, capture_types, closure_bodies,
-                conversions, types, constants,
-                external, symbols, strings, &mut branches_str
-            );
-            indent(&branches_str, output);
-            output.push_str("\n}\n");
+
         }
         IrInstruction::BranchOnVariant { value, branches, else_branch } => {
             let value_variant_types = if let Type::Variants(variants_idx) =

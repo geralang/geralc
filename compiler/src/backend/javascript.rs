@@ -875,31 +875,40 @@ fn emit_instruction(
             output.push_str(";\n");
         }
         IrInstruction::BranchOnValue { value, branches, else_branch } => {
-            let mut value_str = String::new();
-            emit_variable(*value, &mut value_str);
-            let mut had_branch = false;
+            output.push_str("switch(");
+            emit_variable(*value, output);
+            output.push_str(") {\n");
             for (branch_value, branch_body) in branches {
-                if had_branch { output.push_str(" else "); }
-                had_branch = true;
-                output.push_str("if(gera___eq(");
-                output.push_str(&value_str);
-                output.push_str(", ");
+                output.push_str("    case ");
                 let bvalue = constants.insert(branch_value, variable_types[value.index], types);
                 emit_value(&bvalue, constants, output);
-                output.push_str(")) ");
-                emit_block(
-                    branch_body, variable_types, types, constants, external, symbols, strings,
-                    output
-                );
+                output.push_str(":\n");
+                let mut branch = String::new();
+                for instruction in branch_body {
+                    emit_instruction(
+                        instruction, variable_types, types, constants, external, symbols, strings,
+                        &mut branch
+                    );
+                }
+                let mut branch_indented = String::new();
+                indent(&branch, &mut branch_indented);
+                indent(&branch_indented, output);
+                output.push_str("        break;\n");
             }
             if else_branch.len() > 0 {
-                if had_branch { output.push_str(" else "); }
-                emit_block(
-                    else_branch, variable_types, types, constants, external, symbols, strings,
-                    output
-                );
+                output.push_str("    default:\n");
+                let mut else_branch_str = String::new();
+                for instruction in else_branch {
+                    emit_instruction(
+                        instruction, variable_types, types, constants, external, symbols, strings,
+                        &mut else_branch_str
+                    );
+                }
+                let mut else_branch_indented = String::new();
+                indent(&else_branch_str, &mut else_branch_indented);
+                indent(&else_branch_indented, output);
             }
-            output.push_str("\n");
+            output.push_str("}\n");
         }
         IrInstruction::BranchOnVariant { value, branches, else_branch } => {
             let mut matched = String::new();

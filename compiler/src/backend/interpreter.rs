@@ -61,15 +61,15 @@ impl PartialEq for Value {
 impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unit => write!(f, "<unit>"),
-            Self::Boolean(arg0) => write!(f, "{}", arg0),
-            Self::Integer(arg0) => write!(f, "{}", arg0),
-            Self::Float(arg0) => write!(f, "{}", arg0),
-            Self::String(arg0) => write!(f, "{}", arg0),
-            Self::Array(arg0) => write!(f, "{:?}", arg0),
-            Self::Object(arg0) => write!(f, "{:?}", arg0),
-            Self::Closure(_, captured, _) => write!(f, "<closure ({:?})>", captured),
-            Self::Variant(arg0, arg1) => write!(f, "#@{} {:?}", arg0.0, arg1),
+            Value::Unit => write!(f, "<unit>"),
+            Value::Boolean(arg0) => write!(f, "{}", arg0),
+            Value::Integer(arg0) => write!(f, "{}", arg0),
+            Value::Float(arg0) => write!(f, "{}", arg0),
+            Value::String(arg0) => write!(f, "{}", arg0),
+            Value::Array(arg0) => write!(f, "{:?}", arg0),
+            Value::Object(arg0) => write!(f, "{:?}", arg0),
+            Value::Closure(_, captured, _) => write!(f, "<closure ({:?})>", captured),
+            Value::Variant(arg0, arg1) => write!(f, "#@{} {:?}", arg0.0, arg1),
         }
     }
 }
