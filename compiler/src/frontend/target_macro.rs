@@ -27,7 +27,7 @@ fn process_node(opt_node: &mut Option<&mut AstNode>, inserted_nodes: &mut Option
             AstNodeVariant::Procedure { public: _, name: _, arguments: _, body } => {
                 process_target_blocks(body, target_str, strings);
             },
-            AstNodeVariant::Function { arguments: _, body } => {
+            AstNodeVariant::Function { arguments: _, captures: _, body } => {
                 process_target_blocks(body, target_str, strings);
             },
             AstNodeVariant::Variable { public: _, mutable: _, name: _, value_types: _, value } => {

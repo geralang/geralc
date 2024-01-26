@@ -20,6 +20,7 @@ struct ConversionFunctions {
 pub fn generate_c(
     symbols: Vec<IrSymbol>,
     mut types: TypeMap,
+    mut constants: ConstantPool,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -29,12 +30,11 @@ pub fn generate_c(
     let mut external = HashMap::new();
     emit_core_library(&mut output);
     output.push_str("\n");
-    let mut constants = ConstantPool::new();
     let mut static_var_vals = HashMap::new();
     let mut constant_dependants = String::new();
     constant_dependants.push_str("\n");
     emit_symbol_declarations(
-        &symbols, &mut types, &mut constants, &mut static_var_vals,
+        &symbols, &mut types, &mut static_var_vals,
         strings, &mut external, &mut constant_dependants
     );
     let mut conversions = ConversionFunctions {
@@ -160,7 +160,7 @@ fn emit_type_members(types: &mut TypeMap, strings: &StringMap, output: &mut Stri
         emit_closure_name(closure_idx, &mut o);
         o.push_str(" {\n");
         o.push_str("    GeraAllocation* allocation;\n");
-        let (parameter_types, return_type, _) = types.internal_closures()[closure_idx].clone();
+        let (parameter_types, return_type) = types.internal_closures()[closure_idx].clone();
         o.push_str("    ");
         if !types.group_is_concrete(return_type) { continue; }
         emit_type(return_type, types, &mut o);
@@ -609,7 +609,6 @@ fn emit_comparison_functions(
 fn emit_symbol_declarations(
     symbols: &Vec<IrSymbol>,
     types: &mut TypeMap,
-    constants: &mut ConstantPool,
     static_var_vals: &mut HashMap<NamespacePath, (ConstantValue, TypeGroup)>,
     strings: &StringMap,
     external: &mut HashMap<NamespacePath, StringIdx>,
@@ -673,8 +672,7 @@ fn emit_symbol_declarations(
                 output.push_str(" ");
                 emit_path(path, strings, output);
                 output.push_str(";\n");
-                let value = constants.insert(value, *value_type, types);
-                static_var_vals.insert(path.clone(), (value, *value_type));
+                static_var_vals.insert(path.clone(), (*value, *value_type));
             }
             IrSymbol::ExternalVariable { path, backing, value_type } => {
                 if let Type::Unit = types.group_concrete(*value_type) { continue; }
@@ -1409,6 +1407,9 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut TypeMap, out
                 emit_constant_name(vi, output);
                 output.push_str(";\n");
             }
+            ConstantPoolValue::Closure(static_closure) => {
+                todo!("emit static closure values");
+            }
             ConstantPoolValue::Variant(_, _, _) => {}
         }
     }
@@ -1484,6 +1485,9 @@ fn emit_constant_initializers(
                     cinit.push_str(",\n");
                 }
                 cinit.push_str("};\n");
+            }
+            ConstantPoolValue::Closure(static_closure) => {
+                todo!("emit static closure values");
             }
             ConstantPoolValue::Variant(_, _, _) => {}
         }
@@ -1583,6 +1587,9 @@ fn emit_value(
         ConstantValue::String(s) => emit_constant_name(s.into(), output),
         ConstantValue::Array(a) => emit_constant_name(a.into(), output),
         ConstantValue::Object(o) => emit_constant_name(o.into(), output),
+        ConstantValue::Closure(c) => {
+            todo!("emit static closure values");
+        }
         ConstantValue::Variant(v) => {
             let variant_idx = if let Type::Variants(variant_idx) = types.group_concrete(value_type) {
                 variant_idx.get_internal_id()
@@ -2053,8 +2060,7 @@ fn emit_instruction(
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            let value = constants.insert(value, variable_types[into.index], types);
-            emit_value(value, variable_types[into.index], types, constants, strings, output);
+            emit_value(*value, variable_types[into.index], types, constants, strings, output);
             output.push_str(";\n");
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
@@ -2413,8 +2419,7 @@ fn emit_instruction(
                     output.push_str(") {\n");
                     for (branch_value, branch_body) in branches {
                         output.push_str("    case ");
-                        let bvalue = constants.insert(branch_value, variable_types[value.index], types);
-                        emit_value(bvalue, variable_types[value.index], types, constants, strings, output);
+                        emit_value(*branch_value, variable_types[value.index], types, constants, strings, output);
                         output.push_str(":\n");
                         let mut branch = String::new();
                         for instruction in branch_body {
@@ -2451,8 +2456,7 @@ fn emit_instruction(
                     for branch_idx in 0..branches.len() {
                         output.push_str("if(");
                         let mut b_str = String::new();
-                        let bvalue = constants.insert(&branches[branch_idx].0, variable_types[value.index], types);
-                        emit_value(bvalue, variable_types[value.index], types, constants, strings, &mut b_str);
+                        emit_value(branches[branch_idx].0, variable_types[value.index], types, constants, strings, &mut b_str);
                         emit_equality(&v_str, &b_str, variable_types[value.index], types, output);
                         output.push_str(") ");
                         emit_block(
@@ -2603,7 +2607,7 @@ fn emit_instruction(
             free.insert(into.index);
         }
         IrInstruction::CallClosure { called, arguments, into, source: _ } => {
-            let (parameter_types, return_type, _) = if let Type::Closure(p)
+            let (parameter_types, return_type) = if let Type::Closure(p)
                     = types.group_concrete(variable_types[called.index]) {
                         types.closure(p).clone()
             } else { panic!("should be a closure"); };

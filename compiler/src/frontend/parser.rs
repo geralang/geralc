@@ -565,7 +565,7 @@ impl Parser {
                         enforce_not_reached_end!("a closing brace ('}')");
                         enforce_current_type!(&[TokenType::BraceClose], "a closing brace ('}')");
                         previous = Some(AstNode::new(
-                            AstNodeVariant::Function { arguments, body },
+                            AstNodeVariant::Function { arguments, captures: None, body },
                             (&source_start..&self.current.source).into()
                         ));
                         next!();
@@ -575,6 +575,7 @@ impl Parser {
                         previous = Some(AstNode::new(
                             AstNodeVariant::Function {
                                 arguments,
+                                captures: None,
                                 body: vec![AstNode::new(
                                     AstNodeVariant::Return { value: Box::new(return_value) },
                                     return_value_source

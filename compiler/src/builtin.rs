@@ -146,8 +146,7 @@ fn load_foreign_builtins(
         ]);
         let closure_tidx = types.insert_closure(
             vec![],
-            exhausted_closure_return_types,
-            None
+            exhausted_closure_return_types
         );
         register_foreign_builtin(
             path_from(&["core", "exhaust"], strings),

@@ -1,11 +1,12 @@
 
 use std::collections::HashMap;
 
+use crate::backend::constants::ConstantValue;
 use crate::util::{
     strings::StringIdx,
-    error::{Error, ErrorSection, ErrorType},
+    error::Error,
     strings::StringMap,
-    source::{SourceRange, HasSource}
+    source::HasSource
 };
 use crate::frontend::{
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
@@ -15,12 +16,13 @@ use crate::frontend::{
 };
 use crate::backend::{
     ir::{IrInstruction, IrVariable, IrSymbol},
-    interpreter::{Interpreter, Value}
+    interpreter::Interpreter,
+    constants::ConstantPool
 };
 
 
 #[derive(Debug, Clone)]
-struct TypeMapping(HashMap<usize, TypeGroup>);
+pub struct TypeMapping(HashMap<usize, TypeGroup>);
 
 impl TypeMapping {
     fn new() -> TypeMapping {
@@ -61,8 +63,8 @@ impl TypeMapping {
                 }
             }
             (Type::Closure(from_clo), Type::Closure(to_clo)) => {
-                let (from_params, from_return_t, _) = types.closure(from_clo);
-                let (to_params, to_return_t, _) = types.closure(to_clo);
+                let (from_params, from_return_t) = types.closure(from_clo);
+                let (to_params, to_return_t) = types.closure(to_clo);
                 for (from_param_t, to_param_t) in from_params.iter().zip(to_params.iter()) {
                     self.add(*from_param_t, *to_param_t, types);
                 }
@@ -115,13 +117,10 @@ impl TypeMapping {
                 Type::ConcreteObject(types.insert_concrete_object(member_types))
             }
             Type::Closure(clo) => {
-                let (param_types, return_type, captures) = types.closure(clo).clone();
+                let (param_types, return_type) = types.closure(clo).clone();
                 let param_types = param_types.into_iter().map(|pt| self.map(pt, types)).collect();
                 let return_type = self.map(return_type, types);
-                let captures = captures.map(|c|
-                    c.into_iter().map(|(cn, ct)| (cn, self.map(ct, types))).collect()
-                );
-                Type::Closure(types.insert_closure(param_types, return_type, captures))
+                Type::Closure(types.insert_closure(param_types, return_type))
             }
             Type::Variants(var) => {
                 let (variant_types, fixed) = types.variants(var).clone();
@@ -133,38 +132,16 @@ impl TypeMapping {
     }
 }
 
-
-fn enforce_valid_constant_value(value: &Value, source: SourceRange) -> Result<(), Error> {
-    match value {
-        Value::Unit |
-        Value::Boolean(_) |
-        Value::Integer(_) |
-        Value::Float(_) |
-        Value::String(_) => {},
-        Value::Array(elements) => for e in elements.borrow().iter() {
-            enforce_valid_constant_value(e, source)?;
-        },
-        Value::Object(members) => for (_, m) in members.borrow().iter() {
-            enforce_valid_constant_value(m, source)?;
-        },
-        Value::Closure(_, _, _) => return Err(Error::new([
-            ErrorSection::Error(ErrorType::ConstantClosure),
-            ErrorSection::Code(source),
-        ].into())),
-        Value::Variant(_, variant_value) => enforce_valid_constant_value(&*variant_value, source)?
-    }
-    Ok(())
-}
-
 pub fn lower_typed_ast(
     strings: &mut StringMap,
     types: &mut TypeMap,
     typed_symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &HashMap<NamespacePath, StringIdx>,
     main_procedure: (&NamespacePath, &Symbol<TypedAstNode>)
-) -> Result<Vec<IrSymbol>, Error> {
+) -> Result<(Vec<IrSymbol>, ConstantPool), Error> {
     let mut interpreter = Interpreter::new(strings);
     let mut ir_symbols = Vec::new();
+    let mut constants = ConstantPool::new();
     if let Symbol::Procedure {
         public: _,
         parameter_names: _,
@@ -176,7 +153,8 @@ pub fn lower_typed_ast(
             body.as_ref().expect("should not be external"),
             &HashMap::new(),
             types, &mut TypeMapping::new(), HashMap::new(), typed_symbols, strings,
-            external_backings, &(HashMap::new(), Vec::new()), &mut interpreter, &mut ir_symbols
+            external_backings, &(HashMap::new(), Vec::new()), &mut interpreter, &mut ir_symbols,
+            &mut constants
         )?;
         ir_symbols.push(IrSymbol::Procedure {
             path: main_procedure.0.clone(),
@@ -196,14 +174,17 @@ pub fn lower_typed_ast(
                     let v = if let Some(value) = interpreter.get_constant_value(symbol_path) {
                         value.clone()
                     } else {
-                        interpreter.evaluate_node(value, typed_symbols, external_backings, strings)?
+                        interpreter.evaluate_node(value, typed_symbols, external_backings, types, strings)?
                     };
-                    enforce_valid_constant_value(&v, value.source())?;
-                    ir_symbols.push(IrSymbol::Variable {
+                    let vl = IrSymbol::Variable {
                         path: symbol_path.clone(),
                         value_type: *value_types,
-                        value: v
-                    });
+                        value: constants.insert(
+                            &v, *value_types, types, &mut TypeMapping::new(), typed_symbols, strings,
+                            external_backings, &mut interpreter, &mut ir_symbols
+                        )?
+                    };
+                    ir_symbols.push(vl);
                 } else {
                     ir_symbols.push(IrSymbol::ExternalVariable {
                         path: symbol_path.clone(),
@@ -217,18 +198,18 @@ pub fn lower_typed_ast(
             }
         }
     }
-    Ok(ir_symbols)
+    Ok((ir_symbols, constants))
 }
 
 
-struct IrGenerator {
+pub struct IrGenerator {
     instructions: Vec<Vec<IrInstruction>>,
     variables: Vec<(usize, TypeGroup)>,
     // reusable: Vec<usize>
 }
 
 impl IrGenerator {
-    fn new() -> IrGenerator {
+    pub fn new() -> IrGenerator {
         IrGenerator { 
             instructions: Vec::new(),
             variables: Vec::new(),
@@ -236,7 +217,13 @@ impl IrGenerator {
         }
     }
 
-    fn lower_nodes(
+    pub fn variable_types(&self) -> Vec<TypeGroup> {
+        return self.variables.iter()
+            .map(|v| v.1)
+            .collect();
+    }
+
+    pub fn lower_nodes(
         &mut self,
         nodes: &[TypedAstNode],
         captured: &HashMap<StringIdx, TypeGroup>,
@@ -248,14 +235,15 @@ impl IrGenerator {
         external_backings: &HashMap<NamespacePath, StringIdx>,
         call_parameters: &(HashMap<StringIdx, usize>, Vec<TypeGroup>),
         interpreter: &mut Interpreter,
-        ir_symbols: &mut Vec<IrSymbol>
+        ir_symbols: &mut Vec<IrSymbol>,
+        constants: &mut ConstantPool
     ) -> Result<Vec<IrInstruction>, Error> {
         self.enter();
         for node in nodes {
             self.lower_node(
                 node, None, captured, types, type_mapping, &mut named_variables,
                 symbols, strings, external_backings, call_parameters, interpreter,
-                ir_symbols
+                ir_symbols, constants
             )?;
         }
         Ok(self.exit())
@@ -348,7 +336,8 @@ impl IrGenerator {
         strings: &mut StringMap,
         external_backings: &HashMap<NamespacePath, StringIdx>,
         interpreter: &mut Interpreter,
-        ir_symbols: &mut Vec<IrSymbol>
+        ir_symbols: &mut Vec<IrSymbol>,
+        constants: &mut ConstantPool
     ) -> Result<usize, Error> {
         let mut exists = false;
         let mut found_variant = 0;
@@ -412,7 +401,7 @@ impl IrGenerator {
                         body, &HashMap::new(),
                         types, type_mapping, HashMap::new(), symbols, strings,
                         external_backings, &call_parameters, interpreter, 
-                        ir_symbols
+                        ir_symbols, constants
                     )?;
                     if let IrSymbol::Procedure { body, variables, .. }
                         = &mut ir_symbols[ir_symbol] {
@@ -456,27 +445,29 @@ impl IrGenerator {
         external_backings: &HashMap<NamespacePath, StringIdx>,
         call_parameters: &(HashMap<StringIdx, usize>, Vec<TypeGroup>),
         interpreter: &mut Interpreter,
-        ir_symbols: &mut Vec<IrSymbol>
+        ir_symbols: &mut Vec<IrSymbol>,
+        constants: &mut ConstantPool
     ) -> Result<Option<IrVariable>, Error> {
         macro_rules! lower_node { ($node: expr, $into: expr) => {
             self.lower_node(
                 $node, $into, captured, types, type_mapping, named_variables,
-                symbols, strings, external_backings, call_parameters, interpreter, ir_symbols
+                symbols, strings, external_backings, call_parameters, interpreter, ir_symbols,
+                constants
             )?.expect("should result in a value")
         } }
         macro_rules! into_given_or_alloc { ($temp_type: expr) => {
             into.unwrap_or_else(|| self.allocate(type_mapping.map($temp_type, types)))
         } }
         match node.node_variant() {
-            AstNodeVariant::Function { arguments, body } => {
+            AstNodeVariant::Function { arguments, captures: body_captures, body } => {
                 let mapped_node_types = type_mapping.map(node.get_types(), types);
-                let (parameter_types, return_type, body_captures) =
+                let (parameter_types, return_type) =
                     if let Type::Closure(clo) = types.group_concrete(mapped_node_types) {
                     let t = types.closure(clo);
-                    (t.0.clone(), t.1, t.2.clone().expect("node type should be a closure with capture info"))
+                    (t.0.clone(), t.1)
                 } else { panic!("should be a closure!"); };
                 let mut body_captured = HashMap::new();
-                for (capture_name, _) in &body_captures {
+                for capture_name in body_captures.as_ref().expect("captures should be known by now") {
                     if let Some(parameter_index) = call_parameters.0.get(capture_name) {
                         let into = self.allocate(call_parameters.1[*parameter_index]);
                         self.add(IrInstruction::LoadParameter { index: *parameter_index, into });
@@ -503,18 +494,17 @@ impl IrGenerator {
                     parameters.1.push(type_mapping.map(parameter_types[param_idx], types));
                 }
                 let body = generator.lower_nodes(
-                    body, &body_captures,
+                    body, &body_captured.iter().map(|(cn, cv)| (*cn, self.variables[cv.index].1)).collect(),
                     types, type_mapping, HashMap::new(), symbols, strings,
-                    external_backings, &parameters, interpreter, ir_symbols
+                    external_backings, &parameters, interpreter, ir_symbols,
+                    constants
                 )?;
                 let into = into_given_or_alloc!(node.get_types());
                 self.add(IrInstruction::LoadClosure {
                     parameter_types: parameters.1,
                     return_type: type_mapping.map(return_type, types),
                     captured: body_captured,
-                    variables: generator.variables.into_iter()
-                        .map(|v| v.1)
-                        .collect(),
+                    variables: generator.variable_types(),
                     body,
                     into
                 });
@@ -533,26 +523,29 @@ impl IrGenerator {
                 }
             }
             AstNodeVariant::CaseBranches { value, branches: branch_nodes, else_body } => {
+                let value_type = value.get_types();
                 let value = lower_node!(value, None);
                 let mut branches = Vec::new();
                 let mut branch_scopes = Vec::new();
                 for branch in branch_nodes {
                     let branch_value = interpreter.evaluate_node(
-                        &branch.0, symbols, external_backings, strings
+                        &branch.0, symbols, external_backings, types, strings
                     )?;
-                    enforce_valid_constant_value(&branch_value, branch.0.source())?;
                     let branch_body = self.lower_nodes(
                         &branch.1, captured, types, type_mapping,
                         named_variables.clone(), symbols, strings, external_backings,
-                        call_parameters, interpreter, ir_symbols
+                        call_parameters, interpreter, ir_symbols, constants
                     )?;
-                    branches.push((branch_value, branch_body));
+                    branches.push((constants.insert(
+                        &branch_value, value_type, types, type_mapping, symbols, strings,
+                        external_backings, interpreter, ir_symbols
+                    )?, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 }
                 let else_branch = self.lower_nodes(
                     &else_body, captured, types, type_mapping,
                     named_variables.clone(), symbols, strings, external_backings, call_parameters,
-                    interpreter, ir_symbols
+                    interpreter, ir_symbols, constants
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 self.add(IrInstruction::BranchOnValue {
@@ -567,17 +560,17 @@ impl IrGenerator {
                 let value = lower_node!(condition, None);
                 let mut branch_scopes = Vec::new();
                 let branches = vec![
-                    (Value::Boolean(true), self.lower_nodes(
+                    (ConstantValue::Boolean(true), self.lower_nodes(
                         &body, captured, types, type_mapping,
                         named_variables.clone(), symbols, strings, external_backings,
-                        call_parameters, interpreter, ir_symbols
+                        call_parameters, interpreter, ir_symbols, constants
                     )?)
                 ];
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 let else_branch = self.lower_nodes(
                     &else_body, captured, types, type_mapping,
                     named_variables.clone(), symbols, strings, external_backings, call_parameters,
-                    interpreter, ir_symbols
+                    interpreter, ir_symbols, constants
                 )?;
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
                 self.add(IrInstruction::BranchOnValue {
@@ -603,7 +596,7 @@ impl IrGenerator {
                     let branch_body = self.lower_nodes(
                         &branch.2, captured, types, type_mapping,
                         branch_variables, symbols, strings, external_backings, call_parameters,
-                        interpreter, ir_symbols
+                        interpreter, ir_symbols, constants
                     )?;
                     branches.push((branch.0, branch_variant_variable, branch_body));
                     branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
@@ -612,7 +605,7 @@ impl IrGenerator {
                     self.lower_nodes(
                         &else_body, captured, types, type_mapping,
                         named_variables.clone(), symbols, strings, external_backings,
-                        call_parameters, interpreter, ir_symbols
+                        call_parameters, interpreter, ir_symbols, constants
                     )?
                 } else { Vec::new() };
                 branch_scopes.push(self.variables.iter().map(|v| v.0).collect());
@@ -688,7 +681,7 @@ impl IrGenerator {
                         let proc_variant = IrGenerator::find_procedure(
                             path, types, &mut call_type_mapping, call_parameter_types,
                             expected_return_type, parameter_names, body, symbols, strings,
-                            external_backings, interpreter, ir_symbols
+                            external_backings, interpreter, ir_symbols, constants
                         )?;
                         let into = into_given_or_alloc!(expected_return_type);
                         self.add(IrInstruction::Call {
@@ -912,7 +905,7 @@ impl IrGenerator {
                 self.add(IrInstruction::BranchOnValue {
                     value: a_var,
                     branches: vec![
-                        (Value::Boolean(false), b_body)
+                        (ConstantValue::Boolean(false), b_body)
                     ],
                     else_branch: Vec::new()
                 });
@@ -943,7 +936,7 @@ impl IrGenerator {
                 self.add(IrInstruction::BranchOnValue {
                     value: a_var,
                     branches: vec![
-                        (Value::Boolean(true), b_body)
+                        (ConstantValue::Boolean(true), b_body)
                     ],
                     else_branch: Vec::new()
                 });
@@ -977,10 +970,16 @@ impl IrGenerator {
                 Ok(Some(into))
             }
             AstNodeVariant::Static { value } => {
-                let v = interpreter.evaluate_node(&*value, symbols, external_backings, strings)?;
-                enforce_valid_constant_value(&v, value.source())?;
+                let value_type = value.get_types();
+                let v = interpreter.evaluate_node(&*value, symbols, external_backings, types, strings)?;
                 let into = into_given_or_alloc!(node.get_types());
-                self.add(IrInstruction::LoadValue { value: v, into });
+                self.add(IrInstruction::LoadValue {
+                    value: constants.insert(
+                        &v, value_type, types, type_mapping, symbols, strings, external_backings,
+                        interpreter, ir_symbols
+                    )?,
+                    into
+                });
                 Ok(Some(into))
             }
             _ => panic!("this node type should not be in the AST at this point")

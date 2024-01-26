@@ -233,8 +233,7 @@ impl ExternalMappingParser {
                 let return_type = self.parse_type(strings, lexer, types, declared_types)?;
                 let closure_tidx = types.insert_closure(
                     arg_types,
-                    return_type,
-                    None
+                    return_type
                 );
                 Ok(types.insert_group(&[
                     Type::Closure(closure_tidx)

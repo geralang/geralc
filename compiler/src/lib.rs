@@ -110,14 +110,14 @@ pub fn compile(
         ErrorSection::Help(String::from("The main procedure needs to be a procedure without any arguments."))
     ].into())]); };
     // lower typed AST
-    let ir_symbols = lower_typed_ast(
+    let (ir_symbols, constant_pool) = lower_typed_ast(
         strings, &mut types, &typed_symbols, &external_backings,
         (&main_procedure_path, main_procedure)
     ).map_err(|e| vec![e])?;
     //println!("lowering done");
     // if target consumes IR, pass it the IR and return the result
     if let CompileTarget::IrConsumer(generator) = selected_target {
-        return Ok((generator)(ir_symbols, types, main_procedure_path, strings));
+        return Ok((generator)(ir_symbols, types, constant_pool, main_procedure_path, strings));
     }
     // done!
     return Ok(String::new())

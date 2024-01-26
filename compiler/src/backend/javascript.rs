@@ -14,6 +14,7 @@ use crate::util::strings::{StringMap, StringIdx};
 pub fn generate_javascript(
     symbols: Vec<IrSymbol>,
     mut types: TypeMap,
+    mut constants: ConstantPool,
     main_procedure_path: NamespacePath,
     strings: &mut StringMap
 ) -> String {
@@ -23,13 +24,12 @@ pub fn generate_javascript(
     output.push_str("(function() {\n");
     output.push_str("\"use strict\";\n");
     emit_core_library(&mut output);
-    let mut constants = ConstantPool::new();
     let mut constant_deps = String::new();
-    emit_static_variables(&symbols, &mut types, &mut constants, strings, &mut constant_deps);
+    emit_static_variables(&symbols, &mut constants, strings, &mut constant_deps);
     constant_deps.push_str("\n");
     emit_procedure_impls(&symbols, &mut types, &mut constants, strings, &externals, &mut constant_deps);
     output.push_str("\n");
-    emit_constant_declarations(&constants, strings, &mut output);
+    emit_constant_declarations(&mut types, &mut constants, &externals, &symbols, strings, &mut output);
     output.push_str("\n");
     output.push_str(&constant_deps);
     output.push_str("\n");
@@ -61,8 +61,7 @@ fn emit_core_library(output: &mut String) {
 
 fn emit_static_variables(
     symbols: &Vec<IrSymbol>,
-    types: &mut TypeMap,
-    constants: &mut ConstantPool,
+    constants: &ConstantPool,
     strings: &mut StringMap,
     output: &mut String
 ) {
@@ -71,11 +70,10 @@ fn emit_static_variables(
             IrSymbol::Procedure { .. } |
             IrSymbol::ExternalProcedure { .. } |
             IrSymbol::BuiltInProcedure { .. } => {}
-            IrSymbol::Variable { path, value_type, value } => {
+            IrSymbol::Variable { path, value_type: _, value } => {
                 output.push_str("const ");
                 emit_path(path, strings, output);
                 output.push_str(" = ");
-                let value = constants.insert(value, *value_type, types);
                 emit_value(&value, constants, output);
                 output.push_str(";\n");
             }
@@ -286,9 +284,16 @@ fn emit_constant_name(idx: usize, output: &mut String) {
     output.push_str(&idx.to_string());
 }
 
-fn emit_constant_declarations(constants: &ConstantPool, strings: &StringMap, output: &mut String) {
+fn emit_constant_declarations(
+    types: &mut TypeMap,
+    constants: &mut ConstantPool,
+    external: &HashMap<NamespacePath, StringIdx>,
+    symbols: &Vec<IrSymbol>,
+    strings: &StringMap,
+    output: &mut String
+) {
     for vi in 0..constants.get_value_count() {
-        match constants.get_value(vi) {
+        match constants.get_value(vi).clone() {
             ConstantPoolValue::String(v) => {
                 output.push_str("const ");
                 emit_constant_name(vi, output);
@@ -318,6 +323,46 @@ fn emit_constant_declarations(constants: &ConstantPool, strings: &StringMap, out
                     emit_value(member_value, constants, output);
                     output.push_str(",\n");
                 }
+                output.push_str("};\n");
+            }
+            ConstantPoolValue::Closure(closure) => {
+                let closure = closure.clone();
+                output.push_str("const ");
+                emit_constant_name(vi, output);
+                output.push_str(" = {\n");
+                output.push_str("    captures: { ");
+                let mut had_capture = false;
+                for (capture_name, capture_value) in &closure.captured {
+                    if had_capture { output.push_str(", "); }
+                    had_capture = true;
+                    output.push_str(strings.get(*capture_name));
+                    output.push_str(": ");
+                    emit_value(capture_value, constants, output);
+                }
+                output.push_str(" },\n");
+                let mut body_str = String::new();
+                body_str.push_str("call: function(");
+                let mut had_param = false;
+                for p in 0..closure.parameter_types.len() {
+                    if had_param { body_str.push_str(", "); }
+                    had_param = true;
+                    body_str.push_str("param");
+                    body_str.push_str(&p.to_string());
+                }
+                body_str.push_str(") {\n");
+                for variable_idx in 0..closure.variables.len() {
+                    body_str.push_str("    let ");
+                    emit_variable(IrVariable { index: variable_idx, version: 0 }, &mut body_str);
+                    body_str.push_str(";\n");
+                }
+                let mut body_body_str = String::new();
+                emit_block(
+                    &closure.body, &closure.variables, types, constants, external, symbols, strings,
+                    &mut body_body_str
+                );
+                indent(&body_body_str, &mut body_str);
+                body_str.push_str("}\n");
+                indent(&body_str, output);
                 output.push_str("};\n");
             }
             ConstantPoolValue::Variant(_, _, _) => {}
@@ -389,6 +434,7 @@ fn emit_value(
         ConstantValue::String(s) => emit_constant_name(s.into(), output),
         ConstantValue::Array(a) => emit_constant_name(a.into(), output),
         ConstantValue::Object(o) => emit_constant_name(o.into(), output),
+        ConstantValue::Closure(c) => emit_constant_name(c.into(), output),
         ConstantValue::Variant(v) => {
             let (variant_name, variant_value, _) = constants.get_variant(*v);
             output.push_str("{ tag = ");
@@ -413,7 +459,7 @@ fn emit_block(
     instructions: &Vec<IrInstruction>,
     variable_types: &Vec<TypeGroup>,
     types: &mut TypeMap,
-    constants: &mut ConstantPool,
+    constants: &ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -474,7 +520,7 @@ fn emit_instruction(
     instruction: &IrInstruction,
     variable_types: &Vec<TypeGroup>,
     types: &mut TypeMap,
-    constants: &mut ConstantPool,
+    constants: &ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
     symbols: &Vec<IrSymbol>,
     strings: &StringMap,
@@ -618,7 +664,6 @@ fn emit_instruction(
         IrInstruction::LoadValue { value, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            let value = constants.insert(value, variable_types[into.index], types);
             emit_value(&value, constants, output);
             output.push_str(";\n");
         }
@@ -880,8 +925,7 @@ fn emit_instruction(
             output.push_str(") {\n");
             for (branch_value, branch_body) in branches {
                 output.push_str("    case ");
-                let bvalue = constants.insert(branch_value, variable_types[value.index], types);
-                emit_value(&bvalue, constants, output);
+                emit_value(&branch_value, constants, output);
                 output.push_str(":\n");
                 let mut branch = String::new();
                 for instruction in branch_body {

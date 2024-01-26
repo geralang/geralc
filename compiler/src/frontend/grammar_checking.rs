@@ -75,7 +75,7 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             enforce_min_scope!("'proc'", ScopeType::GlobalStatement);
             check_grammar(body, ScopeType::Statement, errors);
         },
-        AstNodeVariant::Function { arguments, body } => {
+        AstNodeVariant::Function { arguments, captures: _, body } => {
             let mut args = Vec::new();
             for arg in arguments {
                 if args.contains(arg) {

@@ -423,19 +423,14 @@ fn type_check_symbol<'s>(
                                     Type::ConcreteObject(types.insert_concrete_object(new_member_types))
                                 }
                                 Type::Closure(clo) => {
-                                    let (parameter_types, return_types, captured) = types.closure(*clo).clone();
+                                    let (parameter_types, return_types) = types.closure(*clo).clone();
                                     let new_parameter_types = parameter_types.into_iter().map(|p|
                                         copy_arg_type_group(p, mapped, arg_groups, types)
                                     ).collect();
                                     let new_return_types = copy_arg_type_group(return_types, mapped, arg_groups, types);
-                                    let new_captured = captured.as_ref().map(|captured| captured.iter().map(|(capture_name, capture_types)| (
-                                        *capture_name,
-                                        copy_arg_type_group(*capture_types, mapped, arg_groups, types)
-                                    )).collect::<HashMap<StringIdx, TypeGroup>>());
                                     Type::Closure(types.insert_closure(
                                         new_parameter_types,
-                                        new_return_types,
-                                        new_captured
+                                        new_return_types
                                     ))
                                 }
                                 Type::Variants(var) => {
@@ -664,7 +659,7 @@ fn type_check_node(
     } }
     match node.move_node() {
         AstNodeVariant::Procedure { public: _, name: _, arguments: _, body: _ } => panic!("The grammar checker failed to see a procedure inside another!"),
-        AstNodeVariant::Function { arguments, body } => {
+        AstNodeVariant::Function { arguments, captures: _, body } => {
             let mut closure_variables = variables.clone();
             let mut closure_scope_variables = HashSet::new();
             let mut closure_args = Vec::new();
@@ -707,11 +702,7 @@ fn type_check_node(
             }
             let closure_tidx = types.insert_closure(
                 closure_args,
-                return_types,
-                Some(captured.into_iter().map(|captured_name| (
-                    captured_name,
-                    variables.get(&captured_name).expect("variable should exist").0
-                )).collect())
+                return_types
             );
             let closure_type = types.insert_group(&[Type::Closure(closure_tidx)]);
             if let Some(limited_to) = limited_to {
@@ -724,6 +715,7 @@ fn type_check_node(
             Ok((TypedAstNode::new(
                 AstNodeVariant::Function {
                     arguments,
+                    captures: Some(captured),
                     body: typed_body
                 },
                 closure_type,
@@ -964,7 +956,7 @@ fn type_check_node(
                 ).expect("should not fail");
             }
             let closure_tidx = types.insert_closure(
-                passed_arg_vars, passed_return_type, None
+                passed_arg_vars, passed_return_type
             );
             let closure_types = types.insert_group(&[Type::Closure(closure_tidx)]);
             let called_closure_assertion = TypeAssertion::called_closure(node_source, closure_types, types, strings);
@@ -1442,6 +1434,7 @@ fn type_check_node(
                         AstNodeVariant::Function {
                             arguments: parameter_names.iter().map(|n| (*n, node_source))
                                 .collect(),
+                            captures: None,
                             body: vec![AstNode::new(
                                 AstNodeVariant::Return {
                                     value: AstNode::new(
@@ -1565,7 +1558,7 @@ pub fn display_types(
                 }
             }
             Type::Closure(clo) => {
-                let (parameter_types, return_types, _) = types.closure(clo).clone();
+                let (parameter_types, return_types) = types.closure(clo).clone();
                 for parameter_types in parameter_types {
                     collect_letters(letters, types, parameter_types);
                 }
@@ -1635,7 +1628,7 @@ pub fn display_types(
                 ) }).collect::<Vec<String>>().join(", ")
             ),
             Type::Closure(clo) => {
-                let (arg_groups, returned_group, _) = types.closure(clo).clone();
+                let (arg_groups, returned_group) = types.closure(clo).clone();
                 let mut result: String = String::from("(");
                 for a in 0..arg_groups.len() {
                     if a > 0 { result.push_str(", "); }

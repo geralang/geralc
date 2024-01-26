@@ -198,7 +198,7 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
                 }
                 visit_nodes!(body, &mut variables);
             }
-            AstNodeVariant::Function { arguments, body } => {
+            AstNodeVariant::Function { arguments, captures: _, body } => {
                 let mut variables = variables.clone();
                 for (argument_name, _) in arguments {
                     variables.insert(*argument_name);

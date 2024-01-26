@@ -11,9 +11,11 @@ use crate::util::{
     source::{HasSource, SourceRange}
 };
 use crate::frontend::{
+    types::TypeGroup,
     ast::{TypedAstNode, HasAstNodeVariant, AstNodeVariant},
     modules::NamespacePath,
-    type_checking::Symbol
+    type_checking::Symbol,
+    types::{TypeMap, Type}
 };
 
 
@@ -68,7 +70,7 @@ impl std::fmt::Debug for Value {
             Value::String(arg0) => write!(f, "{}", arg0),
             Value::Array(arg0) => write!(f, "{:?}", arg0),
             Value::Object(arg0) => write!(f, "{:?}", arg0),
-            Value::Closure(_, captured, _) => write!(f, "<closure ({:?})>", captured),
+            Value::Closure(_, captured, _) => write!(f, "<closure {:?}>", captured),
             Value::Variant(arg0, arg1) => write!(f, "#@{} {:?}", arg0.0, arg1),
         }
     }
@@ -76,10 +78,10 @@ impl std::fmt::Debug for Value {
 
 type BuiltinProcedures = HashMap<
     NamespacePath,
-    fn(&mut Interpreter, SourceRange, &[Value], &HashMap<NamespacePath, Symbol<TypedAstNode>>, &HashMap<NamespacePath, StringIdx>, &mut StringMap) -> Result<Value, Error>
+    fn(&mut Interpreter, SourceRange, &[Value], &HashMap<NamespacePath, Symbol<TypedAstNode>>, &HashMap<NamespacePath, StringIdx>, &mut TypeMap, &mut StringMap) -> Result<Value, Error>
 >;
 
-type StackFrame = Rc<RefCell<HashMap<StringIdx, Value>>>;
+pub type StackFrame = Rc<RefCell<HashMap<StringIdx, (Value, TypeGroup)>>>;
 
 #[derive(Debug, Clone)]
 pub struct Interpreter {
@@ -96,7 +98,7 @@ impl Interpreter {
             NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
         }
         let mut builtins: BuiltinProcedures = HashMap::new();
-        builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "addr_eq"], strings), |_, _, params, _, _, _, _| {
             Ok(match (&params[0], &params[1]) {
                 (Value::Object(a), Value::Object(b)) => Value::Boolean(Rc::ptr_eq(a, b)),
                 (Value::Array(a), Value::Array(b)) => Value::Boolean(Rc::ptr_eq(a, b)),
@@ -104,20 +106,20 @@ impl Interpreter {
                 _ => panic!("should be objects, arrays or strings")
             })
         });
-        builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "tag_eq"], strings), |_, _, params, _, _, _, _| {
             Ok(match (&params[0], &params[1]) {
                 (Value::Variant(tag_a, _), Value::Variant(tag_b, _)) => Value::Boolean(*tag_a == *tag_b),
                 _ => panic!("should be variants")
             })
         });
-        builtins.insert(path_from(&["core", "length"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "length"], strings), |_, _, params, _, _, _, _| {
             Ok(match &params[0] {
                 Value::Array(a) => Value::Integer(a.borrow().len() as i64),
                 Value::String(a) => Value::Integer(a.chars().count() as i64),
                 _ => panic!("should be array or string")
             })
         });
-        builtins.insert(path_from(&["core", "array"], strings), |interpreter, source, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "array"], strings), |interpreter, source, params, _, _, _, strings| {
             let count = match params[1] {
                 Value::Integer(c) => c,
                 _ => panic!("should be an integer")
@@ -131,7 +133,7 @@ impl Interpreter {
             }
             Ok(Value::Array(RefCell::new(values.into()).into()))
         });
-        builtins.insert(path_from(&["core", "exhaust"], strings), |interpreter, _, params, symbols, external_backings, strings| {
+        builtins.insert(path_from(&["core", "exhaust"], strings), |interpreter, _, params, symbols, external_backings, types, strings| {
             let (captured_frame, body) = if let Value::Closure(
                 _, captured_frame, body
             ) = params[0].clone() { (captured_frame, body) } else { panic!("value should be a closure") };
@@ -140,7 +142,7 @@ impl Interpreter {
             interpreter.stack.push(captured_frame);
             interpreter.stack.push(RefCell::new(HashMap::new()).into());
             loop {
-                if let Some(error) = interpreter.evaluate_nodes(&body, symbols, external_backings, strings) {
+                if let Some(error) = interpreter.evaluate_nodes(&body, symbols, external_backings, types, strings) {
                     return Err(error);
                 }
                 let return_value = interpreter.get_return_value();
@@ -152,12 +154,12 @@ impl Interpreter {
             interpreter.stack.pop();
             Ok(Value::Unit)
         });
-        builtins.insert(path_from(&["core", "panic"], strings), |interpreter, source, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "panic"], strings), |interpreter, source, params, _, _, _, strings| {
             if let Value::String(reason) = &params[0] {
                 Err(interpreter.generate_panic(&*reason, source, strings))
             } else { panic!("should be a string"); }
         });
-        builtins.insert(path_from(&["core", "as_str"], strings), |_, _, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "as_str"], strings), |_, _, params, _, _, _, strings| {
             Ok(Value::String(match &params[0] {
                 Value::Unit => "<unit>".into(),
                 Value::Boolean(b) => b.to_string().into(),
@@ -170,21 +172,21 @@ impl Interpreter {
                 Value::Variant(tag, _) => format!("#{} <...>", strings.get(*tag)).into(),
             }))
         });
-        builtins.insert(path_from(&["core", "as_int"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "as_int"], strings), |_, _, params, _, _, _, _| {
             Ok(Value::Integer(match &params[0] {
                 Value::Integer(i) => *i,
                 Value::Float(f) => *f as i64,
                 _ => panic!("should be a number")
             }))
         });
-        builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "as_flt"], strings), |_, _, params, _, _, _, _| {
             Ok(Value::Float(match &params[0] {
                 Value::Integer(i) => *i as f64,
                 Value::Float(f) => *f,
                 _ => panic!("should be a number")
             }))
         });
-        builtins.insert(path_from(&["core", "substring"], strings), |interpreter, source, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "substring"], strings), |interpreter, source, params, _, _, _, strings| {
             let src = if let Value::String(source) = &params[0] { source }
                 else { panic!("should be a string"); };
             let source_length = src.chars().count();
@@ -221,7 +223,7 @@ impl Interpreter {
                     .into()
             ))
         });
-        builtins.insert(path_from(&["core", "concat"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "concat"], strings), |_, _, params, _, _, _, _| {
             let a = if let Value::String(a) = &params[0] { a }
                 else { panic!("should be a string"); };
             let b = if let Value::String(b) = &params[1] { b }
@@ -233,7 +235,7 @@ impl Interpreter {
                     .into()
             ))
         });
-        builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, params, _, _, _, strings| {
             let src = if let Value::String(src) = &params[0] { src }
                 else { panic!("should be a string"); };
             return Ok(if let Ok(v) = src.parse() {
@@ -242,7 +244,7 @@ impl Interpreter {
                 Value::Variant(strings.insert("none"), Value::Unit.into())
             });
         });
-        builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, params, _, _, _, strings| {
             let src = if let Value::String(src) = &params[0] { src }
                 else { panic!("should be a string"); };
             return Ok(if let Ok(v) = src.parse() {
@@ -251,7 +253,7 @@ impl Interpreter {
                 Value::Variant(strings.insert("none"), Value::Unit.into())
             });
         });
-        builtins.insert(path_from(&["core", "string"], strings), |interpreter, source, params, _, _, strings| {
+        builtins.insert(path_from(&["core", "string"], strings), |interpreter, source, params, _, _, _, strings| {
             let repeated = if let Value::String(repeated) = &params[0] { repeated }
             else { panic!("should be a string"); };
             let count = if let Value::Integer(count) = &params[1] { *count }
@@ -266,7 +268,7 @@ impl Interpreter {
                 repeated.repeat(count as usize).into()
             ))
         });
-        builtins.insert(path_from(&["core", "hash"], strings), |_, _, params, _, _, _| {
+        builtins.insert(path_from(&["core", "hash"], strings), |_, _, params, _, _, _, _| {
             use std::mem::transmute;
             fn compute_hash(value: &Value) -> i64 {
                 match value {
@@ -350,11 +352,12 @@ impl Interpreter {
         nodes: &Vec<TypedAstNode>,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         external_backings: &HashMap<NamespacePath, StringIdx>,
+        types: &mut TypeMap,
         strings: &mut StringMap
     ) -> Option<Error> {
         for node in nodes {
             if self.returned_value.is_some() { break; }
-            if let Err(error) = self.evaluate_node(node, symbols, external_backings, strings) {
+            if let Err(error) = self.evaluate_node(node, symbols, external_backings, types, strings) {
                 return Some(error);
             }
         }
@@ -412,6 +415,7 @@ impl Interpreter {
         node: &TypedAstNode,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         external_backings: &HashMap<NamespacePath, StringIdx>,
+        types: &mut TypeMap,
         strings: &mut StringMap
     ) -> Result<Value, Error> {
         let node_source = node.source();
@@ -419,52 +423,58 @@ impl Interpreter {
             AstNodeVariant::Procedure { public: _, name: _, arguments: _, body: _ } => {
                 panic!("procedure should not be in the tree by now");
             }
-            AstNodeVariant::Function { arguments, body } => {
-                let captured = self.stack[self.stack.len() - 1].borrow().clone();
+            AstNodeVariant::Function { arguments, captures, body } => {
+                let captured = captures.as_ref().expect("captures should be known at this point").into_iter()
+                    .map(|capture_name| (
+                        *capture_name,
+                        self.stack[self.stack.len() - 1].borrow().get(capture_name).expect("capture should exist").clone()
+                    ))
+                    .collect();
                 Ok(Value::Closure(
                     arguments.clone(), RefCell::new(captured).into(), body.clone()
                 ))
             }
-            AstNodeVariant::Variable { public: _, mutable: _, name, value_types: _, value } => {
+            AstNodeVariant::Variable { public: _, mutable: _, name, value_types, value } => {
                 if let Some(value) = value {
-                    let value = self.evaluate_node(value, symbols, external_backings, strings)?;
+                    let value = self.evaluate_node(value, symbols, external_backings, types, strings)?;
                     let stack_size = self.stack.len();
-                    self.stack[stack_size - 1].borrow_mut().insert(*name, value);
+                    self.stack[stack_size - 1].borrow_mut().insert(*name, (value, value_types.expect("variable types should be known")));
                 }
                 Ok(Value::Unit)
             }
             AstNodeVariant::CaseBranches { value, branches, else_body } => {
-                let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
+                let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
                 let mut ran_branch = false;
                 for branch in branches {
-                    let branch_value = self.evaluate_node(&branch.0, symbols, external_backings, strings)?;
+                    let branch_value = self.evaluate_node(&branch.0, symbols, external_backings, types, strings)?;
                     if value != branch_value { continue; }
-                    if let Some(error) = self.evaluate_nodes(&branch.1, symbols, external_backings, strings) {
+                    if let Some(error) = self.evaluate_nodes(&branch.1, symbols, external_backings, types, strings) {
                         return Err(error);
                     };
                     ran_branch = true;
                     break;
                 }
                 if !ran_branch {
-                    if let Some(error) = self.evaluate_nodes(else_body, symbols, external_backings, strings) {
+                    if let Some(error) = self.evaluate_nodes(else_body, symbols, external_backings, types, strings) {
                         return Err(error);
                     };
                 }
                 Ok(Value::Unit)
             }
             AstNodeVariant::CaseConditon { condition, body, else_body } => {
-                let condition = self.evaluate_node(&*condition, symbols, external_backings, strings)?;
+                let condition = self.evaluate_node(&*condition, symbols, external_backings, types, strings)?;
                 if let Some(error) = self.evaluate_nodes(
                     if condition == Value::Boolean(true) { body } else { else_body },
                     symbols,
-                    external_backings, strings
+                    external_backings, types, strings
                 ) {
                     return Err(error);
                 };
                 Ok(Value::Unit)
             }
             AstNodeVariant::CaseVariant { value, branches, else_body } => {
-                let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
+                let value_type = value.get_types();
+                let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
                 let (variant_name, variant_value) = if let Value::Variant(variant_name, variant_value) = value {
                     (variant_name, variant_value)
                 } else {
@@ -474,11 +484,11 @@ impl Interpreter {
                 for branch in branches {
                     if variant_name != branch.0 { continue; }
                     if let Some(variant_var) = &branch.1 {
-                        self.stack.push(RefCell::new([(variant_var.0, *variant_value)].into()).into());
+                        self.stack.push(RefCell::new([(variant_var.0, (*variant_value, value_type))].into()).into());
                     } else {
                         self.stack.push(RefCell::new(HashMap::new()).into());
                     }
-                    if let Some(error) = self.evaluate_nodes(&branch.2, symbols, external_backings, strings) {
+                    if let Some(error) = self.evaluate_nodes(&branch.2, symbols, external_backings, types, strings) {
                         return Err(error);
                     };
                     self.stack.pop();
@@ -487,7 +497,7 @@ impl Interpreter {
                 }
                 if let Some(else_body) = else_body {
                     if !ran_branch {
-                        if let Some(error) = self.evaluate_nodes(else_body, symbols, external_backings, strings) {
+                        if let Some(error) = self.evaluate_nodes(else_body, symbols, external_backings, types, strings) {
                             return Err(error);
                         };
                     }
@@ -495,32 +505,34 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             AstNodeVariant::Assignment { variable, value } => {
-                let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
-                if let Some(error) = self.evaluate_node_assignment(&*variable, symbols, external_backings, strings, value) {
+                let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
+                if let Some(error) = self.evaluate_node_assignment(&*variable, symbols, external_backings, types, strings, value) {
                     return Err(error);
                 }
                 Ok(Value::Unit)
             }
             AstNodeVariant::Return { value } => {
-                let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
+                let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
                 self.returned_value = Some(value);
                 Ok(Value::Unit)
             }
             AstNodeVariant::Call { called, arguments } => {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
-                    if let Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body, source: _ }
+                    if let Symbol::Procedure { public: _, parameter_names, parameter_types, returns: _, body, source: _ }
                         = symbols.get(path).expect("symbol should exist") {
                         self.stack_trace_push(path.display(strings), node.source(), strings);
                         let returned = if let Some(body) = body {
                             let mut parameter_values = HashMap::new();
                             for param_idx in 0..parameter_names.len() {
                                 parameter_values.insert(
-                                    parameter_names[param_idx],
-                                    self.evaluate_node(&arguments[param_idx], symbols, external_backings, strings)?
+                                    parameter_names[param_idx], (
+                                        self.evaluate_node(&arguments[param_idx], symbols, external_backings, types, strings)?,
+                                        parameter_types[param_idx]
+                                    )
                                 );
                             }
                             self.stack.push(RefCell::new(parameter_values).into());
-                            if let Some(error) = self.evaluate_nodes(body, symbols, external_backings, strings) {
+                            if let Some(error) = self.evaluate_nodes(body, symbols, external_backings, types, strings) {
                                 return Err(error);
                             }
                             self.stack.pop();
@@ -535,11 +547,11 @@ impl Interpreter {
                             let mut parameter_values = Vec::new();
                             for param_idx in 0..parameter_names.len() {
                                 parameter_values.push(
-                                    self.evaluate_node(&arguments[param_idx], symbols, external_backings, strings)?
+                                    self.evaluate_node(&arguments[param_idx], symbols, external_backings, types, strings)?
                                 );
                             }
                             if let Some(implementation) = self.builtins.get(path) {
-                                (implementation)(self, node.source(), &parameter_values, symbols, external_backings, strings)
+                                (implementation)(self, node.source(), &parameter_values, symbols, external_backings, types, strings)
                             } else {
                                 panic!("The builtin {} has no implementation!", path.display(strings));
                             }
@@ -548,21 +560,27 @@ impl Interpreter {
                         return returned;
                     }
                 }
-                let called = self.evaluate_node(&*called, symbols, external_backings, strings)?;
+                let (parameter_types, _) = if let Type::Closure(p)
+                    = types.group_concrete(called.get_types()) {
+                        types.closure(p).clone()
+                } else { panic!("should be a closure"); };
+                let called = self.evaluate_node(&*called, symbols, external_backings, types, strings)?;
                 let (parameter_names, captures, body) = if let Value::Closure(
                     a, b, c
                 ) = called { (a, b, c) } else { panic!("value should be a closure") };
                 let mut parameter_values = HashMap::new();
                 for param_idx in 0..parameter_names.len() {
                     parameter_values.insert(
-                        parameter_names[param_idx].0,
-                        self.evaluate_node(&arguments[param_idx], symbols, external_backings, strings)?
+                        parameter_names[param_idx].0, (
+                            self.evaluate_node(&arguments[param_idx], symbols, external_backings, types, strings)?,
+                            parameter_types[param_idx]
+                        )
                     );
                 }
                 self.stack.push(captures);
                 self.stack.push(RefCell::new(parameter_values).into());
                 self.stack_trace_push("<closure>".into(), node.source(), strings);
-                if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, strings) {
+                if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, types, strings) {
                     return Err(error);
                 }
                 self.stack.pop();
@@ -574,7 +592,7 @@ impl Interpreter {
             AstNodeVariant::Object { values } => {
                 let mut member_values = HashMap::new();
                 for (member_name, member_value) in values {
-                    let member_value = self.evaluate_node(member_value, symbols, external_backings, strings)?;
+                    let member_value = self.evaluate_node(member_value, symbols, external_backings, types, strings)?;
                     member_values.insert(*member_name, member_value);
                 }
                 Ok(Value::Object(RefCell::new(member_values).into()))
@@ -582,12 +600,12 @@ impl Interpreter {
             AstNodeVariant::Array { values } => {
                 let mut elements = Vec::new();
                 for value in values {
-                    elements.push(self.evaluate_node(value, symbols, external_backings, strings)?);
+                    elements.push(self.evaluate_node(value, symbols, external_backings, types, strings)?);
                 }
                 Ok(Value::Array(RefCell::new(elements.into()).into()))
             }
             AstNodeVariant::ObjectAccess { object, member } => {
-                let accessed = self.evaluate_node(&*object, symbols, external_backings, strings)?;
+                let accessed = self.evaluate_node(&*object, symbols, external_backings, types, strings)?;
                 let member_values = if let Value::Object(member_values) = accessed {
                     member_values
                 } else { panic!("accessed value should be an object"); };
@@ -595,11 +613,11 @@ impl Interpreter {
                 Ok(member_value)
             }
             AstNodeVariant::ArrayAccess { array, index } => {
-                let accessed = self.evaluate_node(&*array, symbols, external_backings, strings)?;
+                let accessed = self.evaluate_node(&*array, symbols, external_backings, types, strings)?;
                 let element_values = if let Value::Array(element_values) = accessed {
                     element_values
                 } else { panic!("accessed value should be an array"); };
-                let index = self.evaluate_node(&*index, symbols, external_backings, strings)?;
+                let index = self.evaluate_node(&*index, symbols, external_backings, types, strings)?;
                 let element_index = if let Value::Integer(element_index) = index {
                     element_index
                 } else { panic!("accessed index should be an integer"); };
@@ -624,7 +642,7 @@ impl Interpreter {
                         break;
                     }
                 }
-                Ok(value_opt.expect("variable should exist"))
+                Ok(value_opt.expect("variable should exist").0)
             }
             AstNodeVariant::BooleanLiteral { value } => {
                 Ok(Value::Boolean(*value))
@@ -643,8 +661,8 @@ impl Interpreter {
             }
             AstNodeVariant::Add { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
@@ -653,8 +671,8 @@ impl Interpreter {
             }
             AstNodeVariant::Subtract { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
@@ -663,8 +681,8 @@ impl Interpreter {
             }
             AstNodeVariant::Multiply { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
@@ -673,8 +691,8 @@ impl Interpreter {
             }
             AstNodeVariant::Divide { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => {
                         if b == 0 {
@@ -689,8 +707,8 @@ impl Interpreter {
             }
             AstNodeVariant::Modulo { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Integer(a % b),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a % b),
@@ -698,7 +716,7 @@ impl Interpreter {
                 })
             }
             AstNodeVariant::Negate { x } => {
-                Ok(match self.evaluate_node(&*x, symbols, external_backings, strings)? {
+                Ok(match self.evaluate_node(&*x, symbols, external_backings, types, strings)? {
                     Value::Integer(x) => Value::Integer(-x),
                     Value::Float(x) => Value::Float(-x),
                     _ => panic!("value should be a number")
@@ -706,8 +724,8 @@ impl Interpreter {
             }
             AstNodeVariant::LessThan { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a < b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a < b),
@@ -716,8 +734,8 @@ impl Interpreter {
             }
             AstNodeVariant::GreaterThan { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a > b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a > b),
@@ -726,8 +744,8 @@ impl Interpreter {
             }
             AstNodeVariant::LessThanEqual { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a <= b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a <= b),
@@ -736,8 +754,8 @@ impl Interpreter {
             }
             AstNodeVariant::GreaterThanEqual { a, b } => {
                 Ok(match (
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?,
-                    self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
+                    self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Boolean(a >= b),
                     (Value::Float(a), Value::Float(b)) => Value::Boolean(a >= b),
@@ -746,40 +764,40 @@ impl Interpreter {
             }
             AstNodeVariant::Equals { a, b } => {
                 Ok(Value::Boolean(
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?
-                        == self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?
+                        == self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ))
             }
             AstNodeVariant::NotEquals { a, b } => {
                 Ok(Value::Boolean(
-                    self.evaluate_node(&*a, symbols, external_backings, strings)?
-                        != self.evaluate_node(&*b, symbols, external_backings, strings)?
+                    self.evaluate_node(&*a, symbols, external_backings, types, strings)?
+                        != self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ))
             }
             AstNodeVariant::Not { x } => {
-                Ok(match self.evaluate_node(&*x, symbols, external_backings, strings)? {
+                Ok(match self.evaluate_node(&*x, symbols, external_backings, types, strings)? {
                     Value::Boolean(x) => Value::Boolean(!x),
                     _ => panic!("value should be a boolean")
                 })
             }
             AstNodeVariant::Or { a, b } => {
-                let a = if let Value::Boolean(a) = self.evaluate_node(&*a, symbols, external_backings, strings)? { a }
+                let a = if let Value::Boolean(a) = self.evaluate_node(&*a, symbols, external_backings, types, strings)? { a }
                     else { panic!("values should be booleans"); };
                 Ok(if a {
                     Value::Boolean(true)
                 } else {
-                    let b = if let Value::Boolean(b) = self.evaluate_node(&*b, symbols, external_backings, strings)? { b }
+                    let b = if let Value::Boolean(b) = self.evaluate_node(&*b, symbols, external_backings, types, strings)? { b }
                         else { panic!("values should be booleans"); };
                     Value::Boolean(b)
                 })
             }
             AstNodeVariant::And { a, b } => {
-                let a = if let Value::Boolean(a) = self.evaluate_node(&*a, symbols, external_backings, strings)? { a }
+                let a = if let Value::Boolean(a) = self.evaluate_node(&*a, symbols, external_backings, types, strings)? { a }
                     else { panic!("values should be booleans"); };
                 Ok(if !a {
                     Value::Boolean(false)
                 } else {
-                    let b = if let Value::Boolean(b) = self.evaluate_node(&*b, symbols, external_backings, strings)? { b }
+                    let b = if let Value::Boolean(b) = self.evaluate_node(&*b, symbols, external_backings, types, strings)? { b }
                         else { panic!("values should be booleans"); };
                     Value::Boolean(b)
                 })
@@ -801,7 +819,7 @@ impl Interpreter {
                                     ErrorSection::Code(node_source)
                                 ].into()));
                             };
-                            let value = self.evaluate_node(value, symbols, external_backings, strings)?;
+                            let value = self.evaluate_node(value, symbols, external_backings, types, strings)?;
                             self.constants.insert(path.clone(), value.clone());
                             value
                         }
@@ -815,11 +833,11 @@ impl Interpreter {
                 panic!("usage declarations should not be in the tree by now");
             }
             AstNodeVariant::Variant { name, value } => {
-                let value = self.evaluate_node(&*value, symbols, external_backings, strings)?;
+                let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
                 Ok(Value::Variant(*name, value.into()))
             }
             AstNodeVariant::Static { value } => {
-                self.evaluate_node(&*value, symbols, external_backings, strings)
+                self.evaluate_node(&*value, symbols, external_backings, types, strings)
             }
             AstNodeVariant::Target { target: _, body: _ } => {
                 panic!("Should've been expanded!");
@@ -832,12 +850,13 @@ impl Interpreter {
         node: &TypedAstNode,
         symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
         external_backings: &HashMap<NamespacePath, StringIdx>,
+        types: &mut TypeMap,
         strings: &mut StringMap,
         value: Value
     ) -> Option<Error> {
         match node.node_variant() {
             AstNodeVariant::ObjectAccess { object, member } => {
-                let accessed = match self.evaluate_node(&*object, symbols, external_backings, strings) {
+                let accessed = match self.evaluate_node(&*object, symbols, external_backings, types, strings) {
                     Ok(v) => v,
                     Err(error) => return Some(error)
                 };
@@ -848,7 +867,7 @@ impl Interpreter {
                 }
             }
             AstNodeVariant::ArrayAccess { array, index } => {
-                let accessed = match self.evaluate_node(&*array, symbols, external_backings, strings) {
+                let accessed = match self.evaluate_node(&*array, symbols, external_backings, types, strings) {
                     Ok(v) => v,
                     Err(error) => return Some(error)
                 };
@@ -857,7 +876,7 @@ impl Interpreter {
                 } else {
                     panic!("accessed value should be an object")
                 };
-                let index = match self.evaluate_node(&*index, symbols, external_backings, strings) {
+                let index = match self.evaluate_node(&*index, symbols, external_backings, types, strings) {
                     Ok(v) => v,
                     Err(error) => return Some(error)
                 };
@@ -879,7 +898,7 @@ impl Interpreter {
             AstNodeVariant::VariableAccess { name } => {
                 for frame in (0..self.stack.len()).rev() {
                     if let Some(v) = self.stack[frame].borrow_mut().get_mut(name) {
-                        *v = value;
+                        v.0 = value;
                         break;
                     }
                 }

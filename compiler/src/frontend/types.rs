@@ -47,9 +47,7 @@ pub struct TypeMap {
     arrays: Vec<TypeGroup>,
     objects: Vec<(HashMap<StringIdx, TypeGroup>, bool)>,
     concrete_objects: Vec<Vec<(StringIdx, TypeGroup)>>,
-    closures: Vec<(
-        Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>
-    )>,
+    closures: Vec<(Vec<TypeGroup>, TypeGroup)>,
     variants: Vec<(HashMap<StringIdx, TypeGroup>, bool)>
 }
 
@@ -142,23 +140,19 @@ impl TypeMap {
         &self.concrete_objects[concrete_object.0]
     }
 
-    pub fn internal_closures(&self)
-        -> &Vec<(
-            Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>
-        )> {
+    pub fn internal_closures(&self) -> &Vec<(Vec<TypeGroup>, TypeGroup)> {
         &self.closures
     }
     pub fn insert_closure(
-        &mut self, param_types: Vec<TypeGroup>, return_type: TypeGroup,
-        captures: Option<HashMap<StringIdx, TypeGroup>>
+        &mut self, param_types: Vec<TypeGroup>, return_type: TypeGroup
     ) -> ClosureType {
         let idx = self.closures.len();
-        self.closures.push((param_types, return_type, captures));
+        self.closures.push((param_types, return_type));
         return ClosureType(idx);
     }
     pub fn insert_dedup_closure(
         &mut self,
-        v: (Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>)
+        v: (Vec<TypeGroup>, TypeGroup)
     ) -> ClosureType {
         for idx in 0..self.closures.len() {
             if !self.internal_closures_eq(
@@ -166,11 +160,11 @@ impl TypeMap {
             ) { continue; }
             return ClosureType(idx);
         }
-        return self.insert_closure(v.0, v.1, v.2);
+        return self.insert_closure(v.0, v.1);
     }
     pub fn closure(
         &self, closure: ClosureType
-    ) -> &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>) {
+    ) -> &(Vec<TypeGroup>, TypeGroup) {
         &self.closures[closure.0]
     }
 
@@ -361,8 +355,8 @@ impl TypeMap {
                 )))
             }
             (Type::Closure(clo_a), Type::Closure(clo_b)) => {
-                let (params_a, return_a, captures_a) = self.closure(clo_a).clone();
-                let (params_b, return_b, captures_b) = self.closure(clo_b).clone();
+                let (params_a, return_a) = self.closure(clo_a).clone();
+                let (params_b, return_b) = self.closure(clo_b).clone();
                 if params_a.len() != params_b.len() { return None }
                 for p in 0..params_a.len() {
                     if !self.try_merge_groups_internal(
@@ -375,9 +369,7 @@ impl TypeMap {
                 ) { return None; }
                 Some(Type::Closure(self.insert_closure(
                     params_a.clone(),
-                    return_a,
-                    if captures_a.is_some() { captures_a.clone() }
-                        else { captures_b.clone() }
+                    return_a
                 )))
             }
             (Type::Variants(var_a), Type::Variants(var_b)) => {
@@ -495,21 +487,16 @@ impl TypeMap {
                 Type::ConcreteObject(self.insert_concrete_object(new_members))
             }
             Type::Closure(clo) => {
-                let (old_param_types, old_return_type, old_captures) = self.closure(clo).clone();
+                let (old_param_types, old_return_type) = self.closure(clo).clone();
                 let new_param_types = old_param_types.into_iter().map(|t| self.internal_duplicate_group(
                     t, encountered
                 )).collect();
                 let new_return_type = self.internal_duplicate_group(
                     old_return_type, encountered
                 );
-                let new_captures = old_captures.map(|c| c.into_iter().map(|(cn, ct)| (
-                    cn,
-                    self.internal_duplicate_group(ct, encountered)
-                )).collect());
                 Type::Closure(self.insert_closure(
                     new_param_types, 
-                    new_return_type, 
-                    new_captures
+                    new_return_type
                 ))
             }
             Type::Variants(var) => {
@@ -858,12 +845,12 @@ impl TypeMap {
 
     fn internal_closures_eq(
         &mut self,
-        a: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>),
-        b: &(Vec<TypeGroup>, TypeGroup, Option<HashMap<StringIdx, TypeGroup>>),
+        a: &(Vec<TypeGroup>, TypeGroup),
+        b: &(Vec<TypeGroup>, TypeGroup),
         encountered: &mut HashSet<(usize, usize)>
     ) -> bool {
-        let (a_params, a_return, _) = a;
-        let (b_params, b_return, _) = b;
+        let (a_params, a_return) = a;
+        let (b_params, b_return) = b;
         if a_params.len() != b_params.len() { return false; }
         for p in 0..a_params.len() {
             let a_param = a_params[p];

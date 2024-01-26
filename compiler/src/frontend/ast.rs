@@ -1,4 +1,6 @@
 
+use std::collections::HashSet;
+
 use crate::util::{strings::{StringIdx, StringMap}, source::{SourceRange, HasSource}};
 use crate::frontend::{modules::NamespacePath, types::TypeGroup};
 
@@ -72,7 +74,7 @@ pub trait HasAstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNodeVariant<T: Clone + HasAstNodeVariant<T>> {
     Procedure { public: bool, name: StringIdx, arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
-    Function { arguments: Vec<(StringIdx, SourceRange)>, body: Vec<T> },
+    Function { arguments: Vec<(StringIdx, SourceRange)>, captures: Option<HashSet<StringIdx>>, body: Vec<T> },
     Variable { public: bool, mutable: bool, name: StringIdx, value_types: Option<TypeGroup>, value: Option<Box<T>> },
     CaseBranches { value: Box<T>, branches: Vec<(T, Vec<T>)>, else_body: Vec<T> },
     CaseConditon { condition: Box<T>, body: Vec<T>, else_body: Vec<T> },
@@ -127,9 +129,10 @@ impl<T: Clone + HasAstNodeVariant<T>> AstNodeVariant<T> {
                     arguments.iter().map(|s| strings.get(s.0).to_string()).collect::<Vec<String>>().join(", "),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
-            AstNodeVariant::Function { arguments, body } =>
-                format!("Function\n  arguments = [{}]\n  body = \n    {}",
+            AstNodeVariant::Function { arguments, captures, body } =>
+                format!("Function\n  arguments = [{}]\n  captures = [{}]\nbody = \n    {}",
                     arguments.iter().map(|s| strings.get(s.0).to_string()).collect::<Vec<String>>().join(", "),
+                    captures.as_ref().map(|c| c.iter().map(|s| strings.get(*s).to_string()).collect::<Vec<String>>().join(", ")).unwrap_or("<undefined>".into()),
                     indent(body.iter().map(|n| n.to_string(strings)).collect::<Vec<String>>().join("\n"), 4)
                 ),
             AstNodeVariant::Variable { public, mutable, name, value_types: _, value } => 

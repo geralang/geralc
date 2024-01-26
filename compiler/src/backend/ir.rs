@@ -9,7 +9,7 @@ use crate::frontend::{
     modules::NamespacePath,
     types::TypeGroup
 };
-use crate::backend::interpreter::Value;
+use crate::backend::constants::ConstantValue;
 
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ pub enum IrSymbol {
     Variable {
         path: NamespacePath,
         value_type: TypeGroup,
-        value: Value
+        value: ConstantValue
     },
     ExternalVariable {
         path: NamespacePath,
@@ -66,7 +66,7 @@ pub enum IrInstruction {
         parameter_types: Vec<TypeGroup>, return_type: TypeGroup, captured: HashMap<StringIdx, IrVariable>,
         variables: Vec<TypeGroup>, body: Vec<IrInstruction>, into: IrVariable
     },
-    LoadValue { value: Value, into: IrVariable },
+    LoadValue { value: ConstantValue, into: IrVariable },
 
     GetObjectMember { accessed: IrVariable, member: StringIdx, into: IrVariable },
     SetObjectMember { value: IrVariable, accessed: IrVariable, member: StringIdx },
@@ -94,7 +94,7 @@ pub enum IrInstruction {
     NotEquals { a: IrVariable, b: IrVariable, into: IrVariable },
     Not { x: IrVariable, into: IrVariable },
 
-    BranchOnValue { value: IrVariable, branches: Vec<(Value, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
+    BranchOnValue { value: IrVariable, branches: Vec<(ConstantValue, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
     BranchOnVariant { value: IrVariable, branches: Vec<(StringIdx, Option<IrVariable>, Vec<IrInstruction>)>, else_branch: Vec<IrInstruction> },
 
     Call { path: NamespacePath, variant: usize, arguments: Vec<IrVariable>, into: IrVariable, source: SourceRange },

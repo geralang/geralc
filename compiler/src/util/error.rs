@@ -74,7 +74,6 @@ pub enum ErrorType {
     // ir lowering errors
     NoMainProcedureDefined(String),
     InvalidMainProcedure(String),
-    ConstantClosure,
 
     // code generation
     InvalidCompileTarget(String)
@@ -282,9 +281,6 @@ impl ErrorType {
                 if color { style_red!() } else { "" },
                 path,
                 if color { style_dark_red!() } else { "" }
-            ),
-            ErrorType::ConstantClosure => format!(
-                "Closures may not be used as values for constants"
             ),
 
             ErrorType::InvalidCompileTarget(target) => format!(
