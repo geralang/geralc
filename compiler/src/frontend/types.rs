@@ -213,11 +213,16 @@ impl TypeMap {
         self.group(group).count() == 1
     }
     pub fn group_concrete(
-        &self, group: TypeGroup
+        &mut self, group: TypeGroup
     ) -> Type {
-        let types = self.group(group).collect::<Vec<Type>>();
-        if types.len() != 1 { panic!("group was assumed to be concrete!"); }
-        //if types.len() > 1 { println!("<! Warning !> randomly selected {:?} from {:?}", types[0], types); }
+        let mut types = self.group(group).collect::<Vec<Type>>();
+        if types.len() > 1 {
+            // It can happen that a function that can accept multiple possible types is never used,
+            // leading to any of the possible types being valid. If this is the case,
+            // one shall be picked and the rest shall be removed.
+            types = [types[0]].into();
+            self.set_group_types(group, &types);
+        }
         return types[0];
     }
     pub fn group_internal_id(&self, group: TypeGroup) -> usize {

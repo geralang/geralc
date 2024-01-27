@@ -29,15 +29,16 @@ impl TypeMapping {
         TypeMapping(HashMap::new())
     }
 
-    fn add(&mut self, from: TypeGroup, to: TypeGroup, types: &TypeMap) {
+    fn add(&mut self, from: TypeGroup, to: TypeGroup, types: &mut TypeMap) {
         if self.0.contains_key(&types.group_internal_id(from)) { return; }
         self.0.insert(types.group_internal_id(from), to);
-        for from_t in types.group(from) {
-            self.add_type(from_t, types.group_concrete(to), types);
+        for from_t in types.group(from).collect::<Vec<Type>>() {
+            let to_t = types.group_concrete(to);
+            self.add_type(from_t, to_t, types);
         }
     }
 
-    fn add_type(&mut self, from: Type, to: Type, types: &TypeMap) {
+    fn add_type(&mut self, from: Type, to: Type, types: &mut TypeMap) {
         match (from, to) {
             (Type::Any, _) => {}
             (_, Type::Any) => {}
@@ -47,36 +48,36 @@ impl TypeMapping {
                 self.add(from_element_t, to_element_t, types);
             }
             (Type::Object(from_obj), Type::Object(to_obj)) => {
-                let from_members = &types.object(from_obj).0;
-                let to_members = &types.object(to_obj).0;
+                let from_members = types.object(from_obj).0.clone();
+                let to_members = types.object(to_obj).0.clone();
                 for (from_member_n, from_member_t) in from_members {
-                    let to_member_t = to_members.get(from_member_n)
-                        .expect("invalid mapping!");
-                    self.add(*from_member_t, *to_member_t, types);
+                    if let Some(to_member_t) = to_members.get(&from_member_n) {
+                        self.add(from_member_t, *to_member_t, types);
+                    }                    
                 }
             }
             (Type::ConcreteObject(from_obj), Type::ConcreteObject(to_obj)) => {
-                let from_members = types.concrete_object(from_obj);
-                let to_members = types.concrete_object(to_obj);
-                for ((_, from_member_t), (_, to_member_t)) in from_members.iter().zip(to_members.iter()) {
-                    self.add(*from_member_t, *to_member_t, types);
+                let from_members = types.concrete_object(from_obj).clone();
+                let to_members = types.concrete_object(to_obj).clone();
+                for ((_, from_member_t), (_, to_member_t)) in from_members.into_iter().zip(to_members.into_iter()) {
+                    self.add(from_member_t, to_member_t, types);
                 }
             }
             (Type::Closure(from_clo), Type::Closure(to_clo)) => {
-                let (from_params, from_return_t) = types.closure(from_clo);
-                let (to_params, to_return_t) = types.closure(to_clo);
-                for (from_param_t, to_param_t) in from_params.iter().zip(to_params.iter()) {
-                    self.add(*from_param_t, *to_param_t, types);
+                let (from_params, from_return_t) = types.closure(from_clo).clone();
+                let (to_params, to_return_t) = types.closure(to_clo).clone();
+                for (from_param_t, to_param_t) in from_params.into_iter().zip(to_params.into_iter()) {
+                    self.add(from_param_t, to_param_t, types);
                 }
-                self.add(*from_return_t, *to_return_t, types);
+                self.add(from_return_t, to_return_t, types);
             }
             (Type::Variants(from_var), Type::Variants(to_var)) => {
-                let from_variants = &types.variants(from_var).0;
-                let to_variants = &types.variants(to_var).0;
+                let from_variants = types.variants(from_var).0.clone();
+                let to_variants = types.variants(to_var).0.clone();
                 for (from_variant_n, from_variant_t) in from_variants {
-                    let to_variant_t = to_variants.get(from_variant_n)
-                        .expect("invalid mapping!");
-                    self.add(*from_variant_t, *to_variant_t, types);
+                    if let Some(to_variant_t) = to_variants.get(&from_variant_n) {
+                        self.add(from_variant_t, *to_variant_t, types);
+                    }
                 }
             }
             // _ if from == to => {}
@@ -92,7 +93,6 @@ impl TypeMapping {
         let new_types = types.group(group).collect::<Vec<Type>>().into_iter()
             .map(|t| self.map_type(t, types)).collect::<Vec<Type>>();
         types.set_group_types(new_group, &new_types);
-        println!("{:?} -> {:?}", types.group(group).collect::<Vec<Type>>(), new_types);
         new_group
     }
 
@@ -676,7 +676,6 @@ impl IrGenerator {
                         let dup_symbol_return_type = types.duplicate_group(*returns);
                         let expected_return_type = type_mapping.map(node.get_types(), types);
                         types.try_merge_groups(expected_return_type, dup_symbol_return_type);
-                        println!("processing return type of call to '{}', has type {}", path.display(strings), crate::frontend::type_checking::display_types(strings, types, expected_return_type));
                         call_type_mapping.add(*returns, expected_return_type, types);
                         let proc_variant = IrGenerator::find_procedure(
                             path, types, &mut call_type_mapping, call_parameter_types,
