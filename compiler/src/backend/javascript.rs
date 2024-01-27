@@ -437,11 +437,11 @@ fn emit_value(
         ConstantValue::Closure(c) => emit_constant_name(c.into(), output),
         ConstantValue::Variant(v) => {
             let (variant_name, variant_value, _) = constants.get_variant(*v);
-            output.push_str("{ tag = ");
+            output.push_str("{ tag: ");
             output.push_str(&variant_name.0.to_string());
-            output.push_str(", value = ");
+            output.push_str(", value: ");
             emit_value(&variant_value, constants, output);
-            output.push_str("}");
+            output.push_str(" }");
         }
     }
 }
