@@ -77,7 +77,7 @@ impl TypeAssertion {
             from: variable_source,
             reason: format!(
                 "This variable is of type {}",
-                display_types(strings, types, variable_types)
+                types.display_types(strings, variable_types)
             )
         }
     }
@@ -88,7 +88,7 @@ impl TypeAssertion {
             reason: format!(
                 "This {} literal is of type {}",
                 literal_kind,
-                display_types(strings, types, literal_types)
+                types.display_types(strings, literal_types)
             )
         }
     }
@@ -98,7 +98,7 @@ impl TypeAssertion {
             from: source,
             reason: format!(
                 "Used as a condition here, meaning it must be of type {}",
-                display_types(strings, types, condition_type)
+                types.display_types(strings, condition_type)
             )
         }
     }
@@ -108,7 +108,7 @@ impl TypeAssertion {
             from: value_source,
             reason: format!(
                 "The assigned value is of type {}",
-                display_types(strings, types, value_types)
+                types.display_types(strings, value_types)
             )
         }
     }
@@ -118,7 +118,7 @@ impl TypeAssertion {
             from: procedure_source,
             reason: format!(
                 "Previous return values were of type {}",
-                display_types(strings, types, returned_types)
+                types.display_types(strings, returned_types)
             )
         }
     }
@@ -129,7 +129,7 @@ impl TypeAssertion {
             from: procedure_source,
             reason: format!(
                 "Does not always return early, therefore implicitly returns {} at the end of its body",
-                display_types(strings, types, asserted_type)
+                types.display_types(strings, asserted_type)
             )
         }
     }
@@ -140,7 +140,7 @@ impl TypeAssertion {
             reason: format!(
                 "This call expects the parameter '{}' to be of type {}",
                 strings.get(parameter_name),
-                display_types(strings, types, parameter_types)
+                types.display_types(strings, parameter_types)
             )
         }
     }
@@ -150,7 +150,7 @@ impl TypeAssertion {
             from: call_source,
             reason: format!(
                 "This call returns a value of type {}",
-                display_types(strings, types, return_types)
+                types.display_types(strings, return_types)
             )
         }
     }
@@ -160,7 +160,7 @@ impl TypeAssertion {
             from: call_source,
             reason: format!(
                 "This call expects the called closure to be of type {}",
-                display_types(strings, types, called_types)
+                types.display_types(strings, called_types)
             )
         }
     }
@@ -170,7 +170,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This arithmetic operation results in a value of type {}",
-                display_types(strings, types, result_types)
+                types.display_types(strings, result_types)
             )
         }
     }
@@ -180,7 +180,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This arithmetic operation requires a value of type {}",
-                display_types(strings, types, argument_types)
+                types.display_types(strings, argument_types)
             )
         }
     }
@@ -190,7 +190,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This comparison results in a value of type {}",
-                display_types(strings, types, result_types)
+                types.display_types(strings, result_types)
             )
         }
     }
@@ -200,7 +200,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This comparison requires a value of type {}",
-                display_types(strings, types, argument_types)
+                types.display_types(strings, argument_types)
             )
         }
     }
@@ -210,7 +210,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This logical operation results in a value of type {}",
-                display_types(strings, types, result_types)
+                types.display_types(strings, result_types)
             )
         }
     }
@@ -220,7 +220,7 @@ impl TypeAssertion {
             from: op_source,
             reason: format!(
                 "This logical operation requires a value of type {}",
-                display_types(strings, types, argument_types)
+                types.display_types(strings, argument_types)
             )
         }
     }
@@ -230,7 +230,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This constant has type {}",
-                display_types(strings, types, constant_types)
+                types.display_types(strings, constant_types)
             )
         }
     }
@@ -240,7 +240,7 @@ impl TypeAssertion {
             from: array_source,
             reason: format!(
                 "Previous array values were of type {}",
-                display_types(strings, types, element_types)
+                types.display_types(strings, element_types)
             )
         }
     }
@@ -250,7 +250,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This access requires the accessed object to be of type {}",
-                display_types(strings, types, accessed_types)
+                types.display_types(strings, accessed_types)
             )
         }
     }
@@ -260,7 +260,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "This access results in a value of type {}",
-                display_types(strings, types, result_types)
+                types.display_types(strings, result_types)
             )
         }
     }
@@ -277,7 +277,7 @@ impl TypeAssertion {
             from: access_source,
             reason: format!(
                 "Used as an array index here, meaning it must be of type {}",
-                display_types(strings, types, index_types)
+                types.display_types(strings, index_types)
             )
         }
     }
@@ -287,7 +287,7 @@ impl TypeAssertion {
             from: branch_source,
             reason: format!(
                 "Branches require the matched value to be of type {}",
-                display_types(strings, types, variant_types)
+                types.display_types(strings, variant_types)
             )
         }
     }
@@ -297,7 +297,7 @@ impl TypeAssertion {
             from: branch_source,
             reason: format!(
                 "This matched value is of type {}",
-                display_types(strings, types, matched_types)
+                types.display_types(strings, matched_types)
             )
         }
     }
@@ -308,7 +308,7 @@ impl TypeAssertion {
             reason: format!(
                 "The called procedure expects the parameter '{}' to be of type {}",
                 strings.get(parameter_name),
-                display_types(strings, types, parameter_types)
+                types.display_types(strings, parameter_types)
             )
         }
     }
@@ -318,7 +318,7 @@ impl TypeAssertion {
             from: param_source,
             reason: format!(
                 "The call provides a parameter value of type {}",
-                display_types(strings, types, given_type)
+                types.display_types(strings, given_type)
             )
         }
     }
@@ -1495,196 +1495,4 @@ fn type_check_node(
             panic!("Should've been expanded!");
         }
     }
-}
-
-pub fn display_types(
-    strings: &StringMap,
-    types: &TypeMap,
-    t: TypeGroup
-) -> String {
-    fn choose_letter(i: usize) -> String {
-        const LETTERS: [char; 26] = [
-            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q',
-            'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
-        ];
-        let mut i = i;
-        let mut r = String::new();
-        loop {
-            let c = i % LETTERS.len();
-            r.push(LETTERS[c]);
-            i = i / LETTERS.len();
-            if i == 0 { break; }
-        }
-        r
-    }
-    fn collect_letters(
-        letters: &mut HashMap<usize, (String, usize)>,
-        types: &TypeMap,
-        t: TypeGroup
-    ) {
-        let group_internal_idx = types.group_internal_id(t);
-        if let Some((_, usages)) = letters.get_mut(&group_internal_idx) {
-            *usages += 1;
-            if *usages >= 2 { return; }
-        } else {
-            let letter = choose_letter(letters.len());
-            letters.insert(group_internal_idx, (letter, 1));
-        }
-        for possible_type in types.group(t).collect::<Vec<Type>>() {
-            collect_type_letters(letters, types, possible_type)
-        }
-    }
-    fn collect_type_letters(
-        letters: &mut HashMap<usize, (String, usize)>,
-        types: &TypeMap,
-        collected_type: Type
-    ) {
-        match collected_type {
-            Type::Any |
-            Type::Unit |
-            Type::Boolean |
-            Type::Integer |
-            Type::Float |
-            Type::String => {}
-            Type::Array(arr) => collect_letters(letters, types, types.array(arr)),
-            Type::Object(obj) => {
-                for member_types in types.object(obj).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
-                    collect_letters(letters, types, member_types);
-                }
-            }
-            Type::ConcreteObject(obj) => {
-                for (_, member_types) in types.concrete_object(obj).clone() {
-                    collect_letters(letters, types, member_types);
-                }
-            }
-            Type::Closure(clo) => {
-                let (parameter_types, return_types) = types.closure(clo).clone();
-                for parameter_types in parameter_types {
-                    collect_letters(letters, types, parameter_types);
-                }
-                collect_letters(letters, types, return_types);
-            }
-            Type::Variants(var) => {
-                for variant_types in types.variants(var).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
-                    collect_letters(letters, types, variant_types);
-                }
-            }
-        }
-    }
-    fn display_group_types(
-        group_types: &[Type],
-        strings: &StringMap,
-        types: &TypeMap,
-        letters: &HashMap<usize, (String, usize)>
-    ) -> String {
-        let mut result = String::new();
-        if group_types.len() > 1 { 
-            result.push_str("(");
-        }
-        for i in 0..group_types.len() {
-            if i > 0 { result.push_str(" | "); }
-            result.push_str(&display_type(strings, types, group_types[i], letters));
-        }
-        if group_types.len() > 1 { 
-            result.push_str(")");
-        }
-        result
-    }
-    fn display_type(
-        strings: &StringMap,
-        types: &TypeMap,
-        displayed_type: Type,
-        letters: &HashMap<usize, (String, usize)>
-    ) -> String {
-        match displayed_type {
-            Type::Any => String::from("any"),
-            Type::Unit => String::from("unit"),
-            Type::Boolean => String::from("boolean"),
-            Type::Integer => String::from("integer"),
-            Type::Float => String::from("float"),
-            Type::String => String::from("string"),
-            Type::Array(arr) => format!(
-                "[{}]",
-                display_types_internal(strings, types, types.array(arr), letters)
-            ),
-            Type::Object(obj) => {
-                let (member_types, fixed) = types.object(obj).clone();
-                format!(
-                    "{{ {}{} }}",
-                    member_types.into_iter().map(|(member_name, member_type)| { format!(
-                        "{} = {}",
-                        strings.get(member_name),
-                        display_types_internal(strings, types, member_type, letters)
-                    ) }).collect::<Vec<String>>().join(", "),
-                    if fixed { "" } else { ", ..." }
-                )
-            }
-            Type::ConcreteObject(obj) => format!(
-                "{{ {}, ... }}",
-                types.concrete_object(obj).clone().into_iter().map(|(member_name, member_type)| { format!(
-                    "{} = {}",
-                    strings.get(member_name),
-                    display_types_internal(strings, types, member_type, letters)
-                ) }).collect::<Vec<String>>().join(", ")
-            ),
-            Type::Closure(clo) => {
-                let (arg_groups, returned_group) = types.closure(clo).clone();
-                let mut result: String = String::from("(");
-                for a in 0..arg_groups.len() {
-                    if a > 0 { result.push_str(", "); }
-                    result.push_str(&display_types_internal(strings, types, arg_groups[a], letters));
-                }
-                result.push_str(") -> ");
-                result.push_str(&display_types_internal(strings, types, returned_group, letters));
-                result
-            },
-            Type::Variants(var) => {
-                let (variant_types, fixed) = types.variants(var).clone();
-                format!(
-                    "({}{})",
-                    variant_types.into_iter().map(|(variant_name, variant_type)| {
-                        format!(
-                            "#{} {}",
-                            strings.get(variant_name),
-                            display_types_internal(strings, types, variant_type, letters)
-                        )
-                    }).collect::<Vec<String>>().join(" | "),
-                    if fixed { "" } else { " | ..." }
-                )
-            }
-        }
-    }
-    fn display_types_internal(
-        strings: &StringMap,
-        types: &TypeMap,
-        t: TypeGroup,
-        letters: &HashMap<usize, (String, usize)>
-    ) -> String {
-        let group_internal_idx = types.group_internal_id(t);
-        if let Some((letter, usage_count)) = letters.get(&group_internal_idx) {
-            if *usage_count >= 2 {
-                return letter.clone();
-            }
-        }
-        display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters)
-    }
-    let mut letters = HashMap::new();
-    collect_letters(&mut letters, types, t);
-    let mut result = display_types_internal(strings, types, t, &letters);
-    let mut letter_types = String::new();
-    for (internal_group_idx, (letter, usage_count)) in &letters {
-        if *usage_count < 2 { continue; }
-        if letter_types.len() > 0 { letter_types.push_str(", "); }
-        letter_types.push_str(letter);
-        letter_types.push_str(" = ");
-        letter_types.push_str(&display_group_types(
-            &types.internal_groups()[*internal_group_idx].iter().map(|t| *t).collect::<Vec<Type>>(),
-            strings, types, &letters
-        ));
-    }   
-    if letter_types.len() > 0 {
-        result.push_str(" where ");
-        result.push_str(&letter_types);
-    }
-    result
 }

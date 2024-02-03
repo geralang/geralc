@@ -298,7 +298,7 @@ fn emit_constant_declarations(
                 output.push_str("const ");
                 emit_constant_name(vi, output);
                 output.push_str(" = ");
-                emit_string_literal(v, output);
+                emit_string_literal(&v, output);
                 output.push_str(";\n");
             }
             ConstantPoolValue::Array(values, _) => {
@@ -316,7 +316,7 @@ fn emit_constant_declarations(
                 output.push_str("const ");
                 emit_constant_name(vi, output);
                 output.push_str(" = {\n");
-                for (member_name, (member_value, _)) in members {
+                for (member_name, (member_value, _)) in &members {
                     output.push_str("    ");
                     output.push_str(strings.get(*member_name));
                     output.push_str(": ");

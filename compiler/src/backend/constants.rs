@@ -64,6 +64,22 @@ pub enum ConstantValue {
     Variant(ConstantVariantIdx)
 }
 
+impl ConstantValue {
+    pub fn get_type(&self, constants: &ConstantPool, types: &mut TypeMap) -> TypeGroup {
+        match self {
+            ConstantValue::Unit => types.insert_group(&[Type::Unit]),
+            ConstantValue::Boolean(_) => types.insert_group(&[Type::Boolean]),
+            ConstantValue::Integer(_) => types.insert_group(&[Type::Integer]),
+            ConstantValue::Float(_) => types.insert_group(&[Type::Float]),
+            ConstantValue::String(_) => types.insert_group(&[Type::String]),
+            ConstantValue::Array(idx) => constants.get_type(idx.0),
+            ConstantValue::Object(idx) => constants.get_type(idx.0),
+            ConstantValue::Closure(idx) => constants.get_type(idx.0),
+            ConstantValue::Variant(idx) => constants.get_type(idx.0),
+        }
+    } 
+}
+
 #[derive(Clone, Debug)]
 pub struct ConstantClosure {
     pub parameter_types: Vec<TypeGroup>,
@@ -83,23 +99,25 @@ enum InternalConstantPoolValue {
 }
 
 #[derive(Clone, Debug)]
-pub enum ConstantPoolValue<'p> {
-    String(&'p str),
-    Array(&'p [ConstantValue], TypeGroup),
-    Object(&'p HashMap<StringIdx, (ConstantValue, TypeGroup)>),
-    Closure(&'p ConstantClosure),
+pub enum ConstantPoolValue {
+    String(Rc<str>),
+    Array(Box<[ConstantValue]>, TypeGroup),
+    Object(HashMap<StringIdx, (ConstantValue, TypeGroup)>),
+    Closure(ConstantClosure),
     Variant(StringIdx, ConstantValue, TypeGroup)
 }
 
 #[derive(Clone, Debug)]
 pub struct ConstantPool {
-    values: Vec<InternalConstantPoolValue>
+    values: Vec<InternalConstantPoolValue>,
+    types: Vec<TypeGroup>
 }
 
 impl ConstantPool {
     pub fn new() -> ConstantPool {
         ConstantPool {
-            values: Vec::new()
+            values: Vec::new(),
+            types: Vec::new()
         }
     }
 
@@ -123,6 +141,7 @@ impl ConstantPool {
                     }
                 }
                 self.values.push(InternalConstantPoolValue::String(s.clone()));
+                self.types.push(t);
                 ConstantValue::String(ConstantStringIdx(self.values.len() - 1))
             }
             Value::Array(a) => {
@@ -143,6 +162,7 @@ impl ConstantPool {
                     )?);
                 }
                 self.values.push(InternalConstantPoolValue::Array(a.clone(), ca.into(), et));
+                self.types.push(t);
                 ConstantValue::Array(ConstantArrayIdx(self.values.len() - 1))
             }
             Value::Object(o) => {
@@ -164,6 +184,7 @@ impl ConstantPool {
                     )?, mt));
                 }
                 self.values.push(InternalConstantPoolValue::Object(o.clone(), co));
+                self.types.push(t);
                 ConstantValue::Object(ConstantObjectIdx(self.values.len() - 1))
             }
             Value::Closure(parameter_names, captures, body) => {
@@ -209,6 +230,7 @@ impl ConstantPool {
                     variables: generator.variable_types(),
                     body
                 })); 
+                self.types.push(t);
                 ConstantValue::Closure(ConstantClosureIdx(self.values.len() - 1))
             }
             Value::Variant(tag, value) => {
@@ -228,6 +250,7 @@ impl ConstantPool {
                     }
                 }
                 self.values.push(InternalConstantPoolValue::Variant(*tag, converted_value, vt));
+                self.types.push(t);
                 ConstantValue::Variant(ConstantVariantIdx(self.values.len() - 1))
             }
         })
@@ -262,24 +285,28 @@ impl ConstantPool {
         else { panic!("passed illegal index"); }
     }
 
-    pub fn get_value<'p>(&'p self, idx: usize) -> ConstantPoolValue<'p> {
+    pub fn get_value(&self, idx: usize) -> ConstantPoolValue {
         match &self.values[idx] {
             InternalConstantPoolValue::String(content) => {
-                ConstantPoolValue::String(&*content)
+                ConstantPoolValue::String(content.clone())
             }
             InternalConstantPoolValue::Array(_, values, element_type) => {
-                ConstantPoolValue::Array(&*values, *element_type)
+                ConstantPoolValue::Array(values.clone(), *element_type)
             }
             InternalConstantPoolValue::Object(_, members) => {
-                ConstantPoolValue::Object(members)
+                ConstantPoolValue::Object(members.clone())
             }
             InternalConstantPoolValue::Closure(_, closure) => {
-                ConstantPoolValue::Closure(closure)
+                ConstantPoolValue::Closure(closure.clone())
             }
             InternalConstantPoolValue::Variant(tag, value, value_type) => {
                 ConstantPoolValue::Variant(*tag, *value, *value_type)
             }
         }
+    }
+
+    pub fn get_type(&self, idx: usize) -> TypeGroup {
+        self.types[idx]
     }
 
     pub fn get_value_count(&self) -> usize { self.values.len() }

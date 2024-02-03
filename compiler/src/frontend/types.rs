@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::util::strings::StringIdx;
+use crate::util::strings::{StringIdx, StringMap};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TypeGroup(usize);
@@ -48,7 +48,8 @@ pub struct TypeMap {
     objects: Vec<(HashMap<StringIdx, TypeGroup>, bool)>,
     concrete_objects: Vec<Vec<(StringIdx, TypeGroup)>>,
     closures: Vec<(Vec<TypeGroup>, TypeGroup)>,
-    variants: Vec<(HashMap<StringIdx, TypeGroup>, bool)>
+    variants: Vec<(HashMap<StringIdx, TypeGroup>, bool)>,
+    chosen_concrete: Vec<(HashSet<Type>, Type)>
 }
 
 impl TypeMap {
@@ -60,7 +61,8 @@ impl TypeMap {
             objects: Vec::new(),
             concrete_objects: Vec::new(),
             closures: Vec::new(),
-            variants: Vec::new()
+            variants: Vec::new(),
+            chosen_concrete: Vec::new()
         }
     }
 
@@ -220,7 +222,18 @@ impl TypeMap {
             // It can happen that a function that can accept multiple possible types is never used,
             // leading to any of the possible types being valid. If this is the case,
             // one shall be picked and the rest shall be removed.
-            types = [types[0]].into();
+            // Make sure that we always choose the same type when given the same possible types.
+            let possible_types = self.internal_groups[self.groups[group.0]].clone();
+            let chosen_type;
+            if let Some(ct) = self.chosen_concrete.iter()
+            .find(|(pt, _)| *pt == possible_types)
+            .map(|(_, ct)| *ct) {
+                chosen_type = ct;
+            } else {
+                chosen_type = types[0];
+                self.chosen_concrete.push((possible_types, chosen_type));
+            }
+            types = vec![chosen_type];
             self.set_group_types(group, &types);
         }
         return types[0];
@@ -285,12 +298,12 @@ impl TypeMap {
                 }
             }
         }
+        encountered.pop();
+        encountered.pop();
         if merged_types.is_empty() { return false; }
         self.internal_groups[a_internal] = merged_types.clone();
         self.internal_groups[b_internal] = merged_types;
         merged.insert((a, b));
-        encountered.pop();
-        encountered.pop();
         true
     }
 
@@ -1219,5 +1232,193 @@ impl TypeMap {
                 if let Type::Any = *t { Type::Unit } else { *t }
             ).collect();
         }
+    }
+
+    pub fn display_types(&self, strings: &StringMap, t: TypeGroup) -> String {
+        fn choose_letter(i: usize) -> String {
+            const LETTERS: [char; 26] = [
+                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q',
+                'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
+            ];
+            let mut i = i;
+            let mut r = String::new();
+            loop {
+                let c = i % LETTERS.len();
+                r.push(LETTERS[c]);
+                i = i / LETTERS.len();
+                if i == 0 { break; }
+            }
+            r
+        }
+        fn collect_letters(
+            letters: &mut HashMap<usize, (String, usize)>,
+            types: &TypeMap,
+            t: TypeGroup
+        ) {
+            let group_internal_idx = types.group_internal_id(t);
+            if let Some((_, usages)) = letters.get_mut(&group_internal_idx) {
+                *usages += 1;
+                if *usages >= 2 { return; }
+            } else {
+                let letter = choose_letter(letters.len());
+                letters.insert(group_internal_idx, (letter, 1));
+            }
+            for possible_type in types.group(t).collect::<Vec<Type>>() {
+                collect_type_letters(letters, types, possible_type)
+            }
+        }
+        fn collect_type_letters(
+            letters: &mut HashMap<usize, (String, usize)>,
+            types: &TypeMap,
+            collected_type: Type
+        ) {
+            match collected_type {
+                Type::Any |
+                Type::Unit |
+                Type::Boolean |
+                Type::Integer |
+                Type::Float |
+                Type::String => {}
+                Type::Array(arr) => collect_letters(letters, types, types.array(arr)),
+                Type::Object(obj) => {
+                    for member_types in types.object(obj).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
+                        collect_letters(letters, types, member_types);
+                    }
+                }
+                Type::ConcreteObject(obj) => {
+                    for (_, member_types) in types.concrete_object(obj).clone() {
+                        collect_letters(letters, types, member_types);
+                    }
+                }
+                Type::Closure(clo) => {
+                    let (parameter_types, return_types) = types.closure(clo).clone();
+                    for parameter_types in parameter_types {
+                        collect_letters(letters, types, parameter_types);
+                    }
+                    collect_letters(letters, types, return_types);
+                }
+                Type::Variants(var) => {
+                    for variant_types in types.variants(var).0.values().map(|t| *t).collect::<Vec<TypeGroup>>() {
+                        collect_letters(letters, types, variant_types);
+                    }
+                }
+            }
+        }
+        fn display_group_types(
+            group_types: &[Type],
+            strings: &StringMap,
+            types: &TypeMap,
+            letters: &HashMap<usize, (String, usize)>
+        ) -> String {
+            let mut result = String::new();
+            if group_types.len() > 1 { 
+                result.push_str("(");
+            }
+            for i in 0..group_types.len() {
+                if i > 0 { result.push_str(" | "); }
+                result.push_str(&display_type(strings, types, group_types[i], letters));
+            }
+            if group_types.len() > 1 { 
+                result.push_str(")");
+            }
+            result
+        }
+        fn display_type(
+            strings: &StringMap,
+            types: &TypeMap,
+            displayed_type: Type,
+            letters: &HashMap<usize, (String, usize)>
+        ) -> String {
+            match displayed_type {
+                Type::Any => String::from("any"),
+                Type::Unit => String::from("unit"),
+                Type::Boolean => String::from("boolean"),
+                Type::Integer => String::from("integer"),
+                Type::Float => String::from("float"),
+                Type::String => String::from("string"),
+                Type::Array(arr) => format!(
+                    "[{}]",
+                    display_types_internal(strings, types, types.array(arr), letters)
+                ),
+                Type::Object(obj) => {
+                    let (member_types, fixed) = types.object(obj).clone();
+                    format!(
+                        "{{ {}{} }}",
+                        member_types.into_iter().map(|(member_name, member_type)| { format!(
+                            "{} = {}",
+                            strings.get(member_name),
+                            display_types_internal(strings, types, member_type, letters)
+                        ) }).collect::<Vec<String>>().join(", "),
+                        if fixed { "" } else { ", ..." }
+                    )
+                }
+                Type::ConcreteObject(obj) => format!(
+                    "{{ {}, ... }}",
+                    types.concrete_object(obj).clone().into_iter().map(|(member_name, member_type)| { format!(
+                        "{} = {}",
+                        strings.get(member_name),
+                        display_types_internal(strings, types, member_type, letters)
+                    ) }).collect::<Vec<String>>().join(", ")
+                ),
+                Type::Closure(clo) => {
+                    let (arg_groups, returned_group) = types.closure(clo).clone();
+                    let mut result: String = String::from("(");
+                    for a in 0..arg_groups.len() {
+                        if a > 0 { result.push_str(", "); }
+                        result.push_str(&display_types_internal(strings, types, arg_groups[a], letters));
+                    }
+                    result.push_str(") -> ");
+                    result.push_str(&display_types_internal(strings, types, returned_group, letters));
+                    result
+                },
+                Type::Variants(var) => {
+                    let (variant_types, fixed) = types.variants(var).clone();
+                    format!(
+                        "({}{})",
+                        variant_types.into_iter().map(|(variant_name, variant_type)| {
+                            format!(
+                                "#{} {}",
+                                strings.get(variant_name),
+                                display_types_internal(strings, types, variant_type, letters)
+                            )
+                        }).collect::<Vec<String>>().join(" | "),
+                        if fixed { "" } else { " | ..." }
+                    )
+                }
+            }
+        }
+        fn display_types_internal(
+            strings: &StringMap,
+            types: &TypeMap,
+            t: TypeGroup,
+            letters: &HashMap<usize, (String, usize)>
+        ) -> String {
+            let group_internal_idx = types.group_internal_id(t);
+            if let Some((letter, usage_count)) = letters.get(&group_internal_idx) {
+                if *usage_count >= 2 {
+                    return letter.clone();
+                }
+            }
+            display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters)
+        }
+        let mut letters = HashMap::new();
+        collect_letters(&mut letters, self, t);
+        let mut result = display_types_internal(strings, self, t, &letters);
+        let mut letter_types = String::new();
+        for (internal_group_idx, (letter, usage_count)) in &letters {
+            if *usage_count < 2 { continue; }
+            if letter_types.len() > 0 { letter_types.push_str(", "); }
+            letter_types.push_str(letter);
+            letter_types.push_str(" = ");
+            letter_types.push_str(&display_group_types(
+                &self.internal_groups()[*internal_group_idx].iter().map(|t| *t).collect::<Vec<Type>>(),
+                strings, self, &letters
+            ));
+        }   
+        if letter_types.len() > 0 {
+            result.push_str(" where ");
+            result.push_str(&letter_types);
+        }
+        result
     }
 }

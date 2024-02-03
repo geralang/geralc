@@ -48,6 +48,11 @@ pub fn generate_c(
         &symbols, &mut types, &mut constants, strings,
         &mut closure_bodies, &mut conversions, &mut external, &mut procedure_impls
     );
+    let mut constant_inits = String::new();
+    emit_constant_initializers(
+        &mut constants, &static_var_vals, &mut conversions, &mut external, &symbols,
+        &mut closure_bodies, &mut types, strings, &mut constant_inits
+    );
     constant_dependants.push_str("\n");
     constant_dependants.push_str(&conversions.declarations);
     constant_dependants.push_str("\n");
@@ -60,10 +65,6 @@ pub fn generate_c(
     constant_dependants.push_str(&procedure_impls);
     let mut constant_decls = String::new();
     emit_constant_declarations(&constants, &mut types, &mut constant_decls);
-    let mut constant_inits = String::new();
-    emit_constant_initializers(
-        &constants, &static_var_vals, &mut types, strings, &mut constant_inits
-    );
     emit_type_declarations(&types, &mut output);
     output.push_str("\n");
     emit_type_members(&mut types, strings, &mut output);
@@ -155,32 +156,23 @@ fn emit_type_declarations(types: &TypeMap, output: &mut String) {
 
 fn emit_type_members(types: &mut TypeMap, strings: &StringMap, output: &mut String) {
     for closure_idx in 0..types.internal_closures().len() {
-        let mut o = String::new();
-        o.push_str("typedef struct ");
-        emit_closure_name(closure_idx, &mut o);
-        o.push_str(" {\n");
-        o.push_str("    GeraAllocation* allocation;\n");
+        output.push_str("typedef struct ");
+        emit_closure_name(closure_idx, output);
+        output.push_str(" {\n");
+        output.push_str("    GeraAllocation* allocation;\n");
         let (parameter_types, return_type) = types.internal_closures()[closure_idx].clone();
-        o.push_str("    ");
-        if !types.group_is_concrete(return_type) { continue; }
-        emit_type(return_type, types, &mut o);
-        o.push_str(" (*procedure)(GeraAllocation*");
-        let mut concrete = true;
+        output.push_str("    ");
+        emit_type(return_type, types, output);
+        output.push_str(" (*procedure)(GeraAllocation*");
         for parameter_type in parameter_types {
             if let Type::Unit = types.group_concrete(parameter_type) { continue; }
-            o.push_str(", ");
-            if !types.group_is_concrete(parameter_type) {
-                concrete = false;
-                break;
-            }
-            emit_type(parameter_type, types, &mut o);
+            output.push_str(", ");
+            emit_type(parameter_type, types, output);
         }
-        if !concrete { continue; }
-        o.push_str(");\n");
-        o.push_str("} ");
-        emit_closure_name(closure_idx, &mut o);
-        o.push_str(";\n");
-        output.push_str(&o);
+        output.push_str(");\n");
+        output.push_str("} ");
+        emit_closure_name(closure_idx, output);
+        output.push_str(";\n");
     }
     for object_idx in 0..types.internal_objects().len() {
         output.push_str("typedef struct ");
@@ -778,8 +770,8 @@ fn emit_implicit_conversion(
                                 panic!(
                                     "Object conversion is invalid! '{}' does not exist? (while converting from {} to {})",
                                     strings.get(member_name),
-                                    crate::frontend::type_checking::display_types(strings, types, from_type),
-                                    crate::frontend::type_checking::display_types(strings, types, to_type)
+                                    types.display_types(strings, from_type),
+                                    types.display_types(strings, to_type)
                                 )
                             );
                         emit_implicit_conversion(
@@ -1366,7 +1358,7 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut TypeMap, out
                 output.push_str(&v.chars().count().to_string());
                 output.push_str(",\n");
                 output.push_str("    .data = ");
-                emit_string_literal(v, output);
+                emit_string_literal(&v, output);
                 output.push_str("\n");
                 output.push_str("};\n");
             }
@@ -1407,8 +1399,16 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut TypeMap, out
                 emit_constant_name(vi, output);
                 output.push_str(";\n");
             }
-            ConstantPoolValue::Closure(static_closure) => {
-                todo!("emit static closure values");
+            ConstantPoolValue::Closure(constant_closure) => {
+                let constant_closure_idx = types.insert_dedup_closure((
+                    constant_closure.parameter_types.clone(),
+                    constant_closure.return_type
+                ));
+                let constant_type = types.insert_group(&[Type::Closure(constant_closure_idx)]);
+                emit_type(constant_type, types, output);
+                output.push_str(" ");
+                emit_constant_name(vi, output);
+                output.push_str(";\n");
             }
             ConstantPoolValue::Variant(_, _, _) => {}
         }
@@ -1416,12 +1416,15 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut TypeMap, out
 }
 
 fn emit_constant_initializers(
-    constants: &ConstantPool, static_var_vals: &HashMap<NamespacePath, (ConstantValue, TypeGroup)>,
-    types: &mut TypeMap, strings: &StringMap, output: &mut String
+    constants: &mut ConstantPool, static_var_vals: &HashMap<NamespacePath, (ConstantValue, TypeGroup)>,
+    conversions: &mut ConversionFunctions, external: &HashMap<NamespacePath, StringIdx>,
+    symbols: &Vec<IrSymbol>, closure_bodies: &mut Vec<String>, types: &mut TypeMap,
+    strings: &StringMap, output: &mut String
 ) {
     output.push_str("void gera_init_constants(void) {\n");
     let mut cinit = String::new();
-    for vi in 0..constants.get_value_count() {
+    let mut vi = 0;
+    while vi < constants.get_value_count() {
         match constants.get_value(vi) {
             ConstantPoolValue::String(_) => {}
             ConstantPoolValue::Array(values, element_type) => {
@@ -1461,7 +1464,7 @@ fn emit_constant_initializers(
                 cinit.push_str("values = (");
                 emit_object_alloc_name(constant_object_idx.get_internal_id(), &mut cinit);
                 cinit.push_str(") {\n");
-                for (member_name, (member_value, member_type)) in members {
+                for (member_name, (member_value, member_type)) in &members {
                     cinit.push_str("    .member");
                     cinit.push_str(&member_name.0.to_string());
                     cinit.push_str(" = ");
@@ -1486,11 +1489,137 @@ fn emit_constant_initializers(
                 }
                 cinit.push_str("};\n");
             }
-            ConstantPoolValue::Closure(static_closure) => {
-                todo!("emit static closure values");
+            ConstantPoolValue::Closure(constant_closure) => {
+                let closure_type_idx = types.insert_dedup_closure((
+                    constant_closure.parameter_types.clone(),
+                    constant_closure.return_type
+                ));
+                let closure_idx = closure_type_idx.get_internal_id();
+                let closure_type = types.insert_group(&[Type::Closure(closure_type_idx)]);
+                let mut closure_body = String::new();
+                // body needs to be done here because we need nested closures to register FIRST
+                let mut body_str = String::new();
+                let mut body_free = HashSet::new();
+                emit_block(
+                    &constant_closure.body, &constant_closure.variables,
+                    constant_closure.return_type, &mut body_free,
+                    &mut constant_closure.captured
+                        .iter().map(|(cn, cv)| (*cn, cv.get_type(constants, types))).collect(),
+                    closure_bodies, conversions, types,
+                    constants, external, symbols, strings, &mut body_str
+                );
+                let variant = closure_bodies.len();
+                // emit closure captures struct
+                let mut captures_typedef = String::new();
+                captures_typedef.push_str("typedef struct ");
+                emit_closure_captures_name(closure_idx, variant, &mut captures_typedef);
+                captures_typedef.push_str(" {\n");
+                let mut has_capture = false;
+                for (capture_name, capture_value) in &constant_closure.captured {
+                    let capture_type = capture_value.get_type(constants, types);
+                    if let Type::Unit = types.group_concrete(capture_type) { continue; }
+                    has_capture = true;
+                    captures_typedef.push_str("    ");
+                    emit_type(capture_type, types, &mut captures_typedef);
+                    captures_typedef.push_str(" ");
+                    captures_typedef.push_str(strings.get(*capture_name));
+                    captures_typedef.push_str(";\n");
+                }
+                captures_typedef.push_str("} ");
+                emit_closure_captures_name(closure_idx, variant, &mut captures_typedef);
+                captures_typedef.push_str(";\n");
+                if has_capture {
+                    closure_body.push_str(&captures_typedef);
+                }
+                // emit closure body procedure
+                emit_type(constant_closure.return_type, types, &mut closure_body);
+                closure_body.push_str(" ");
+                emit_closure_body_name(closure_idx, variant, &mut closure_body);
+                closure_body.push_str("(GeraAllocation* allocation");
+                for param_idx in 0..constant_closure.parameter_types.len() {
+                    let param_type = constant_closure.parameter_types[param_idx];
+                    if let Type::Unit = types.group_concrete(param_type) { continue; }
+                    closure_body.push_str(", ");
+                    emit_type(param_type, types, &mut closure_body);
+                    closure_body.push_str(" param");
+                    closure_body.push_str(&param_idx.to_string());
+                }
+                closure_body.push_str(") {\n");
+                if has_capture {
+                    closure_body.push_str("    ");
+                    emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                    closure_body.push_str("* captures = (");
+                    emit_closure_captures_name(closure_idx, variant, &mut closure_body);
+                    closure_body.push_str("*) allocation->data;\n");
+                }
+                for variable_idx in 0..constant_closure.variables.len() {
+                    let var_type = constant_closure.variables[variable_idx];
+                    if let Type::Unit = types.group_concrete(var_type) { continue; }
+                    closure_body.push_str("    ");
+                    emit_type(var_type, types, &mut closure_body);
+                    closure_body.push_str(" ");
+                    emit_variable(IrVariable { index: variable_idx, version: 0 }, &mut closure_body);
+                    closure_body.push_str(" = ");
+                    emit_variable_default_value(var_type, types, &mut closure_body);
+                    closure_body.push_str(";\n");
+                }
+                if let Type::Unit = types.group_concrete(constant_closure.return_type) {} else {
+                    closure_body.push_str("    ");
+                    emit_type(constant_closure.return_type, types, &mut closure_body);
+                    closure_body.push_str(" returned;\n");
+                }
+                body_str.push_str("\nret:\n");
+                emit_scope_decrements(
+                    &body_free, &constant_closure.variables, types, strings, &mut body_str
+                );
+                if let Type::Unit = types.group_concrete(constant_closure.return_type) {
+                    body_str.push_str("return;\n");
+                } else {
+                    body_str.push_str("return returned;\n");
+                }
+                indent(&body_str, &mut closure_body);
+                closure_body.push_str("}\n");
+                closure_bodies.push(closure_body);
+                // emit closure literal
+                emit_constant_name(vi, &mut cinit);
+                cinit.push_str(" = (");
+                emit_type(closure_type, types, &mut cinit);
+                cinit.push_str(") {\n");
+                cinit.push_str("    .allocation = ");
+                if has_capture {
+                    cinit.push_str("gera___rc_alloc(sizeof(");
+                    emit_closure_captures_name(closure_idx, variant, &mut cinit);
+                    cinit.push_str("), &gera___free_nothing),\n");
+                } else {
+                    cinit.push_str("NULL,\n");
+                }
+                cinit.push_str("    .procedure = &");
+                emit_closure_body_name(closure_idx, variant, &mut cinit);
+                cinit.push_str("\n");
+                cinit.push_str("};\n");
+                if has_capture {
+                    emit_closure_captures_name(closure_idx, variant, &mut cinit);
+                    cinit.push_str("* ");
+                    emit_constant_name(vi, &mut cinit);
+                    cinit.push_str("_captures = (");
+                    emit_closure_captures_name(closure_idx, variant, &mut cinit);
+                    cinit.push_str("*) ");
+                    emit_constant_name(vi, &mut cinit);
+                    cinit.push_str(".allocation->data;\n");
+                    for (capture_name, capture_value) in &constant_closure.captured {
+                        emit_constant_name(vi, &mut cinit);
+                        cinit.push_str("_captures->");
+                        cinit.push_str(strings.get(*capture_name));
+                        cinit.push_str(" = ");
+                        let capture_type = capture_value.get_type(constants, types);
+                        emit_value(*capture_value, capture_type, types, constants, strings, &mut cinit);
+                        cinit.push_str(";\n");
+                    }
+                }
             }
             ConstantPoolValue::Variant(_, _, _) => {}
         }
+        vi += 1;
     }
     for (path, (value, value_type)) in static_var_vals {
         emit_path(path, strings, &mut cinit);
@@ -1587,9 +1716,7 @@ fn emit_value(
         ConstantValue::String(s) => emit_constant_name(s.into(), output),
         ConstantValue::Array(a) => emit_constant_name(a.into(), output),
         ConstantValue::Object(o) => emit_constant_name(o.into(), output),
-        ConstantValue::Closure(c) => {
-            todo!("emit static closure values");
-        }
+        ConstantValue::Closure(c) => emit_constant_name(c.into(), output),
         ConstantValue::Variant(v) => {
             let variant_idx = if let Type::Variants(variant_idx) = types.group_concrete(value_type) {
                 variant_idx.get_internal_id()
@@ -1654,6 +1781,18 @@ fn emit_closure_body_name(closure_idx: usize, variant: usize, output: &mut Strin
     output.push_str("geraclosure");
     output.push_str(&closure_idx.to_string());
     output.push_str("body");
+    output.push_str(&variant.to_string())
+}
+
+fn emit_closure_captures_name(closure_idx: usize, variant: usize, output: &mut String) {
+    emit_closure_name(closure_idx, output);
+    output.push_str("Captures");
+    output.push_str(&variant.to_string())
+}
+fn emit_closure_free_name(closure_idx: usize, variant: usize, output: &mut String) {
+    output.push_str("geraclosure");
+    output.push_str(&closure_idx.to_string());
+    output.push_str("free");
     output.push_str(&variant.to_string())
 }
 
@@ -1722,7 +1861,7 @@ fn emit_instruction(
             for (member_name, member_value) in member_values {
                 if let Type::Unit = types.group_concrete(variable_types[member_value.index]) { continue; }
                 let member_type = *types.internal_objects()[object_idx].0.get(member_name)
-                    .expect("member should exist");
+                    .unwrap_or_else(|| panic!("Unable to access member '{}' of {}", strings.get(*member_name), types.display_types(strings, variable_types[into.index])));
                 output.push_str("    object->member");
                 output.push_str(&member_name.0.to_string());
                 output.push_str(" = ");
@@ -1890,17 +2029,6 @@ fn emit_instruction(
         IrInstruction::LoadClosure {
             parameter_types, return_type, captured, variables, body, into
         } => {
-            fn emit_closure_captures_name(closure_idx: usize, variant: usize, output: &mut String) {
-                emit_closure_name(closure_idx, output);
-                output.push_str("Captures");
-                output.push_str(&variant.to_string())
-            }
-            fn emit_closure_free_name(closure_idx: usize, variant: usize, output: &mut String) {
-                output.push_str("geraclosure");
-                output.push_str(&closure_idx.to_string());
-                output.push_str("free");
-                output.push_str(&variant.to_string())
-            }
             let closure_idx = if let Type::Closure(closure_idx) = types.group_concrete(variable_types[into.index]) {
                 closure_idx.get_internal_id()
             } else { panic!("should be closure type"); };

@@ -98,7 +98,7 @@ impl TypeMapping {
 
     fn map_type(&mut self, t: Type, types: &mut TypeMap) -> Type {
         match t {
-            Type::Any => Type::Unit,
+            Type::Any => Type::Any,
             Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String => t,
             Type::Array(arr) => {
                 let element_types = self.map(types.array(arr), types);
@@ -339,6 +339,12 @@ impl IrGenerator {
         ir_symbols: &mut Vec<IrSymbol>,
         constants: &mut ConstantPool
     ) -> Result<usize, Error> {
+        println!(
+            "looking up {}({}) -> {}",
+            path.display(strings),
+            call_parameter_types.iter().map(|t| types.display_types(strings, *t)).collect::<Vec<String>>().join(", "),
+            types.display_types(strings, call_return_type)
+        );
         let mut exists = false;
         let mut found_variant = 0;
         for symbol in &*ir_symbols {
@@ -354,32 +360,42 @@ impl IrGenerator {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
                 } => {
                     if path != proc_path { continue; }
+                    println!(
+                        "found {}({}) -> {}",
+                        path.display(strings),
+                        parameter_types.iter().map(|t| types.display_types(strings, *t)).collect::<Vec<String>>().join(", "),
+                        types.display_types(strings, *return_type)
+                    );
                     found_variant = found_variant.max(*proc_variant + 1);
                     if parameter_types.len() != call_parameter_types.len() { continue; }
                     let mut params_eq = true;
+                    let mut temp_types = types.clone();
                     for param_idx in 0..parameter_types.len() {
-                        if types.groups_eq(
-                            call_parameter_types[param_idx],parameter_types[param_idx]
-                        ) {
-                            continue;
-                        }
+                        if temp_types.try_merge_groups(
+                            call_parameter_types[param_idx], parameter_types[param_idx]
+                        ) { continue; }
                         params_eq = false;
                         break;
                     }
                     if !params_eq { continue; }
-                    {
-                        if !types.groups_eq(call_return_type, *return_type) {
-                            continue;
-                        }
-                    }
+                    if !temp_types.try_merge_groups(call_return_type, *return_type) { continue; }
                     found_variant = *proc_variant;
                     exists = true;
+                    for param_idx in 0..parameter_types.len() {
+                        types.try_merge_groups(
+                            call_parameter_types[param_idx], parameter_types[param_idx]
+                        );
+                    }
+                    types.try_merge_groups(call_return_type, *return_type);
                     break;
                 }
                 _ => {}
             }
         }
         if !exists {
+            if path.display(strings) == "std::coll::Vector::new" && found_variant != 0 {
+                panic!("already exists, but didn't reuse existing variant!");
+            }
             if body.is_some() {
                 let mut generator = IrGenerator::new();
                 let mut call_parameters = (HashMap::new(), Vec::new());
