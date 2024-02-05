@@ -21,9 +21,15 @@ pub fn generate_javascript(
     types.replace_any_with_unit();
     let mut output = String::new();
     let externals = collect_externals(&symbols);
+    output.push_str("\n//
+// Generated from Gera source code by gerap.
+// See: https://github.com/geralang/gerac
+//\n");
+    output.push_str("\n");
     output.push_str("(function() {\n");
     output.push_str("\"use strict\";\n");
     emit_core_library(&mut output);
+    output.push_str("\n");
     let mut constant_deps = String::new();
     emit_static_variables(&symbols, &mut constants, strings, &mut constant_deps);
     constant_deps.push_str("\n");

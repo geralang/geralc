@@ -339,12 +339,6 @@ impl IrGenerator {
         ir_symbols: &mut Vec<IrSymbol>,
         constants: &mut ConstantPool
     ) -> Result<usize, Error> {
-        println!(
-            "looking up {}({}) -> {}",
-            path.display(strings),
-            call_parameter_types.iter().map(|t| types.display_types(strings, *t)).collect::<Vec<String>>().join(", "),
-            types.display_types(strings, call_return_type)
-        );
         let mut exists = false;
         let mut found_variant = 0;
         for symbol in &*ir_symbols {
@@ -360,42 +354,37 @@ impl IrGenerator {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
                 } => {
                     if path != proc_path { continue; }
-                    println!(
-                        "found {}({}) -> {}",
-                        path.display(strings),
-                        parameter_types.iter().map(|t| types.display_types(strings, *t)).collect::<Vec<String>>().join(", "),
-                        types.display_types(strings, *return_type)
-                    );
                     found_variant = found_variant.max(*proc_variant + 1);
                     if parameter_types.len() != call_parameter_types.len() { continue; }
                     let mut params_eq = true;
-                    let mut temp_types = types.clone();
+                    // let mut temp_types = types.clone();
                     for param_idx in 0..parameter_types.len() {
-                        if temp_types.try_merge_groups(
+                        if types.groups_eq(
                             call_parameter_types[param_idx], parameter_types[param_idx]
                         ) { continue; }
+                        // if temp_types.try_merge_groups(
+                        //     call_parameter_types[param_idx], parameter_types[param_idx]
+                        // ) { continue; }
                         params_eq = false;
                         break;
                     }
                     if !params_eq { continue; }
-                    if !temp_types.try_merge_groups(call_return_type, *return_type) { continue; }
+                    // if !temp_types.try_merge_groups(call_return_type, *return_type) { continue; }
+                    if !types.groups_eq(call_return_type, *return_type) { continue; }
                     found_variant = *proc_variant;
                     exists = true;
-                    for param_idx in 0..parameter_types.len() {
-                        types.try_merge_groups(
-                            call_parameter_types[param_idx], parameter_types[param_idx]
-                        );
-                    }
-                    types.try_merge_groups(call_return_type, *return_type);
+                    // for param_idx in 0..parameter_types.len() {
+                    //     types.try_merge_groups(
+                    //         call_parameter_types[param_idx], parameter_types[param_idx]
+                    //     );
+                    // }
+                    // types.try_merge_groups(call_return_type, *return_type);
                     break;
                 }
                 _ => {}
             }
         }
         if !exists {
-            if path.display(strings) == "std::coll::Vector::new" && found_variant != 0 {
-                panic!("already exists, but didn't reuse existing variant!");
-            }
             if body.is_some() {
                 let mut generator = IrGenerator::new();
                 let mut call_parameters = (HashMap::new(), Vec::new());
@@ -689,10 +678,17 @@ impl IrGenerator {
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
+                        if path.display(strings) == "testing::new" {
+                            println!("symbol return type: {}", types.display_types(strings, *returns));
+                            println!("expected return type: {}", types.display_types(strings, node.get_types()));
+                        }
                         let dup_symbol_return_type = types.duplicate_group(*returns);
                         let expected_return_type = type_mapping.map(node.get_types(), types);
                         types.try_merge_groups(expected_return_type, dup_symbol_return_type);
                         call_type_mapping.add(*returns, expected_return_type, types);
+                        if path.display(strings) == "testing::new" {
+                            println!("call return type: {}", types.display_types(strings, expected_return_type));
+                        }
                         let proc_variant = IrGenerator::find_procedure(
                             path, types, &mut call_type_mapping, call_parameter_types,
                             expected_return_type, parameter_names, body, symbols, strings,

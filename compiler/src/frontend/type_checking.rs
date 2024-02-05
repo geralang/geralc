@@ -920,11 +920,17 @@ fn type_check_node(
                                 ).0;
                                 typed_arguments.push(typed_argument);
                             }
+                            if path.display(strings) == "testing::new" {
+                                println!("[TC] symbol return type is: {}", types.display_types(strings, symbol_return_type));
+                            }
                             if let Some(limited_to) = limited_to {
                                 assert_types(
                                     TypeAssertion::call_return_value(node_source, symbol_return_type, types, strings),
                                     limited_to, types
                                 )?;
+                            }
+                            if path.display(strings) == "testing::new" {
+                                println!("[TC] final return type is: {}", types.display_types(strings, symbol_return_type));
                             }
                             let called = TypedAstNode::new(
                                 AstNodeVariant::ModuleAccess { path: path.clone() },
@@ -1062,6 +1068,9 @@ fn type_check_node(
                             TypeAssertion::variable(*variable_source, variable_types, types, strings), 
                             limited_to, types
                         )?;
+                    }
+                    if rec_procedures.last().unwrap().0.display(strings) == "testing::main" {
+                        println!("[TC] '{}' now has the type (group: {:?}, internal: {}): {}", strings.get(name), variable_types, types.group_internal_id(variable_types), types.display_types(strings, variable_types));
                     }
                     Ok((TypedAstNode::new(
                         AstNodeVariant::VariableAccess { name },

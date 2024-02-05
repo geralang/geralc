@@ -11,12 +11,6 @@ use crate::frontend::{
 };
 use crate::util::strings::{StringMap, StringIdx};
 
-struct ConversionFunctions {
-    declarations: String,
-    bodies: String,
-    declared: HashSet<(TypeGroup, TypeGroup)>
-}
-
 pub fn generate_c(
     symbols: Vec<IrSymbol>,
     mut types: TypeMap,
@@ -28,6 +22,11 @@ pub fn generate_c(
     types.replace_any_with_unit();
     let mut output = String::new();
     let mut external = HashMap::new();
+    output.push_str("\n//
+// Generated from Gera source code by gerap.
+// See: https://github.com/geralang/gerac
+//\n");
+    output.push_str("\n");
     emit_core_library(&mut output);
     output.push_str("\n");
     let mut static_var_vals = HashMap::new();
@@ -37,26 +36,17 @@ pub fn generate_c(
         &symbols, &mut types, &mut static_var_vals,
         strings, &mut external, &mut constant_dependants
     );
-    let mut conversions = ConversionFunctions {
-        declarations: String::new(),
-        bodies: String::new(),
-        declared: HashSet::new()
-    };
     let mut closure_bodies = Vec::new();
     let mut procedure_impls = String::new();
     emit_procedure_impls(
         &symbols, &mut types, &mut constants, strings,
-        &mut closure_bodies, &mut conversions, &mut external, &mut procedure_impls
+        &mut closure_bodies, &mut external, &mut procedure_impls
     );
     let mut constant_inits = String::new();
     emit_constant_initializers(
-        &mut constants, &static_var_vals, &mut conversions, &mut external, &symbols,
+        &mut constants, &static_var_vals, &mut external, &symbols,
         &mut closure_bodies, &mut types, strings, &mut constant_inits
     );
-    constant_dependants.push_str("\n");
-    constant_dependants.push_str(&conversions.declarations);
-    constant_dependants.push_str("\n");
-    constant_dependants.push_str(&conversions.bodies);
     constant_dependants.push_str("\n");
     for closure_body in &closure_bodies {
         constant_dependants.push_str(&closure_body);
@@ -679,198 +669,6 @@ fn emit_symbol_declarations(
     }
 }
 
-fn emit_conversion_function_name(from: Type, to: Type, output: &mut String) -> Option<()> {
-    fn emit_type(t: Type, output: &mut String) -> Option<()> {
-        match t {
-            Type::Any | Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String |
-            Type::Array(_) | Type::Closure(_) => {
-                // panic!(
-                //     "{} ===> {} is not a valid type conversion!",
-                //     crate::frontend::type_checking::display_types(strings, types, from),
-                //     crate::frontend::type_checking::display_types(strings, types, to)
-                // );
-                return None;
-            }
-            Type::Object(object_idx) => {
-                output.push_str("object");
-                output.push_str(&object_idx.get_internal_id().to_string());
-            }
-            Type::ConcreteObject(cobject_idx) => {
-                output.push_str("cobject");
-                output.push_str(&cobject_idx.get_internal_id().to_string());
-            }
-            Type::Variants(variants_idx) => {
-                output.push_str("variants");
-                output.push_str(&variants_idx.get_internal_id().to_string());
-            }
-        }
-        Some(())
-    }
-    output.push_str("geraconvert");
-    emit_type(from, output)?;
-    output.push_str("to");
-    emit_type(to, output)?;
-    Some(())
-}
-
-fn emit_implicit_conversion(
-    variable: &str,
-    from_type: TypeGroup,
-    to_type: TypeGroup,
-    conversions: &mut ConversionFunctions,
-    types: &mut TypeMap,
-    strings: &StringMap,
-    output: &mut String
-) {
-    if types.groups_eq(from_type, to_type) {
-        output.push_str(variable);
-        return;
-    }
-    let mut conversion_function_name = String::new();
-    if let None = emit_conversion_function_name(
-        types.group_concrete(from_type), types.group_concrete(to_type),
-        &mut conversion_function_name
-    ) {
-        output.push_str(variable);
-        return;
-    }
-    if !conversions.declared.contains(&(from_type, to_type)) {
-        conversions.declared.insert((from_type, to_type));
-        let mut conversion_signature = String::new();
-        emit_type(to_type, types, &mut conversion_signature);
-        conversion_signature.push_str(" ");
-        conversion_signature.push_str(&conversion_function_name);
-        conversion_signature.push_str("(");
-        emit_type(from_type, types, &mut conversion_signature);
-        conversion_signature.push_str(" from)");
-        conversions.declarations.push_str(&conversion_signature);
-        conversions.declarations.push_str(";\n");
-        let mut conversion_function_str = String::new();
-        conversion_function_str.push_str(&conversion_signature);
-        conversion_function_str.push_str(" {\n");
-        match types.group_concrete(to_type) {
-            Type::Any | Type::Unit | Type::Boolean | Type::Integer | Type::Float | Type::String |
-            Type::Array(_) | Type::Closure(_) => {
-                panic!("{:?} ===> {:?} is not a valid type conversion!", from_type, to_type);
-            }
-            Type::Object(to_object_idx) => match types.group_concrete(from_type) {
-                Type::Object(from_object_idx) => {
-                    conversion_function_str.push_str("    return (");
-                    emit_type(to_type, types, &mut conversion_function_str);
-                    conversion_function_str.push_str(") {\n");
-                    for (member_name, to_member_type) in types.object(to_object_idx).0.clone() {
-                        conversion_function_str.push_str("        .member");
-                        conversion_function_str.push_str(&member_name.0.to_string());
-                        conversion_function_str.push_str(" = ");
-                        let mut member_value = String::new();
-                        member_value.push_str("from.member");
-                        member_value.push_str(&member_name.0.to_string());
-                        let from_member_type = types.object(from_object_idx).0.get(&member_name).map(|t| *t)
-                            .unwrap_or_else(||
-                                panic!(
-                                    "Object conversion is invalid! '{}' does not exist? (while converting from {} to {})",
-                                    strings.get(member_name),
-                                    types.display_types(strings, from_type),
-                                    types.display_types(strings, to_type)
-                                )
-                            );
-                        emit_implicit_conversion(
-                            &member_value, from_member_type, to_member_type, conversions, types,
-                            strings, &mut conversion_function_str
-                        );
-                        conversion_function_str.push_str(",\n");
-                    }
-                    conversion_function_str.push_str("    };\n");
-                }
-                Type::ConcreteObject(_) => {
-                    conversion_function_str.push_str("    ");
-                    emit_type(to_type, types, &mut conversion_function_str);
-                    conversion_function_str.push_str(" result;\n");
-                    conversion_function_str.push_str("    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
-                    emit_object_alloc_name(to_object_idx.get_internal_id(), &mut conversion_function_str);
-                    conversion_function_str.push_str("), &");
-                    emit_object_free_handler_name(to_object_idx.get_internal_id(), &mut conversion_function_str);
-                    conversion_function_str.push_str(");\n");
-                    conversion_function_str.push_str("    result.allocation = allocation;\n");
-                    conversion_function_str.push_str("    ");
-                    emit_object_alloc_name(to_object_idx.get_internal_id(), &mut conversion_function_str);
-                    conversion_function_str.push_str("* object = (");
-                    emit_object_alloc_name(to_object_idx.get_internal_id(), &mut conversion_function_str);
-                    conversion_function_str.push_str("*) allocation->data;\n");
-                    for (member_name, member_type) in types.object(to_object_idx).0.clone() {
-                        conversion_function_str.push_str("    object->member");
-                        conversion_function_str.push_str(&member_name.0.to_string());
-                        conversion_function_str.push_str(" = from.");
-                        conversion_function_str.push_str(strings.get(member_name));
-                        conversion_function_str.push_str(";\n");
-                        let mut member_value_incr_str = String::new();
-                        emit_rc_incr(
-                            &format!("from.{}", strings.get(member_name)),
-                            member_type, types, strings, &mut member_value_incr_str
-                        );
-                        indent(&member_value_incr_str, &mut conversion_function_str);
-                        conversion_function_str.push_str("    ");
-                        conversion_function_str.push_str("result.member");
-                        conversion_function_str.push_str(&member_name.0.to_string());
-                        conversion_function_str.push_str(" = &object->member");
-                        conversion_function_str.push_str(&member_name.0.to_string());
-                        conversion_function_str.push_str(";\n");
-                    }
-                    conversion_function_str.push_str("    return result;\n");
-                }
-                _ => panic!("Cannot convert a {:?} to a {:?}!", from_type, to_type)
-            },
-            Type::ConcreteObject(to_cobject_idx) => match types.group_concrete(from_type) {
-                Type::Object(_) => {
-                    conversion_function_str.push_str("    return (");
-                    emit_type(to_type, types, &mut conversion_function_str);
-                    conversion_function_str.push_str(") {\n");
-                    for (member_name, member_type) in types.concrete_object(to_cobject_idx).clone() {
-                        conversion_function_str.push_str("        .");
-                        conversion_function_str.push_str(strings.get(member_name));
-                        conversion_function_str.push_str(" = *((");
-                        emit_type(member_type, types, &mut conversion_function_str);
-                        conversion_function_str.push_str("*) from.member");
-                        conversion_function_str.push_str(&member_name.0.to_string());
-                        conversion_function_str.push_str("),\n");
-                    }
-                    conversion_function_str.push_str("    };\n");
-                }
-                Type::ConcreteObject(_) => {
-                    panic!("Should not need to directly convert a cobject to a cobject?");
-                }
-                _ => panic!("Cannot convert a {:?} to a {:?}!", from_type, to_type)
-            },
-            Type::Variants(to_variant_idx) => if let Type::Variants(from_variant_idx) = types.group_concrete(from_type) {
-                let from_has_values = types.variants(from_variant_idx).0.clone().into_iter().find(|(_, vt)|
-                    if let Type::Unit = types.group_concrete(*vt) { false } else { true }
-                ).is_some();
-                let to_has_values = types.variants(to_variant_idx).0.clone().into_iter().find(|(_, vt)|
-                    if let Type::Unit = types.group_concrete(*vt) { false } else { true }
-                ).is_some();
-                conversion_function_str.push_str("    ");
-                emit_type(to_type, types, &mut conversion_function_str);
-                conversion_function_str.push_str(" to;\n");
-                if to_has_values && from_has_values {
-                    conversion_function_str.push_str("    for(size_t b = 0; b < sizeof(");
-                    emit_variants_name(from_variant_idx.get_internal_id(), &mut conversion_function_str);
-                    conversion_function_str.push_str("Value); b += 1) {\n");
-                    conversion_function_str.push_str("        ((char*) &to.value)[b] = ((char*) &from.value)[b];\n");
-                    conversion_function_str.push_str("    }\n");
-                }
-                conversion_function_str.push_str("    to.tag = from.tag;\n");
-                conversion_function_str.push_str("    return to;\n");
-            } else { panic!("Cannot convert a {:?} to a {:?}!", from_type, to_type); }
-        }
-        conversion_function_str.push_str("}\n");
-        conversions.bodies.push_str(&conversion_function_str);
-    }
-    output.push_str(&conversion_function_name);
-    output.push_str("(");
-    output.push_str(variable);
-    output.push_str(")");
-}
-
 fn emit_variable(variable: IrVariable, output: &mut String) {
     output.push_str("local");
     output.push_str(&variable.index.to_string());
@@ -1252,7 +1050,6 @@ fn emit_procedure_impls(
     constants: &mut ConstantPool,
     strings: &mut StringMap,
     closure_bodies: &mut Vec<String>,
-    conversions: &mut ConversionFunctions,
     external: &mut HashMap<NamespacePath, StringIdx>,
     output: &mut String
 ) {
@@ -1295,7 +1092,7 @@ fn emit_procedure_impls(
                 let mut body_free = HashSet::new();
                 emit_block(
                     body, variables, *return_type, &mut body_free, &mut HashMap::new(), 
-                    closure_bodies, conversions, types,
+                    closure_bodies, types,
                     constants, external, symbols, strings, &mut body_str
                 );
                 body_str.push_str("\nret:\n");
@@ -1416,10 +1213,10 @@ fn emit_constant_declarations(constants: &ConstantPool, types: &mut TypeMap, out
 }
 
 fn emit_constant_initializers(
-    constants: &mut ConstantPool, static_var_vals: &HashMap<NamespacePath, (ConstantValue, TypeGroup)>,
-    conversions: &mut ConversionFunctions, external: &HashMap<NamespacePath, StringIdx>,
-    symbols: &Vec<IrSymbol>, closure_bodies: &mut Vec<String>, types: &mut TypeMap,
-    strings: &StringMap, output: &mut String
+    constants: &mut ConstantPool,
+    static_var_vals: &HashMap<NamespacePath, (ConstantValue, TypeGroup)>,
+    external: &HashMap<NamespacePath, StringIdx>, symbols: &Vec<IrSymbol>,
+    closure_bodies: &mut Vec<String>, types: &mut TypeMap, strings: &StringMap, output: &mut String
 ) {
     output.push_str("void gera_init_constants(void) {\n");
     let mut cinit = String::new();
@@ -1505,7 +1302,7 @@ fn emit_constant_initializers(
                     constant_closure.return_type, &mut body_free,
                     &mut constant_closure.captured
                         .iter().map(|(cn, cv)| (*cn, cv.get_type(constants, types))).collect(),
-                    closure_bodies, conversions, types,
+                    closure_bodies, types,
                     constants, external, symbols, strings, &mut body_str
                 );
                 let variant = closure_bodies.len();
@@ -1756,7 +1553,6 @@ fn emit_block(
     free: &mut HashSet<usize>,
     capture_types: &mut HashMap<StringIdx, TypeGroup>,
     closure_bodies: &mut Vec<String>,
-    conversions: &mut ConversionFunctions,
     types: &mut TypeMap,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
@@ -1769,7 +1565,7 @@ fn emit_block(
         let mut o = String::new();
         emit_instruction(
             instruction, variable_types, return_type, free, capture_types, closure_bodies,
-            conversions, types, constants, external,
+            types, constants, external,
             symbols, strings, &mut o
         );
         indent(&o, output);
@@ -1803,7 +1599,6 @@ fn emit_instruction(
     free: &mut HashSet<usize>,
     capture_types: &mut HashMap<StringIdx, TypeGroup>,
     closure_bodies: &mut Vec<String>,
-    conversions: &mut ConversionFunctions,
     types: &mut TypeMap,
     constants: &mut ConstantPool,
     external: &HashMap<NamespacePath, StringIdx>,
@@ -1860,17 +1655,12 @@ fn emit_instruction(
             output.push_str("*) allocation->data;\n");
             for (member_name, member_value) in member_values {
                 if let Type::Unit = types.group_concrete(variable_types[member_value.index]) { continue; }
-                let member_type = *types.internal_objects()[object_idx].0.get(member_name)
-                    .unwrap_or_else(|| panic!("Unable to access member '{}' of {}", strings.get(*member_name), types.display_types(strings, variable_types[into.index])));
                 output.push_str("    object->member");
                 output.push_str(&member_name.0.to_string());
                 output.push_str(" = ");
                 let mut member_value_str = String::new();
                 emit_variable(*member_value, &mut member_value_str);
-                emit_implicit_conversion(
-                    &member_value_str, variable_types[member_value.index], member_type, conversions,
-                    types, strings, output
-                );
+                output.push_str(&member_value_str);
                 output.push_str(";\n");
                 let mut member_value_incr_str = String::new();
                 emit_rc_incr(
@@ -1935,10 +1725,7 @@ fn emit_instruction(
                     output.push_str("] = ");
                     let mut element_value_str = String::new();
                     emit_variable(element_values[value_idx], &mut element_value_str);
-                    emit_implicit_conversion(
-                        &element_value_str, variable_types[element_values[value_idx].index],
-                        element_type, conversions, types, strings, output
-                    );
+                    output.push_str(&element_value_str);
                     output.push_str(";\n");
                     let mut element_value_incr_str = String::new();
                     emit_rc_incr(
@@ -1968,13 +1755,7 @@ fn emit_instruction(
                 output.push_str(", .value = { .");
                 output.push_str(strings.get(*name));
                 output.push_str(" = ");
-                let mut v_str = String::new();
-                emit_variable(*v, &mut v_str);
-                emit_implicit_conversion(
-                    &v_str, variable_types[v.index], *types.internal_variants()[variant_idx]
-                        .0.get(name).expect("should have variant"),
-                    conversions, types, strings, output
-                );
+                emit_variable(*v, output);
                 output.push_str(" }");
             }
             output.push_str(" };\n");
@@ -2039,7 +1820,7 @@ fn emit_instruction(
             emit_block(
                 body, variables, *return_type, &mut body_free,
                 &mut captured.iter().map(|(cn, cv)| (*cn, variable_types[cv.index])).collect(),
-                closure_bodies, conversions, types,
+                closure_bodies, types,
                 constants, external, symbols, strings, &mut body_str
             );
             let variant = closure_bodies.len();
@@ -2193,9 +1974,6 @@ fn emit_instruction(
         }
         IrInstruction::GetObjectMember { accessed, member, into } => {
             if let Type::Unit = types.group_concrete(variable_types[into.index]) { return; }
-            let member_type = if let Type::Object(object_idx) = types.group_concrete(variable_types[accessed.index]) {
-                *types.object(object_idx).0.get(member).expect("member should exist")
-            } else { panic!("accessed should be an object"); };
             let mut into_str = String::new();
             emit_variable(*into, &mut into_str);
             emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
@@ -2204,19 +1982,13 @@ fn emit_instruction(
             output.push_str("gera___rc_lock_read(");
             output.push_str(&accessed_str);
             output.push_str(".allocation);\n");
-            let mut access_str = String::new();
             output.push_str(&into_str);
             output.push_str(" = ");
-            access_str.push_str("(*");
-            access_str.push_str(&accessed_str);
-            access_str.push_str(".member");
-            access_str.push_str(&member.0.to_string());
-            access_str.push_str(")");
-            emit_implicit_conversion(
-                &mut access_str, member_type, variable_types[into.index], conversions, types,
-                strings, output
-            );
-            output.push_str(";\n");
+            output.push_str("(*");
+            output.push_str(&accessed_str);
+            output.push_str(".member");
+            output.push_str(&member.0.to_string());
+            output.push_str(");\n");
             output.push_str("gera___rc_unlock_read(");
             output.push_str(&accessed_str);
             output.push_str(".allocation);\n");
@@ -2242,12 +2014,7 @@ fn emit_instruction(
             emit_rc_decr(&member_str, member_type, types, strings, output);
             output.push_str(&member_str);
             output.push_str(" = ");
-            let mut value_str = String::new();
-            emit_variable(*value, &mut value_str);
-            emit_implicit_conversion(
-                &value_str, variable_types[value.index], member_type, conversions, types,
-                strings, output
-            );
+            emit_variable(*value, output);
             output.push_str(";\n");
             output.push_str("gera___rc_unlock_write(");
             output.push_str(&accessed_str);
@@ -2283,19 +2050,13 @@ fn emit_instruction(
             output.push_str(");\n");
             output.push_str(&into_str);
             output.push_str(" = ");
-            let mut access_str = String::new();
-            access_str.push_str("((");
-            emit_type(element_type, types, &mut access_str);
-            access_str.push_str("*) ");
-            access_str.push_str(&accessed_str);
-            access_str.push_str(".data)[");
-            access_str.push_str(&index_str);
-            access_str.push_str("]");
-            emit_implicit_conversion(
-                &mut access_str, element_type, variable_types[into.index], conversions, types,
-                strings, output
-            );
-            output.push_str(";\n");
+            output.push_str("((");
+            emit_type(element_type, types, output);
+            output.push_str("*) ");
+            output.push_str(&accessed_str);
+            output.push_str(".data)[");
+            output.push_str(&index_str);
+            output.push_str("];\n");
             output.push_str("gera___rc_unlock_read(");
             output.push_str(&accessed_str);
             output.push_str(".allocation);\n");
@@ -2337,12 +2098,7 @@ fn emit_instruction(
             emit_rc_decr(&element_str, element_type, types, strings, output);
             output.push_str(&element_str);
             output.push_str(" = ");
-            let mut value_str = String::new();
-            emit_variable(*value, &mut value_str);
-            emit_implicit_conversion(
-                &value_str, variable_types[value.index], element_type, conversions, types,
-                strings, output
-            );
+            emit_variable(*value, output);
             output.push_str(";\n");
             output.push_str("gera___rc_unlock_write(");
             output.push_str(&accessed_str);
@@ -2357,13 +2113,8 @@ fn emit_instruction(
             output.push_str("gera___rc_lock_read(allocation);\n");
             output.push_str(&into_str);
             output.push_str(" = ");
-            let mut accessed_str = String::new();
-            accessed_str.push_str("captures->");
-            accessed_str.push_str(strings.get(*name));
-            emit_implicit_conversion(
-                &accessed_str, *capture_types.get(name).expect("should be captured"), variable_types[into.index],
-                conversions, types, strings, output
-            );
+            output.push_str("captures->");
+            output.push_str(strings.get(*name));
             output.push_str(";\n");
             output.push_str("gera___rc_unlock_read(allocation);\n");
             emit_rc_incr(&into_str, variable_types[into.index], types, strings, output);
@@ -2378,12 +2129,7 @@ fn emit_instruction(
             emit_rc_decr(&capture_str, variable_types[value.index], types, strings, output);
             output.push_str(&capture_str);
             output.push_str(" = ");
-            let mut value_str = String::new();
-            emit_variable(*value, &mut value_str);
-            emit_implicit_conversion(
-                &value_str, variable_types[value.index], *capture_types.get(name).expect("should be captured"),
-                conversions, types, strings, output
-            );
+            emit_variable(*value, output);
             output.push_str(";\n");
             output.push_str("gera___rc_unlock_write(allocation);\n");
             emit_rc_incr(&capture_str, variable_types[value.index], types, strings, output);
@@ -2553,7 +2299,7 @@ fn emit_instruction(
                         for instruction in branch_body {
                             emit_instruction(
                                 instruction, variable_types, return_type, free, capture_types,
-                                closure_bodies, conversions, types,
+                                closure_bodies, types,
                                 constants, external, symbols, strings, &mut branch
                             );
                         }
@@ -2568,7 +2314,7 @@ fn emit_instruction(
                         for instruction in else_branch {
                             emit_instruction(
                                 instruction, variable_types, return_type, free, capture_types,
-                                closure_bodies, conversions, types,
+                                closure_bodies, types,
                                 constants, external, symbols, strings, &mut else_branch_str
                             );
                         }
@@ -2589,14 +2335,14 @@ fn emit_instruction(
                         output.push_str(") ");
                         emit_block(
                             &branches[branch_idx].1, variable_types, return_type, free, capture_types,
-                            closure_bodies, conversions, types,
+                            closure_bodies, types,
                             constants, external, symbols, strings, output
                         );
                         output.push_str(" else ");
                     }
                     emit_block(
                         else_branch, variable_types, return_type, free, capture_types, closure_bodies,
-                        conversions, types, constants,
+                        types, constants,
                         external, symbols, strings, output
                     );
                     output.push_str("\n");
@@ -2605,10 +2351,6 @@ fn emit_instruction(
 
         }
         IrInstruction::BranchOnVariant { value, branches, else_branch } => {
-            let value_variant_types = if let Type::Variants(variants_idx) =
-                types.group_concrete(variable_types[value.index]) {
-                types.variants(variants_idx).0.clone()
-            } else { panic!("Branch on variant should be on a variant?"); };
             output.push_str("switch(");
             emit_variable(*value, output);
             output.push_str(".tag) {");
@@ -2624,15 +2366,9 @@ fn emit_instruction(
                         emit_variable(*branch_variable, &mut branch_variable_str);
                         output.push_str(&branch_variable_str);
                         output.push_str(" = ");
-                        let mut branch_variable_value_str = String::new();
-                        emit_variable(*value, &mut branch_variable_value_str);
-                        branch_variable_value_str.push_str(".value.");
-                        branch_variable_value_str.push_str(strings.get(*branch_variant));
-                        emit_implicit_conversion(
-                            &branch_variable_value_str, *value_variant_types.get(branch_variant)
-                                .expect("should have variant"),
-                            branch_variable_type, conversions, types, strings, output
-                        );
+                        emit_variable(*value, output);
+                        output.push_str(".value.");
+                        output.push_str(strings.get(*branch_variant));
                         output.push_str(";\n");
                         let mut branch_variable_incr = String::new();
                         emit_rc_incr(
@@ -2649,7 +2385,7 @@ fn emit_instruction(
                 for instruction in branch_body {
                     emit_instruction(
                         instruction, variable_types, return_type, free, capture_types,
-                        closure_bodies, conversions, types,
+                        closure_bodies, types,
                         constants, external, symbols, strings, &mut branch
                     );
                 }
@@ -2664,7 +2400,7 @@ fn emit_instruction(
                 for instruction in else_branch {
                     emit_instruction(
                         instruction, variable_types, return_type, free, capture_types,
-                        closure_bodies, conversions, types,
+                        closure_bodies, types,
                         constants, external, symbols, strings,
                         &mut branch
                     );
@@ -2706,14 +2442,7 @@ fn emit_instruction(
                 if let Type::Unit = types.group_concrete(param_type) { continue; }
                 if had_param { value.push_str(", "); }
                 had_param = true;
-                let mut variable = String::new();
-                emit_variable(arguments[argument_idx], &mut variable);
-                emit_implicit_conversion(
-                    &variable,
-                    variable_types[arguments[argument_idx].index],
-                    param_type,
-                    conversions, types, strings, &mut value
-                );
+                emit_variable(arguments[argument_idx], &mut value);
             }
             value.push_str(")");
             if returns_value {
@@ -2722,15 +2451,8 @@ fn emit_instruction(
                 emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
                 output.push_str(&into_str);
                 output.push_str(" = ");
-                emit_implicit_conversion(
-                    &value,
-                    *return_type,
-                    variable_types[into.index],
-                    conversions, types, strings, output
-                );
-            } else {
-                output.push_str(&value);
             }
+            output.push_str(&value);
             output.push_str(";\n");
             free.insert(into.index);
         }
@@ -2752,14 +2474,7 @@ fn emit_instruction(
             for argument_idx in 0..arguments.len() {
                 if let Type::Unit = types.group_concrete(parameter_types[argument_idx]) { continue; }
                 value.push_str(", ");
-                let mut variable = String::new();
-                emit_variable(arguments[argument_idx], &mut variable);
-                emit_implicit_conversion(
-                    &variable,
-                    variable_types[arguments[argument_idx].index],
-                    parameter_types[argument_idx],
-                    conversions, types, strings, &mut value
-                );
+                emit_variable(arguments[argument_idx], &mut value);
             }
             value.push_str(")");
             if returns_value {
@@ -2768,15 +2483,8 @@ fn emit_instruction(
                 emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
                 output.push_str(&into_str);
                 output.push_str(" = ");
-                emit_implicit_conversion(
-                    &value,
-                    return_type,
-                    variable_types[into.index],
-                    conversions, types, strings, output
-                );
-            } else {
-                output.push_str(&value);
             }
+            output.push_str(&value);
             output.push_str(";\n");
             free.insert(into.index);
         }
