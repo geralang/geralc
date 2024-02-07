@@ -1,4 +1,7 @@
-/target
 /.vscode
 /.idea
 /Cargo.lock
+/target
+/compiler/Cargo.lock
+/compiler/target
+/bin
