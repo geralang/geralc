@@ -258,11 +258,10 @@ impl TypeMap {
     fn merge_groups_internally(&mut self, a: TypeGroup, b: TypeGroup) {
         let a_internal = self.group_internal_id(a);
         let b_internal = self.group_internal_id(b);
-        if a_internal != b_internal {
-            for internal_group_idx in &mut self.groups {
-                if *internal_group_idx == b_internal {
-                    *internal_group_idx = a_internal;
-                }
+        if a_internal == b_internal { return; }
+        for internal_group_idx in &mut self.groups {
+            if *internal_group_idx == b_internal {
+                *internal_group_idx = a_internal;
             }
         }
     }

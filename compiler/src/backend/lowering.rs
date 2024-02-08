@@ -156,7 +156,6 @@ pub fn lower_typed_ast(
             external_backings, &(HashMap::new(), Vec::new()), &mut interpreter, &mut ir_symbols,
             &mut constants
         )?;
-        println!("{:?}", body);
         ir_symbols.push(IrSymbol::Procedure {
             path: main_procedure.0.clone(),
             variant: 0,
