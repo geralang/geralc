@@ -156,6 +156,7 @@ pub fn lower_typed_ast(
             external_backings, &(HashMap::new(), Vec::new()), &mut interpreter, &mut ir_symbols,
             &mut constants
         )?;
+        println!("{:?}", body);
         ir_symbols.push(IrSymbol::Procedure {
             path: main_procedure.0.clone(),
             variant: 0,
@@ -706,6 +707,27 @@ impl IrGenerator {
                 let into = into_given_or_alloc!(node.get_types());
                 self.add(IrInstruction::CallClosure {
                     called, arguments: parameters, into, source: node.source()
+                });
+                Ok(Some(into))
+            }
+            AstNodeVariant::MethodCall { called, member, arguments } => {
+                let accessed = lower_node!(&*called, None);
+                let accessed_type_unmapped = type_mapping.map(called.get_types(), types);
+                let accessed_type = types.group_concrete(accessed_type_unmapped);
+                let method_type = if let Type::Object(obj) = accessed_type {
+                    *types.object(obj).0.get(member).expect("member should exist!")
+                } else { panic!("should be called on an object!"); };
+                let method = self.allocate(method_type);
+                self.add(IrInstruction::GetObjectMember {
+                    accessed, member: *member, into: method
+                });
+                let mut parameters = vec![accessed];
+                for argument in arguments {
+                    parameters.push(lower_node!(argument, None));
+                }
+                let into = into_given_or_alloc!(node.get_types());
+                self.add(IrInstruction::CallClosure {
+                    called: method, arguments: parameters, into, source: node.source()
                 });
                 Ok(Some(into))
             }

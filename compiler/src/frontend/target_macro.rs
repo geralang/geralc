@@ -64,7 +64,8 @@ fn process_node(opt_node: &mut Option<&mut AstNode>, inserted_nodes: &mut Option
             AstNodeVariant::Return { value } => {
                 process_node(&mut Some(&mut *value), &mut None, target_str, strings);
             },
-            AstNodeVariant::Call { called, arguments } => {
+            AstNodeVariant::Call { called, arguments } |
+            AstNodeVariant::MethodCall { called, member: _, arguments } => {
                 process_node(&mut Some(&mut *called), &mut None, target_str, strings);
                 process_target_blocks(arguments, target_str, strings);
             },

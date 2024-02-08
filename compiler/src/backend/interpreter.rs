@@ -589,6 +589,36 @@ impl Interpreter {
                 let return_value = self.get_return_value();
                 return Ok(return_value);
             }
+            AstNodeVariant::MethodCall { called, member, arguments } => {
+                let accessed = self.evaluate_node(&*called, symbols, external_backings, types, strings)?;
+                let member_values = if let Value::Object(member_values) = accessed {
+                    member_values
+                } else { panic!("accessed value should be an object"); };
+                let method = member_values.borrow().get(member).expect("object should have member").clone();
+                let (parameter_names, captures, body) = if let Value::Closure(
+                    a, b, c
+                ) = method { (a, b, c) } else { panic!("value should be a closure") };
+                let mut parameter_values = HashMap::new();
+                for param_idx in 0..parameter_names.len() {
+                    parameter_values.insert(
+                        parameter_names[param_idx].0, (
+                            self.evaluate_node(&arguments[param_idx], symbols, external_backings, types, strings)?,
+                            arguments[param_idx].get_types()
+                        )
+                    );
+                }
+                self.stack.push(captures);
+                self.stack.push(RefCell::new(parameter_values).into());
+                self.stack_trace_push("<closure>".into(), node.source(), strings);
+                if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, types, strings) {
+                    return Err(error);
+                }
+                self.stack.pop();
+                self.stack.pop();
+                self.stack_trace.pop();
+                let return_value = self.get_return_value();
+                return Ok(return_value);
+            }
             AstNodeVariant::Object { values } => {
                 let mut member_values = HashMap::new();
                 for (member_name, member_value) in values {

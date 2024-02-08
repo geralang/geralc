@@ -149,6 +149,12 @@ fn check_grammar_singular(node: &AstNode, scope: ScopeType, errors: &mut Vec<Err
             check_grammar_singular(&*called, ScopeType::Expression, errors);
             check_grammar(arguments, ScopeType::Expression, errors);
         },
+        AstNodeVariant::MethodCall { called, member: _, arguments } => {
+            enforce_min_scope!("Method calls", ScopeType::Expression);
+            enforce_max_scope!("Method calls", ScopeType::Statement, ScopeType::Expression);
+            check_grammar_singular(&*called, ScopeType::Expression, errors);
+            check_grammar(arguments, ScopeType::Expression, errors);
+        },
         AstNodeVariant::Object { values } => {
             enforce_min_scope!("Object literals", ScopeType::Expression);
             enforce_max_scope!("Object literals", ScopeType::Statement, ScopeType::Expression);

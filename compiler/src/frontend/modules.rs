@@ -244,7 +244,8 @@ impl<T: Clone + HasAstNodeVariant<T> + HasSource> Module<T> {
             AstNodeVariant::Return { value } => {
                 visit_node!(&mut **value);
             }
-            AstNodeVariant::Call { called, arguments } => {
+            AstNodeVariant::Call { called, arguments } |
+            AstNodeVariant::MethodCall { called, member: _, arguments } => {
                 visit_node!(&mut **called);
                 visit_nodes!(arguments);
             }

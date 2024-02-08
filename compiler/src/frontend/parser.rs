@@ -227,11 +227,10 @@ impl Parser {
                     enforce_next!("the member to call");
                     enforce_current_type!(&[TokenType::Identifier], "the member to call");
                     let member = self.current.token_content;
-                    let member_source = self.current.source;
                     enforce_next!("an opening parenthesis ('(')");
                     enforce_current_type!(&[TokenType::ParenOpen], "an opening parenthesis ('(')");
                     enforce_next!("a call parameter or a closing parenthesis (')')");
-                    let mut args = vec![accessed.clone()];
+                    let mut args = Vec::new();
                     while self.current.token_type != TokenType::ParenClose {
                         args.push(enforce_expression!(&[TokenType::Comma, TokenType::ParenClose], None, "a call parameter"));
                         enforce_current_type!(&[TokenType::Comma, TokenType::ParenClose], "a comma (',') or a closing parenthesis (')')");
@@ -241,14 +240,9 @@ impl Parser {
                     }
                     let accessed_source = accessed.source();
                     previous = Some(AstNode::new(
-                        AstNodeVariant::Call {
-                            called: AstNode::new(
-                                AstNodeVariant::ObjectAccess {
-                                    object: accessed.into(),
-                                    member
-                                },
-                                (&accessed_source..&member_source).into()
-                            ).into(),
+                        AstNodeVariant::MethodCall {
+                            called: accessed.into(),
+                            member: member,
                             arguments: args
                         },
                         (&accessed_source..&self.current.source).into()

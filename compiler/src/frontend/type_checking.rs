@@ -322,6 +322,16 @@ impl TypeAssertion {
             )
         }
     }
+    fn called_method(call_source: SourceRange, accessed_types: TypeGroup, types: &mut TypeMap, strings: &StringMap) -> TypeAssertion {
+        TypeAssertion {
+            limited_to: accessed_types,
+            from: call_source,
+            reason: format!(
+                "This method call requires the accessed object to be of type {}",
+                types.display_types(strings, accessed_types)
+            )
+        }
+    }
 }
 
 fn type_check_symbol<'s>(
@@ -966,6 +976,36 @@ fn type_check_node(
             ).0;
             Ok((TypedAstNode::new(AstNodeVariant::Call {
                 called: Box::new(typed_called),
+                arguments: typed_arguments
+            }, passed_return_type, node_source), (false, false)))
+        }
+        AstNodeVariant::MethodCall { called, member, arguments } => {
+            let accessed_object_types = types.insert_group(&[Type::Any]);
+            let mut typed_arguments = Vec::new();
+            let mut passed_arg_vars = vec![accessed_object_types];
+            for argument in arguments {
+                let typed_argument = type_check_node!(argument, None).0;
+                passed_arg_vars.push(typed_argument.get_types());
+                typed_arguments.push(typed_argument);
+            }
+            let passed_return_type = types.insert_group(&[Type::Any]);
+            if let Some(limited_to) = limited_to {
+                assert_types(
+                    TypeAssertion::unexplained(passed_return_type),
+                    limited_to, types
+                ).expect("should not fail");
+            }
+            let closure_tidx = types.insert_closure(
+                passed_arg_vars, passed_return_type
+            );
+            let closure_types = types.insert_group(&[Type::Closure(closure_tidx)]);
+            let accessed_object_tidx = types.insert_object([(member, closure_types)].into(), false);
+            types.set_group_types(accessed_object_types, &[Type::Object(accessed_object_tidx)]);
+            let accessed_object_assertion = TypeAssertion::called_method(node_source, accessed_object_types, types, strings);
+            let typed_called = type_check_node!(*called, Some(accessed_object_assertion), false).0;
+            Ok((TypedAstNode::new(AstNodeVariant::MethodCall {
+                called: typed_called.into(),
+                member,
                 arguments: typed_arguments
             }, passed_return_type, node_source), (false, false)))
         }

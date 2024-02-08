@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 
-use serde_json::json;
+// use serde_json::json;
 
 use crate::frontend::{
     types::TypeMap,
@@ -12,10 +12,10 @@ use crate::frontend::{
 use crate::util::strings::{StringMap, StringIdx};
 
 pub fn generate_symbols(
-    types: TypeMap,
-    typed_symbols: HashMap<NamespacePath, Symbol<TypedAstNode>>, 
-    external_backings: HashMap<NamespacePath, StringIdx>,
-    strings: &mut StringMap
+    _types: TypeMap,
+    _typed_symbols: HashMap<NamespacePath, Symbol<TypedAstNode>>, 
+    _external_backings: HashMap<NamespacePath, StringIdx>,
+    _strings: &mut StringMap
 ) -> String {
     todo!("symbols compilation target")
     // let mut result = json!({
