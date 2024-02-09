@@ -670,24 +670,30 @@ impl IrGenerator {
                         let mut parameter_values = Vec::new();
                         for argument_idx in 0..arguments.len() {
                             let dup_symbol_param_type = types.duplicate_group(parameter_types[argument_idx]);
-                            let expected_param_type = type_mapping.map(arguments[argument_idx].get_types(), types);
-                            types.try_merge_groups(expected_param_type, dup_symbol_param_type);
-                            call_type_mapping.add(parameter_types[argument_idx], expected_param_type, types);
-                            call_parameter_types.push(expected_param_type);
+                            if body.is_some() || !external_backings.contains_key(path) {
+                                let expected_param_type = type_mapping.map(arguments[argument_idx].get_types(), types);
+                                types.try_merge_groups(expected_param_type, dup_symbol_param_type);
+                            }
+                            call_type_mapping.add(parameter_types[argument_idx], dup_symbol_param_type, types);
+                            call_parameter_types.push(dup_symbol_param_type);
                             parameter_values.push(
                                 lower_node!(&arguments[argument_idx], None)
                             );
                         }
+                        let og_symbol_return_type = types.duplicate_group(*returns);
                         let dup_symbol_return_type = types.duplicate_group(*returns);
+                        if body.is_some() || !external_backings.contains_key(path) {
+                            types.try_merge_groups(dup_symbol_return_type, og_symbol_return_type);
+                        }
                         let expected_return_type = type_mapping.map(node.get_types(), types);
                         types.try_merge_groups(expected_return_type, dup_symbol_return_type);
-                        call_type_mapping.add(*returns, expected_return_type, types);
+                        call_type_mapping.add(*returns, dup_symbol_return_type, types);
                         let proc_variant = IrGenerator::find_procedure(
                             path, types, &mut call_type_mapping, call_parameter_types,
-                            expected_return_type, parameter_names, body, symbols, strings,
+                            og_symbol_return_type, parameter_names, body, symbols, strings,
                             external_backings, interpreter, ir_symbols, constants
                         )?;
-                        let into = into_given_or_alloc!(expected_return_type);
+                        let into = into_given_or_alloc!(dup_symbol_return_type);
                         self.add(IrInstruction::Call {
                             path: path.clone(),
                             variant: proc_variant,

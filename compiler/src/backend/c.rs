@@ -145,6 +145,20 @@ fn emit_variant_comparison_function_name(
     output.push_str(&index.to_string());
 }
 
+fn emit_object_to_concrete_function_name(
+    index: usize, output: &mut String
+) {
+    output.push_str("geraobjecttoconcrete");
+    output.push_str(&index.to_string());
+}
+
+fn emit_object_to_inconcrete_function_name(
+    index: usize, output: &mut String
+) {
+    output.push_str("geraobjecttoinconcrete");
+    output.push_str(&index.to_string());
+}
+
 fn emit_type_declaration(
     t: TypeGroup, types: &mut TypeMap, strings: &StringMap,
     declared_types: &mut HashMap<String, bool>, type_declarations: &mut String
@@ -367,6 +381,77 @@ fn emit_type_declaration(
             declaration.push_str("\n} ");
             emit_concrete_object_name(concrete_object_idx, &mut declaration);
             declaration.push_str(";\n");
+            let inc_obj = types.insert_dedup_object((
+                types.concrete_object(obj).iter().map(|m| *m).collect(),
+                true
+            ));
+            let object_idx = inc_obj.get_internal_id();
+            let inc_t = types.insert_group(&[Type::Object(inc_obj)]);
+            emit_type(t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" ");
+            emit_object_to_concrete_function_name(concrete_object_idx, &mut declaration);
+            declaration.push_str("(");
+            emit_type(inc_t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" inconcrete) {\n");
+            declaration.push_str("    ");
+            emit_type(t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" concrete;\n");
+            for (member_name, member_type) in types.concrete_object(obj).iter().map(|m| *m).collect::<Vec<(StringIdx, TypeGroup)>>() {
+                declaration.push_str("    concrete.");
+                declaration.push_str(strings.get(member_name));
+                declaration.push_str(" = ");
+                if let Type::ConcreteObject(member_obj) = types.group_concrete(member_type) {
+                    emit_object_to_concrete_function_name(member_obj.get_internal_id(), &mut declaration);
+                    declaration.push_str("(");
+                }
+                declaration.push_str("*inconcrete.member");
+                declaration.push_str(&member_name.0.to_string());
+                if let Type::ConcreteObject(_) = types.group_concrete(member_type) {
+                    declaration.push_str(")");
+                }
+                declaration.push_str(";\n");
+            }
+            declaration.push_str("    return concrete;\n");
+            declaration.push_str("}\n");
+            emit_type(inc_t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" ");
+            emit_object_to_inconcrete_function_name(concrete_object_idx, &mut declaration);
+            declaration.push_str("(");
+            emit_type(t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" concrete) {\n");
+            declaration.push_str("    GeraAllocation* allocation = gera___rc_alloc(sizeof(");
+            emit_object_alloc_name(object_idx, &mut declaration);
+            declaration.push_str("), &");
+            emit_object_free_handler_name(object_idx, &mut declaration);
+            declaration.push_str(");\n");
+            declaration.push_str("    ");
+            emit_object_alloc_name(object_idx, &mut declaration);
+            declaration.push_str("* object = (");
+            emit_object_alloc_name(object_idx, &mut declaration);
+            declaration.push_str("*) allocation->data;\n");
+            declaration.push_str("    ");
+            emit_type(inc_t, types, strings, declared_types, type_declarations, &mut declaration);
+            declaration.push_str(" inconcrete;\n");
+            declaration.push_str("    inconcrete.allocation = allocation;\n");
+            for (member_name, member_type) in types.concrete_object(obj).iter().map(|m| *m).collect::<Vec<(StringIdx, TypeGroup)>>() {
+                declaration.push_str("    object->member");
+                declaration.push_str(&member_name.0.to_string());
+                declaration.push_str(" = ");
+                if let Type::ConcreteObject(member_obj) = types.group_concrete(member_type) {
+                    emit_object_to_inconcrete_function_name(member_obj.get_internal_id(), &mut declaration);
+                    declaration.push_str("(");
+                }
+                declaration.push_str("concrete.");
+                declaration.push_str(strings.get(member_name));
+                declaration.push_str(";\n");
+                declaration.push_str("    inconcrete.member");
+                declaration.push_str(&member_name.0.to_string());
+                declaration.push_str(" = &object->member");
+                declaration.push_str(&member_name.0.to_string());
+                declaration.push_str(";\n");
+            }
+            declaration.push_str("    return inconcrete;\n");
+            declaration.push_str("}\n");
         }
         Type::Closure(clo) => {
             let closure_idx = clo.get_internal_id();
@@ -655,6 +740,36 @@ fn emit_symbol_declarations(
                     let param_type = parameter_types[p];
                     if p > 0 { output.push_str(", "); }
                     emit_type(param_type, types, strings, declared_types, type_declarations, output);
+                    output.push_str(" param");
+                    output.push_str(&p.to_string());
+                }
+                output.push_str(");\n");
+                if let Type::ConcreteObject(obj) = types.group_concrete(*return_type) {
+                    let inc_obj = types.insert_dedup_object((
+                        types.concrete_object(obj).iter().map(|m| *m).collect(),
+                        true
+                    ));
+                    let inc_return_type = types.insert_group(&[Type::Object(inc_obj)]);
+                    emit_type(inc_return_type, types, strings, declared_types, type_declarations, output);
+                } else {
+                    emit_type(*return_type, types, strings, declared_types, type_declarations, output);
+                }
+                output.push_str(" ");
+                emit_external_function_wrapper(strings.get(*backing), output);
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    let param_type = parameter_types[p];
+                    if p > 0 { output.push_str(", "); }
+                    if let Type::ConcreteObject(obj) = types.group_concrete(param_type) {
+                        let inc_obj = types.insert_dedup_object((
+                            types.concrete_object(obj).iter().map(|m| *m).collect(),
+                            true
+                        ));
+                        let inc_param_type = types.insert_group(&[Type::Object(inc_obj)]);
+                        emit_type(inc_param_type, types, strings, declared_types, type_declarations, output);
+                    } else {
+                        emit_type(param_type, types, strings, declared_types, type_declarations, output);
+                    }
                     output.push_str(" param");
                     output.push_str(&p.to_string());
                 }
@@ -1075,6 +1190,13 @@ fn emit_variable_default_value(
     }
 }
 
+fn emit_external_function_wrapper(
+    backing: &str, output: &mut String
+) {
+    output.push_str("geraextwrapper_");
+    output.push_str(backing);
+}
+
 fn emit_procedure_impls(
     symbols: &Vec<IrSymbol>,
     types: &mut TypeMap,
@@ -1161,6 +1283,64 @@ fn emit_procedure_impls(
                     .expect("builtin should have implementation"))
                     (&param_types, *return_type, types, strings, declared_types, type_declarations);
                 indent(&body_str, output);
+                output.push_str("}\n");
+            }
+            IrSymbol::ExternalProcedure { path: _, backing, parameter_types, return_type } => {
+                if let Type::ConcreteObject(obj) = types.group_concrete(*return_type) {
+                    let inc_obj = types.insert_dedup_object((
+                        types.concrete_object(obj).iter().map(|m| *m).collect(),
+                        true
+                    ));
+                    let inc_return_type = types.insert_group(&[Type::Object(inc_obj)]);
+                    emit_type(inc_return_type, types, strings, declared_types, type_declarations, output);
+                } else {
+                    emit_type(*return_type, types, strings, declared_types, type_declarations, output);
+                }
+                output.push_str(" ");
+                emit_external_function_wrapper(strings.get(*backing), output);
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    let param_type = parameter_types[p];
+                    if p > 0 { output.push_str(", "); }
+                    if let Type::ConcreteObject(obj) = types.group_concrete(param_type) {
+                        let inc_obj = types.insert_dedup_object((
+                            types.concrete_object(obj).iter().map(|m| *m).collect(),
+                            true
+                        ));
+                        let inc_param_type = types.insert_group(&[Type::Object(inc_obj)]);
+                        emit_type(inc_param_type, types, strings, declared_types, type_declarations, output);
+                    } else {
+                        emit_type(param_type, types, strings, declared_types, type_declarations, output);
+                    }
+                    output.push_str(" param");
+                    output.push_str(&p.to_string());
+                }
+                output.push_str(") {\n");
+                output.push_str("    return ");
+                if let Type::ConcreteObject(obj) = types.group_concrete(*return_type) {
+                    emit_object_to_inconcrete_function_name(obj.get_internal_id(), output);
+                    output.push_str("(");
+                }
+                output.push_str(strings.get(*backing));
+                output.push_str("(");
+                for p in 0..parameter_types.len() {
+                    let param_type = parameter_types[p];
+                    if p > 0 { output.push_str(", "); }
+                    if let Type::ConcreteObject(obj) = types.group_concrete(param_type) {
+                        emit_object_to_concrete_function_name(obj.get_internal_id(), output);
+                        output.push_str("(");
+                    }
+                    output.push_str("param");
+                    output.push_str(&p.to_string());
+                    if let Type::ConcreteObject(_) = types.group_concrete(param_type) {
+                        output.push_str(")");
+                    }
+                }
+                output.push_str(")");
+                if let Type::ConcreteObject(_) = types.group_concrete(*return_type) {
+                    output.push_str(")");
+                }
+                output.push_str(";\n");
                 output.push_str("}\n");
             }
             _ => {}
@@ -2483,7 +2663,7 @@ fn emit_instruction(
                 else { true };
             let mut value = String::new();
             if let Some(backing) = external.get(path) {
-                value.push_str(strings.get(*backing));
+                emit_external_function_wrapper(strings.get(*backing), &mut value);
             } else {
                 emit_procedure_name(path, *variant, strings, &mut value);
             }
