@@ -4,9 +4,6 @@
 
 void gera___panic(const char* message);
 
-int allocc = 0;
-int freec = 0;
-
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
     if(size == 0) { return NULL; }
     GeraAllocation* a = (GeraAllocation*) geracoredeps_malloc(
@@ -18,7 +15,6 @@ GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
     a->rc = 1;
     a->size = size;
     a->fh = fh;
-    allocc += 1;
     return a;
 }
 
@@ -35,7 +31,6 @@ void gera___rc_free(GeraAllocation* a) {
     geracoredeps_free_mutex(&a->rc_mutex);
     geracoredeps_free_mutex(&a->data_mutex);
     geracoredeps_free(a);
-    freec += 1;
 }
 
 void gera___rc_decr(GeraAllocation* a) {
