@@ -1497,7 +1497,7 @@ fn type_check_node(
                             )]
                         },
                         node_source
-                    ), None))
+                    ), limited_to))
                 }
                 Err(error) => return Err(error)
             }
