@@ -2680,12 +2680,21 @@ fn emit_instruction(
             if returns_value {
                 let mut into_str = String::new();
                 emit_variable(*into, &mut into_str);
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-                output.push_str(&into_str);
-                output.push_str(" = ");
+                output.push_str("{\n");
+                let mut operation = String::new();
+                emit_type(variable_types[into.index], types, strings, declared_types, type_declarations, &mut operation);
+                operation.push_str(" ret_value = ");
+                operation.push_str(&value);
+                operation.push_str(";\n");
+                emit_rc_decr(&into_str, variable_types[into.index], types, strings, &mut operation);
+                operation.push_str(&into_str);
+                operation.push_str(" = ret_value;\n");
+                indent(&operation, output);
+                output.push_str("}\n");
+            } else {
+                output.push_str(&value);
+                output.push_str(";\n");
             }
-            output.push_str(&value);
-            output.push_str(";\n");
             free.insert(into.index);
         }
         IrInstruction::CallClosure { called, arguments, into, source: _ } => {
@@ -2712,12 +2721,21 @@ fn emit_instruction(
             if returns_value {
                 let mut into_str = String::new();
                 emit_variable(*into, &mut into_str);
-                emit_rc_decr(&into_str, variable_types[into.index], types, strings, output);
-                output.push_str(&into_str);
-                output.push_str(" = ");
+                output.push_str("{\n");
+                let mut operation = String::new();
+                emit_type(variable_types[into.index], types, strings, declared_types, type_declarations, &mut operation);
+                operation.push_str(" ret_value = ");
+                operation.push_str(&value);
+                operation.push_str(";\n");
+                emit_rc_decr(&into_str, variable_types[into.index], types, strings, &mut operation);
+                operation.push_str(&into_str);
+                operation.push_str(" = ret_value;\n");
+                indent(&operation, output);
+                output.push_str("}\n");
+            } else {
+                output.push_str(&value);
+                output.push_str(";\n");
             }
-            output.push_str(&value);
-            output.push_str(";\n");
             free.insert(into.index);
         }
         IrInstruction::Return { value } => {

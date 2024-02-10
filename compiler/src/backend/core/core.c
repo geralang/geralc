@@ -4,6 +4,9 @@
 
 void gera___panic(const char* message);
 
+int allocc = 0;
+int freec = 0;
+
 GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
     if(size == 0) { return NULL; }
     GeraAllocation* a = (GeraAllocation*) geracoredeps_malloc(
@@ -15,7 +18,7 @@ GeraAllocation* gera___rc_alloc(size_t size, GeraFreeHandler fh) {
     a->rc = 1;
     a->size = size;
     a->fh = fh;
-    //printf("GC: %p | alloc!\n", a);
+    allocc += 1;
     return a;
 }
 
@@ -24,14 +27,15 @@ void gera___rc_incr(GeraAllocation* a) {
     geracoredeps_lock_mutex(&a->rc_mutex);
     a->rc += 1;
     geracoredeps_unlock_mutex(&a->rc_mutex);
-    //printf("GC: %p | rc++ => %llu\n", a, a->rc);
 }
 
 void gera___rc_free(GeraAllocation* a) {
     if(a == NULL) { return; }
     (a->fh)(a->data, a->size);
+    geracoredeps_free_mutex(&a->rc_mutex);
+    geracoredeps_free_mutex(&a->data_mutex);
     geracoredeps_free(a);
-    //printf("GC: %p | free!\n", a);
+    freec += 1;
 }
 
 void gera___rc_decr(GeraAllocation* a) {
@@ -39,7 +43,6 @@ void gera___rc_decr(GeraAllocation* a) {
     geracoredeps_lock_mutex(&a->rc_mutex);
     a->rc -= 1;
     geracoredeps_unlock_mutex(&a->rc_mutex);
-    //printf("GC: %p | rc-- => %llu\n", a, a->rc);
     if(a->rc == 0) { gera___rc_free(a); }
 }
 
