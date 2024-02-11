@@ -9,7 +9,7 @@ function gera___eq(a, b) { // assumes that types match
             return true;
         }
         for(const key of Object.keys(a)) { // assumes that objects have same keys
-            if(!gera___eq(a[key] != b[key])) { return false; }
+            if(!gera___eq(a[key], b[key])) { return false; }
         }
         return true;
     }
