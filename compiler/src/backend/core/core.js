@@ -4,12 +4,12 @@ function gera___eq(a, b) { // assumes that types match
         if(a instanceof Array) {
             if(a.length !== b.length) { return false; }
             for(let i = 0; i < a.length; i += 1) {
-                if(!eq(a[i], b[i])) { return false; }
+                if(!gera___eq(a[i], b[i])) { return false; }
             }
             return true;
         }
         for(const key of Object.keys(a)) { // assumes that objects have same keys
-            if(!eq(a[key] != b[key])) { return false; }
+            if(!gera___eq(a[key] != b[key])) { return false; }
         }
         return true;
     }
