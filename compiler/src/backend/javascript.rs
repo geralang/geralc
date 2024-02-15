@@ -179,12 +179,12 @@ return Number(param0);
     builtins.insert(path_from(&["core", "substring"], strings), |_, _, _, _| {
         String::from(r#"
 let start_idx = param1;
-if(param1 < 0) { start_idx = param0.length + param1; }
+if(param1 < 0) { start_idx = BigInt(param0.length) + param1; }
 if(start_idx > param0.length) {
     throw `the start index ${param1} is out of bounds for a string of length ${param0.length}`;
 }
 let end_idx = param2;
-if(param2 < 0) { end_idx = param0.length + param2; }
+if(param2 < 0) { end_idx = BigInt(param0.length) + param2; }
 if(end_idx > param0.length) {
     throw `the end index ${param2} is out of bounds for a string of length ${param0.length}`;
 }
