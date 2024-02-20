@@ -32,7 +32,7 @@ pub proc range_incl(start, end) {
     }
 }
 
-proc parse_int(source) {
+pub proc parse_int(source) {
     var state = {
         i = 0,
         success = true,
