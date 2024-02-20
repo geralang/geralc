@@ -206,13 +206,6 @@ if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
 return {{ tag: {}, value: r }};
 ", strings.insert("none").0, strings.insert("some").0)
     });
-    builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, _, strings| {
-        format!("
-const r = parseInt(param0);
-if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
-return {{ tag: {}, value: BigInt(r) }};
-", strings.insert("none").0, strings.insert("some").0)
-    });
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 return param0.repeat(Number(param1));

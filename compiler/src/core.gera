@@ -31,3 +31,34 @@ pub proc range_incl(start, end) {
         return #next c
     }
 }
+
+proc parse_int(source) {
+    var state = {
+        i = 0,
+        success = true,
+        negative = false,
+        result = 0
+    }
+    case substring(source, state.i, state.i + 1) == "-" -> {
+        state.negative = true
+        state.i = state.i + 1
+    }
+    exhaust(|| {
+        case state.i >= length(source) -> return #end unit
+        var d
+        case substring(source, state.i, state.i + 1) {
+            "0" -> d = 0  "1" -> d = 1  "2" -> d = 2  "3" -> d = 3 
+            "4" -> d = 4  "5" -> d = 5  "6" -> d = 6  "7" -> d = 7
+            "8" -> d = 8  "9" -> d = 9
+        } else {
+            state.success = false
+            return #end unit
+        }
+        state.result = state.result * 10 + d
+        state.i = state.i + 1
+        return #next unit
+    })
+    case !state.success -> return #none unit
+    case state.negative -> state.result = -state.result
+    return #some state.result
+}

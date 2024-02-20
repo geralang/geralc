@@ -244,15 +244,6 @@ impl Interpreter {
                 Value::Variant(strings.insert("none"), Value::Unit.into())
             });
         });
-        builtins.insert(path_from(&["core", "parse_int"], strings), |_, _, params, _, _, _, strings| {
-            let src = if let Value::String(src) = &params[0] { src }
-                else { panic!("should be a string"); };
-            return Ok(if let Ok(v) = src.parse() {
-                Value::Variant(strings.insert("some"), Value::Integer(v).into())
-            } else {
-                Value::Variant(strings.insert("none"), Value::Unit.into())
-            });
-        });
         builtins.insert(path_from(&["core", "string"], strings), |interpreter, source, params, _, _, _, strings| {
             let repeated = if let Value::String(repeated) = &params[0] { repeated }
             else { panic!("should be a string"); };

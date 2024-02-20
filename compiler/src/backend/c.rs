@@ -1090,24 +1090,6 @@ return gera___concat(param0, param1);
         result.push_str(" };\n");
         result
     });
-    builtins.insert(path_from(&["core", "parse_int"], strings), |_, return_type, types, strings, _, _| {
-        let variant_idx = if let Type::Variants(v) = types.group_concrete(return_type) { v }
-        else { panic!("should be variants"); };
-        let mut result = String::new();
-        result.push_str("GERA_STRING_NULL_TERM(param0, param0_nt);\n");
-        result.push_str("gint value = geracoredeps_parse_sint(param0_nt);\n");
-        result.push_str("if(geracoredeps_parse_success) { return (");
-        emit_variants_name(variant_idx.get_internal_id(), &mut result);
-        result.push_str(") { .tag = ");
-        result.push_str(&strings.insert("some").0.to_string());
-        result.push_str(", .value = { .some = value } }; }\n");
-        result.push_str("return (");
-        emit_variants_name(variant_idx.get_internal_id(), &mut result);
-        result.push_str(") { .tag = ");
-        result.push_str(&strings.insert("none").0.to_string());
-        result.push_str(" };\n");
-        result
-    });
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _, _, _| {
         String::from(r#"
 if(param1 < 0) {
