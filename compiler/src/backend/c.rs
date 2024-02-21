@@ -2341,25 +2341,49 @@ fn emit_instruction(
         IrInstruction::Add { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_variable(*a, output);
-            output.push_str(" + ");
-            emit_variable(*b, output);
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
+                output.push_str("(gint) ((guint) ");
+                emit_variable(*a, output);
+                output.push_str(" + (guint) ");
+                emit_variable(*b, output);
+                output.push_str(")");
+            } else {
+                emit_variable(*a, output);
+                output.push_str(" + ");
+                emit_variable(*b, output);
+            }
             output.push_str(";\n");
         }
         IrInstruction::Subtract { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_variable(*a, output);
-            output.push_str(" - ");
-            emit_variable(*b, output);
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
+                output.push_str("(gint) ((guint) ");
+                emit_variable(*a, output);
+                output.push_str(" - (guint) ");
+                emit_variable(*b, output);
+                output.push_str(")");
+            } else {
+                emit_variable(*a, output);
+                output.push_str(" - ");
+                emit_variable(*b, output);
+            }
             output.push_str(";\n");
         }
         IrInstruction::Multiply { a, b, into } => {
             emit_variable(*into, output);
             output.push_str(" = ");
-            emit_variable(*a, output);
-            output.push_str(" * ");
-            emit_variable(*b, output);
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
+                output.push_str("(gint) ((guint) ");
+                emit_variable(*a, output);
+                output.push_str(" * (guint) ");
+                emit_variable(*b, output);
+                output.push_str(")");
+            } else {
+                emit_variable(*a, output);
+                output.push_str(" * ");
+                emit_variable(*b, output);
+            }
             output.push_str(";\n");
         }
         IrInstruction::Divide { a, b, into, source } => {
