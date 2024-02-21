@@ -226,26 +226,6 @@ fn load_foreign_builtins(
         );
     }
     {
-        let f = types.insert_group(&[Type::Float]);
-        let u = types.insert_group(&[Type::Unit]);
-        let var_tidx = types.insert_variants(
-            [
-                (strings.insert("some"), f),
-                (strings.insert("none"), u)
-            ].into(),
-            true
-        );
-        register_foreign_builtin(
-            path_from(&["core", "parse_flt"], strings),
-            &["source"],
-            vec![
-                types.insert_group(&[Type::String])
-            ],
-            types.insert_group(&[Type::Variants(var_tidx)]),
-            strings, modules, typed_symbols
-        );
-    }
-    {
         register_foreign_builtin(
             path_from(&["core", "string"], strings),
             &["repeated", "times"],

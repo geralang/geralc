@@ -199,13 +199,6 @@ return param0.substring(Number(start_idx), Number(end_idx));
 return param0 + param1;
 "#)
     });
-    builtins.insert(path_from(&["core", "parse_flt"], strings), |_, _, _, strings| {
-        format!("
-const r = parseFloat(param0);
-if(isNaN(r)) {{ return {{ tag: {}, value: undefined }}; }}
-return {{ tag: {}, value: r }};
-", strings.insert("none").0, strings.insert("some").0)
-    });
     builtins.insert(path_from(&["core", "string"], strings), |_, _, _, _| {
         String::from(r#"
 return param0.repeat(Number(param1));
