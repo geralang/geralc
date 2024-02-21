@@ -676,7 +676,7 @@ impl Interpreter {
                     self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
                     self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
+                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a.wrapping_add(b)),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
                     _ => panic!("values should be numbers of the same type")
                 })
@@ -686,7 +686,7 @@ impl Interpreter {
                     self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
                     self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
+                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a.wrapping_sub(b)),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
                     _ => panic!("values should be numbers of the same type")
                 })
@@ -696,7 +696,7 @@ impl Interpreter {
                     self.evaluate_node(&*a, symbols, external_backings, types, strings)?,
                     self.evaluate_node(&*b, symbols, external_backings, types, strings)?
                 ) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
+                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a.wrapping_mul(b)),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
                     _ => panic!("values should be numbers of the same type")
                 })
@@ -711,7 +711,7 @@ impl Interpreter {
                             self.stack_trace_push("<division>".into(), node.source(), strings);
                             return Err(self.generate_panic("integer division by zero", node.source(), strings))
                         }
-                        Value::Integer(a / b)
+                        Value::Integer(a.wrapping_div(b))
                     }
                     (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
                     _ => panic!("values should be numbers of the same type")

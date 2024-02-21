@@ -2402,6 +2402,12 @@ fn emit_instruction(
             }
             emit_variable(*into, output);
             output.push_str(" = ");
+            if let Type::Integer = types.group_concrete(variable_types[a.index]) {
+                emit_variable(*a, output);
+                output.push_str(" == GERA_INT_MIN && ");
+                output.push_str(&divisor);
+                output.push_str(" == -1? GERA_INT_MIN : ");
+            }
             emit_variable(*a, output);
             output.push_str(" / ");
             output.push_str(&divisor);
