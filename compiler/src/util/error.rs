@@ -62,7 +62,7 @@ pub enum ErrorType {
     // type errors
     NoPossibleTypes,
     VariableDoesNotExist(StringIdx),
-    ImmutableAssignmant(StringIdx),
+    ImmutableAssignment(String),
     RecursiveConstant(String),
     InvalidParameterCount(String, usize, usize),
     VariableWithoutValue(StringIdx),
@@ -232,10 +232,10 @@ impl ErrorType {
                 strings.get(*name),
                 if color { style_dark_red!() } else { "" }
             ),
-            ErrorType::ImmutableAssignmant(name) => format!(
+            ErrorType::ImmutableAssignment(name) => format!(
                 "The variable {}'{}'{} was not as declared as mutable, but a new value is assigned",
                 if color { style_red!() } else { "" },
-                strings.get(*name),
+                name,
                 if color { style_dark_red!() } else { "" }
             ),
             ErrorType::RecursiveConstant(name) => format!(

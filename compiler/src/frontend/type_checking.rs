@@ -1093,7 +1093,7 @@ fn type_check_node(
                 let variable_types = *variable_types;
                 if assignment && !*variable_mutable {
                     Err(Error::new([
-                        ErrorSection::Error(ErrorType::ImmutableAssignmant(name)),
+                        ErrorSection::Error(ErrorType::ImmutableAssignment(strings.get(name).into())),
                         ErrorSection::Code(node_source)
                     ].into()))
                 } else {
@@ -1456,16 +1456,21 @@ fn type_check_node(
         AstNodeVariant::ModuleAccess { path } => {
             match type_check_symbol(strings, types, rec_procedures, untyped_symbols, symbols, &path) {
                 Ok(Symbol::Constant { public: _, value: _, value_types }) => {
-                    let value_types = types.duplicate_group(*value_types);
+                    if assignment {
+                        return Err(Error::new([
+                            ErrorSection::Error(ErrorType::ImmutableAssignment(path.display(strings))),
+                            ErrorSection::Code(node_source)
+                        ].into()));
+                    }
                     if let Some(limited_to) = limited_to {
                         assert_types(
-                            TypeAssertion::constant(node_source, value_types, types, strings),
+                            TypeAssertion::constant(node_source, *value_types, types, strings),
                             limited_to, types
                         )?;
                     }
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
                         path
-                    }, value_types, node_source), (false, false)))
+                    }, *value_types, node_source), (false, false)))
                 }
                 Ok(Symbol::Procedure { public: _, parameter_names, parameter_types: _, returns: _, body: _, source: _ }) => {
                     // 'io::println' --> '|x| io::println(x)'
