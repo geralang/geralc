@@ -51,7 +51,8 @@ pub fn do_compilation() -> Result<(), String> {
         .add(CLI_ARG_MAIN)
         .add(CLI_ARG_TARGET)
         .add(CLI_ARG_OUTPUT)
-        .add(CLI_ARG_DISABLE_COLOR);
+        .add(CLI_ARG_DISABLE_COLOR)
+        .add(CLI_ARG_CALL_DEPTH);
     let args = CliArgs::parse(&arg_list, &env::args().collect::<Vec<String>>()[1..]).map_err(|e| display_errors(vec![e], &mut strings, true))?;
     let target_str = args.values(CLI_ARG_TARGET)
         .expect("is required")
