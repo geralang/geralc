@@ -46,6 +46,7 @@ pub fn do_compilation() -> Result<(), String> {
     const CLI_ARG_TARGET: CliArg = CliArg::required("t", "specifies the target format", &["target-format ('c' / 'js')"]);
     const CLI_ARG_OUTPUT: CliArg = CliArg::required("o", "specifies the output file", &["output-file"]);
     const CLI_ARG_DISABLE_COLOR: CliArg = CliArg::optional("c", "disables colored output", &[]);
+    const CLI_ARG_CALL_DEPTH: CliArg = CliArg::optional("s", "overwrites the maximum call depth", &["max-call-depth"]);
     let arg_list = CliArgList::new()
         .add(CLI_ARG_MAIN)
         .add(CLI_ARG_TARGET)
@@ -73,7 +74,16 @@ pub fn do_compilation() -> Result<(), String> {
             read_file(file_path, &mut strings).map_err(|e| display_errors(vec![e], &mut strings, color))?
         );
     }
-    let output = compiler::compile(&mut strings, files, &target_str, main_proc).map_err(|e| display_errors(e, &mut strings, color))?;
+    let max_call_depth = match args.values(CLI_ARG_CALL_DEPTH)
+        .map(|v| v.last().expect("is required to have one value").clone()) {
+        Some(v) => if let Ok(n) = v.parse::<usize>() { Some(n) }
+            else { return Err(display_errors(vec![Error::new([
+                ErrorSection::Error(ErrorType::NotANumber(v))
+            ].into())], &mut strings, color)); },
+        None => None
+    };
+    let output = compiler::compile(&mut strings, files, &target_str, main_proc, max_call_depth, color)
+        .map_err(|e| display_errors(e, &mut strings, color))?;
     write_file(&output_file, output).map_err(|e| display_errors(vec![e], &mut strings, color))?;
     return Ok(());
 }

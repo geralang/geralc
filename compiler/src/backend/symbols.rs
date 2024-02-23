@@ -15,7 +15,8 @@ pub fn generate_symbols(
     _types: TypeMap,
     _typed_symbols: HashMap<NamespacePath, Symbol<TypedAstNode>>, 
     _external_backings: HashMap<NamespacePath, StringIdx>,
-    _strings: &mut StringMap
+    _strings: &mut StringMap,
+    _max_call_depth: usize
 ) -> String {
     todo!("symbols compilation target")
     // let mut result = json!({

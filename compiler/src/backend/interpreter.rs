@@ -89,11 +89,13 @@ pub struct Interpreter {
     stack: Vec<StackFrame>,
     returned_value: Option<Value>,
     stack_trace: Vec<(String, StringIdx, usize)>,
-    builtins: BuiltinProcedures
+    builtins: BuiltinProcedures,
+    max_call_depth: usize,
+    use_ansi_colors: bool
 }
 
 impl Interpreter {
-    pub fn new(strings: &mut StringMap) -> Interpreter {
+    pub fn new(strings: &mut StringMap, max_call_depth: usize, use_ansi_colors: bool) -> Interpreter {
         fn path_from(segments: &[&'static str], strings: &mut StringMap) -> NamespacePath {
             NamespacePath::new(segments.iter().map(|s| strings.insert(s)).collect())
         }
@@ -315,7 +317,9 @@ impl Interpreter {
             stack: vec![RefCell::new(HashMap::new()).into()],
             returned_value: None,
             stack_trace: Vec::new(),
-            builtins
+            builtins,
+            max_call_depth,
+            use_ansi_colors
         }
     }
 
@@ -346,45 +350,48 @@ impl Interpreter {
         None
     }
 
-    pub fn stack_trace_push(&mut self, name: String, from: SourceRange, strings: &StringMap) {
+    pub fn stack_trace_push(&mut self, name: String, from: SourceRange, strings: &StringMap) -> Result<(), Error> {
         let source_line = strings.get(from.file_content())[..from.start_position()]
             .lines().collect::<Vec<&str>>().len();
         self.stack_trace.push((name, from.file_name(), source_line));
+        if self.stack_trace.len() > self.max_call_depth {
+            Err(self.generate_panic("Maximum call depth exceeded!", from, strings))
+        } else { Ok(()) }
     }
 
     pub fn generate_panic(&mut self, reason: &str, source: SourceRange, strings: &StringMap) -> Error {
-        static ERROR_NOTE_COLOR: &str = "\x1b[0;90m";
-        static ERROR_MESSAGE_COLOR: &str = "\x1b[0;91m";
-        static ERROR_INDEX_COLOR: &str = "\x1b[0;90m";
-        static ERROR_PROCEDURE_COLOR: &str = "\x1b[0;32;1m";
-        static ERROR_FILE_NAME_COLOR: &str = "\x1b[0;37m";
-        static ERROR_RESET_COLOR: &str = "\x1b[0m";
+        let error_note_color = if self.use_ansi_colors { "\x1b[0;90m" } else { "" };
+        let error_message_color = if self.use_ansi_colors { "\x1b[0;91m" } else { "" };
+        let error_index_color = if self.use_ansi_colors { "\x1b[0;90m" } else { "" };
+        let error_procedure_color = if self.use_ansi_colors { "\x1b[0;32;1m" } else { "" };
+        let error_file_name_color = if self.use_ansi_colors { "\x1b[0;37m" } else { "" };
+        let error_reset_color = if self.use_ansi_colors { "\x1b[0m" } else { "" };
         let mut err = String::new();
-        err.push_str(ERROR_MESSAGE_COLOR);
+        err.push_str(error_message_color);
         err.push_str(reason);
         err.push_str("\n");
-        err.push_str(ERROR_NOTE_COLOR);
+        err.push_str(error_note_color);
         err.push_str("Stack trace (latest call first):");
         let mut i = self.stack_trace.len() - 1;
         loop {
             let si = &self.stack_trace[i];
             err.push_str("\n");
-            err.push_str(ERROR_INDEX_COLOR);
+            err.push_str(error_index_color);
             err.push_str(" ");
             err.push_str(&i.to_string());
             err.push_str(" ");
-            err.push_str(ERROR_PROCEDURE_COLOR);
+            err.push_str(error_procedure_color);
             err.push_str(&si.0);
-            err.push_str(ERROR_NOTE_COLOR);
+            err.push_str(error_note_color);
             err.push_str(" at ");
-            err.push_str(ERROR_FILE_NAME_COLOR);
+            err.push_str(error_file_name_color);
             err.push_str(strings.get(si.1));
             err.push_str(":");
             err.push_str(&si.2.to_string());
             if i == 0 { break; }
             i -= 1;
         }
-        err.push_str(ERROR_RESET_COLOR);
+        err.push_str(error_reset_color);
         return Error::new([
             ErrorSection::Error(ErrorType::ConstExpressionPanics),
             ErrorSection::Raw(err),
@@ -488,9 +495,7 @@ impl Interpreter {
             }
             AstNodeVariant::Assignment { variable, value } => {
                 let value = self.evaluate_node(&*value, symbols, external_backings, types, strings)?;
-                if let Some(error) = self.evaluate_node_assignment(&*variable, symbols, external_backings, types, strings, value) {
-                    return Err(error);
-                }
+                self.evaluate_node_assignment(&*variable, symbols, external_backings, types, strings, value)?;
                 Ok(Value::Unit)
             }
             AstNodeVariant::Return { value } => {
@@ -502,7 +507,7 @@ impl Interpreter {
                 if let AstNodeVariant::ModuleAccess { path } = called.node_variant() {
                     if let Symbol::Procedure { public: _, parameter_names, parameter_types, returns: _, body, source: _ }
                         = symbols.get(path).expect("symbol should exist") {
-                        self.stack_trace_push(path.display(strings), node.source(), strings);
+                        self.stack_trace_push(path.display(strings), node.source(), strings)?;
                         let returned = if let Some(body) = body {
                             let mut parameter_values = HashMap::new();
                             for param_idx in 0..parameter_names.len() {
@@ -561,7 +566,7 @@ impl Interpreter {
                 }
                 self.stack.push(captures);
                 self.stack.push(RefCell::new(parameter_values).into());
-                self.stack_trace_push("<closure>".into(), node.source(), strings);
+                self.stack_trace_push("<closure>".into(), node.source(), strings)?;
                 if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, types, strings) {
                     return Err(error);
                 }
@@ -591,7 +596,7 @@ impl Interpreter {
                 }
                 self.stack.push(captures);
                 self.stack.push(RefCell::new(parameter_values).into());
-                self.stack_trace_push("<closure>".into(), node.source(), strings);
+                self.stack_trace_push("<closure>".into(), node.source(), strings)?;
                 if let Some(error) = self.evaluate_nodes(&body, symbols, external_backings, types, strings) {
                     return Err(error);
                 }
@@ -637,7 +642,7 @@ impl Interpreter {
                 let final_element_index = if element_index < 0 { (element_count as i64 + element_index) as usize }
                     else { element_index as usize };
                 if final_element_index >= element_count {
-                    self.stack_trace_push("<index>".into(), node.source(), strings);
+                    self.stack_trace_push("<index>".into(), node.source(), strings)?;
                     return Err(self.generate_panic(
                         &format!("array index {} is out of bounds for an array of length {}", element_index, element_count),
                         node.source(), strings
@@ -708,7 +713,7 @@ impl Interpreter {
                 ) {
                     (Value::Integer(a), Value::Integer(b)) => {
                         if b == 0 {
-                            self.stack_trace_push("<division>".into(), node.source(), strings);
+                            self.stack_trace_push("<division>".into(), node.source(), strings)?;
                             return Err(self.generate_panic("integer division by zero", node.source(), strings))
                         }
                         Value::Integer(a.wrapping_div(b))
@@ -865,13 +870,10 @@ impl Interpreter {
         types: &mut TypeMap,
         strings: &mut StringMap,
         value: Value
-    ) -> Option<Error> {
+    ) -> Result<(), Error> {
         match node.node_variant() {
             AstNodeVariant::ObjectAccess { object, member } => {
-                let accessed = match self.evaluate_node(&*object, symbols, external_backings, types, strings) {
-                    Ok(v) => v,
-                    Err(error) => return Some(error)
-                };
+                let accessed = self.evaluate_node(&*object, symbols, external_backings, types, strings)?;
                 if let Value::Object(member_values) = accessed {
                     member_values.borrow_mut().insert(*member, value);
                 } else {
@@ -879,19 +881,13 @@ impl Interpreter {
                 }
             }
             AstNodeVariant::ArrayAccess { array, index } => {
-                let accessed = match self.evaluate_node(&*array, symbols, external_backings, types, strings) {
-                    Ok(v) => v,
-                    Err(error) => return Some(error)
-                };
+                let accessed = self.evaluate_node(&*array, symbols, external_backings, types, strings)?;
                 let elements = if let Value::Array(elements) = accessed {
                     elements
                 } else {
                     panic!("accessed value should be an object")
                 };
-                let index = match self.evaluate_node(&*index, symbols, external_backings, types, strings) {
-                    Ok(v) => v,
-                    Err(error) => return Some(error)
-                };
+                let index = self.evaluate_node(&*index, symbols, external_backings, types, strings)?;
                 let element_index = if let Value::Integer(element_index) = index {
                     element_index
                 } else { panic!("accessed index should be an integer"); };
@@ -899,8 +895,8 @@ impl Interpreter {
                 let final_element_index = if element_index < 0 { (element_count as i64 + element_index) as usize }
                     else { element_index as usize };
                 if final_element_index >= element_count {
-                    self.stack_trace_push("<index>".into(), node.source(), strings);
-                    return Some(self.generate_panic(
+                    self.stack_trace_push("<index>".into(), node.source(), strings)?;
+                    return Err(self.generate_panic(
                         &format!("array index {} is out of bounds for an array of length {}", element_index, element_count),
                         node.source(), strings
                     ))
@@ -917,6 +913,6 @@ impl Interpreter {
             }
             _ => panic!("node should be something that can be assigned to")
         }
-        None
+        Ok(())
     }
 }

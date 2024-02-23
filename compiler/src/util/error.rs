@@ -29,6 +29,7 @@ pub enum ErrorType {
     MissingArgument(&'static str),
     FileSystemError(String),
     InvalidFileExtension(String),
+    NotANumber(String),
 
     // lexer errors
     InvalidCharacter(char),
@@ -114,6 +115,12 @@ impl ErrorType {
                 "The file {}'{}'{} has an extension not recognized by the compiler",
                 if color { style_red!() } else { "" },
                 file_path,
+                if color { style_dark_red!() } else { "" }
+            ),
+            ErrorType::NotANumber(src) => format!(
+                "Expected a number, but got {}'{}'{} instead",
+                if color { style_red!() } else { "" },
+                src,
                 if color { style_dark_red!() } else { "" }
             ),
 

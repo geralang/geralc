@@ -137,9 +137,11 @@ pub fn lower_typed_ast(
     types: &mut TypeMap,
     typed_symbols: &HashMap<NamespacePath, Symbol<TypedAstNode>>,
     external_backings: &HashMap<NamespacePath, StringIdx>,
-    main_procedure: (&NamespacePath, &Symbol<TypedAstNode>)
+    main_procedure: (&NamespacePath, &Symbol<TypedAstNode>),
+    max_call_depth: usize,
+    use_ansi_colors: bool
 ) -> Result<(Vec<IrSymbol>, ConstantPool), Error> {
-    let mut interpreter = Interpreter::new(strings);
+    let mut interpreter = Interpreter::new(strings, max_call_depth / 8, use_ansi_colors);
     let mut ir_symbols = Vec::new();
     let mut constants = ConstantPool::new();
     if let Symbol::Procedure {

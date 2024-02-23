@@ -16,7 +16,8 @@ pub fn generate_c(
     mut types: TypeMap,
     mut constants: ConstantPool,
     main_procedure_path: NamespacePath,
-    strings: &mut StringMap
+    strings: &mut StringMap,
+    max_call_depth: usize
 ) -> String {
     types = types.deduplicated();
     types.replace_any_with_unit();
@@ -26,9 +27,12 @@ pub fn generate_c(
 // Generated from Gera source code by gerap.
 // See: https://github.com/geralang/gerac
 //\n");
-    output.push_str("\n");
+output.push_str("\n");
     emit_core_library(&mut output);
     output.push_str("\n");
+    output.push_str("size_t GERA_MAX_CALL_DEPTH = ");
+    output.push_str(&max_call_depth.to_string());
+    output.push_str(";\n");
     let mut static_var_vals = HashMap::new();
     let mut constant_dependants = String::new();
     let mut declared_types = HashMap::new();
@@ -1620,6 +1624,9 @@ fn emit_main_function(
     output.push_str("int main(int argc, char** argv) {\n");
     output.push_str("    gera___set_args(argc, argv);\n");
     output.push_str("    gera_init_constants();\n");
+    output.push_str("gera___stack_push(");
+    emit_string_literal(&main_procedure_path.display(strings), output);
+    output.push_str(", \"<entry point>\", 0);\n");
     output.push_str("    ");
     emit_procedure_name(main_procedure_path, 0, strings, output);
     output.push_str("();\n");
@@ -2637,7 +2644,16 @@ fn emit_instruction(
             }
             output.push_str("\n}\n");
         }
-        IrInstruction::Call { path, variant, arguments, into, source: _ } => {
+        IrInstruction::Call { path, variant, arguments, into, source } => {
+            output.push_str("gera___stack_push(");
+            emit_string_literal(&path.display(strings), output);
+            output.push_str(", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             // this is cursed and I hate it
             let (parameter_types, return_type) = match symbols.into_iter().filter(|s| match *s {
                 IrSymbol::Procedure { path: p, variant: v, .. } => *path == *p && *variant == *v,
@@ -2690,8 +2706,16 @@ fn emit_instruction(
                 output.push_str(";\n");
             }
             free.insert(into.index);
+            output.push_str("gera___stack_pop();\n");
         }
-        IrInstruction::CallClosure { called, arguments, into, source: _ } => {
+        IrInstruction::CallClosure { called, arguments, into, source } => {
+            output.push_str("gera___stack_push(\"<closure>\", ");
+            emit_string_literal(strings.get(source.file_name()), output);
+            output.push_str(", ");
+            let source_line = strings.get(source.file_content())[..source.start_position()]
+                .lines().collect::<Vec<&str>>().len();
+            output.push_str(&source_line.to_string());
+            output.push_str(");\n");
             let (parameter_types, return_type) = if let Type::Closure(p)
                     = types.group_concrete(variable_types[called.index]) {
                         types.closure(p).clone()
@@ -2731,6 +2755,7 @@ fn emit_instruction(
                 output.push_str(";\n");
             }
             free.insert(into.index);
+            output.push_str("gera___stack_pop();\n");
         }
         IrInstruction::Return { value } => {
             if let Type::Unit = types.group_concrete(variable_types[value.index]) {

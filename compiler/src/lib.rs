@@ -30,11 +30,15 @@ use backend::{
 
 use std::collections::HashMap;
 
+pub const DEFAULT_MAX_CALL_DEPTH: usize = 1024;
+
 pub fn compile(
     strings: &mut StringMap,
     files: HashMap<StringIdx, StringIdx>,
     target_str: &str,
-    main_proc: Option<String>
+    main_proc: Option<String>,
+    max_call_depth: Option<usize>,
+    use_ansi_colors: bool
 ) -> Result<String, Vec<Error>> {
     let targets: HashMap<String, CompileTarget> = HashMap::from([
         ("c".into(), CompileTarget::IrConsumer(generate_c)),
@@ -45,6 +49,7 @@ pub fn compile(
         ErrorSection::Error(ErrorType::InvalidCompileTarget(target_str.to_string())),
         ErrorSection::Help(format!("List of available targets: {}", targets.iter().map(|t| format!("\n- {}", t.0)).collect::<Vec<String>>().join("")))
     ].into())]))?;
+    let max_call_depth = max_call_depth.unwrap_or(DEFAULT_MAX_CALL_DEPTH);
     // load builtins
     let mut modules = HashMap::new();
     let mut types = TypeMap::new();
@@ -72,14 +77,14 @@ pub fn compile(
     //println!("canonicalization done");
     // if target consumes AST, pass it the typed AST and return the result
     if let CompileTarget::AstConsumer(generator) = selected_target {
-        return Ok((generator)(types, modules, external_backings, strings));
+        return Ok((generator)(types, modules, external_backings, strings, max_call_depth));
     }
     // type check
     type_check_modules(modules, &strings, &mut types, &mut typed_symbols)?;
     //println!("type checking done");
     // if target consumes typed AST, pass it the typed AST and return the result
     if let CompileTarget::TypedAstConsumer(generator) = selected_target {
-        return Ok((generator)(types, typed_symbols, external_backings, strings));
+        return Ok((generator)(types, typed_symbols, external_backings, strings, max_call_depth));
     }
     // find main procedure
     let main_proc = main_proc.map(|p| Ok(p)).unwrap_or_else(|| Err(vec![Error::new([
@@ -112,12 +117,12 @@ pub fn compile(
     // lower typed AST
     let (ir_symbols, constant_pool) = lower_typed_ast(
         strings, &mut types, &typed_symbols, &external_backings,
-        (&main_procedure_path, main_procedure)
+        (&main_procedure_path, main_procedure), max_call_depth, use_ansi_colors
     ).map_err(|e| vec![e])?;
     //println!("lowering done");
     // if target consumes IR, pass it the IR and return the result
     if let CompileTarget::IrConsumer(generator) = selected_target {
-        return Ok((generator)(ir_symbols, types, constant_pool, main_procedure_path, strings));
+        return Ok((generator)(ir_symbols, types, constant_pool, main_procedure_path, strings, max_call_depth));
     }
     // done!
     return Ok(String::new())

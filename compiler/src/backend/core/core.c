@@ -77,15 +77,118 @@ char gera___string_eq(GeraString a, GeraString b) {
 
 void gera___free_nothing(char* data, size_t size) {}
 
+extern size_t GERA_MAX_CALL_DEPTH;
+
+typedef struct GeraCallEntry {
+    const char* name;
+    const char* file;
+    size_t line;
+} GeraCallEntry;
+
+typedef struct GeraTraceEntry {
+    GERACORE_THREAD_ID thread;
+    GeraCallEntry* trace;
+    size_t trace_size;
+    size_t call_depth;  
+} GeraTraceEntry;
+
+typedef struct GeraTraceEntries {
+    GERACORE_MUTEX mutex;
+    GeraTraceEntry* entries;
+    size_t entries_size;
+    size_t entry_count;
+} GeraTraceEntries;
+
+static GeraTraceEntries GERA_TRACE_ENTRIES = {
+    .entries = NULL,
+    .entries_size = 0,
+    .entry_count = 0
+};
+
+void gera___stack_push(const char* name, const char* file, size_t line) {
+    if(GERA_TRACE_ENTRIES.entries == NULL) {
+        GERA_TRACE_ENTRIES.mutex = geracoredeps_create_mutex();
+        GERA_TRACE_ENTRIES.entries_size = 1;
+        GERA_TRACE_ENTRIES.entries = malloc(
+            sizeof(GeraTraceEntry) * GERA_TRACE_ENTRIES.entries_size
+        );
+    }
+    geracoredeps_lock_mutex(&GERA_TRACE_ENTRIES.mutex);
+    GeraTraceEntry* trace_entry = NULL;
+    GERACORE_THREAD_ID calling_thread = geracoredeps_thread_id();
+    size_t entry_count = GERA_TRACE_ENTRIES.entry_count;
+    for(size_t entry_idx = 0; entry_idx < entry_count; entry_idx += 1) {
+        GeraTraceEntry* entry = &GERA_TRACE_ENTRIES.entries[entry_idx];
+        if(entry->thread == calling_thread) {
+            trace_entry = entry;
+            break;
+        }
+    }
+    if(trace_entry == NULL) {
+        if(GERA_TRACE_ENTRIES.entry_count >= GERA_TRACE_ENTRIES.entries_size) {
+            GERA_TRACE_ENTRIES.entries_size *= 2;
+            GERA_TRACE_ENTRIES.entries = realloc(
+                GERA_TRACE_ENTRIES.entries, sizeof(GeraTraceEntry) * GERA_TRACE_ENTRIES.entries_size
+            );
+        }
+        size_t trace_size = 32;
+        GERA_TRACE_ENTRIES.entries[GERA_TRACE_ENTRIES.entry_count] = (GeraTraceEntry) {
+            .thread = calling_thread,
+            .call_depth = 0,
+            .trace = malloc(sizeof(GeraCallEntry) * trace_size),
+            .trace_size = trace_size
+        };
+        trace_entry = &GERA_TRACE_ENTRIES.entries[GERA_TRACE_ENTRIES.entry_count];
+        GERA_TRACE_ENTRIES.entry_count += 1;
+    }
+    if(trace_entry->call_depth >= trace_entry->trace_size) {
+        trace_entry->trace_size *= 2;
+        trace_entry->trace = realloc(
+            trace_entry->trace, sizeof(GeraCallEntry) * trace_entry->trace_size
+        );
+    }
+    trace_entry->trace[trace_entry->call_depth] = (GeraCallEntry) {
+        .name = name,
+        .file = file,
+        .line = line
+    };
+    trace_entry->call_depth += 1;
+    if(trace_entry->call_depth > GERA_MAX_CALL_DEPTH) {
+        gera___panic("Maximum call depth exceeded!");
+    }
+    geracoredeps_unlock_mutex(&GERA_TRACE_ENTRIES.mutex); 
+}
+
+void gera___stack_pop() {
+    if(GERA_TRACE_ENTRIES.entries == NULL) { return; }
+    geracoredeps_lock_mutex(&GERA_TRACE_ENTRIES.mutex);
+    GeraTraceEntry* trace_entry = NULL;
+    GERACORE_THREAD_ID calling_thread = geracoredeps_thread_id();
+    size_t entry_count = GERA_TRACE_ENTRIES.entry_count;
+    for(size_t entry_idx = 0; entry_idx < entry_count; entry_idx += 1) {
+        GeraTraceEntry* entry = &GERA_TRACE_ENTRIES.entries[entry_idx];
+        if(entry->thread == calling_thread) {
+            trace_entry = entry;
+            break;
+        }
+    }
+    if(trace_entry == NULL) { goto unlock; }
+    trace_entry->call_depth -= 1;
+    unlock:
+    geracoredeps_unlock_mutex(&GERA_TRACE_ENTRIES.mutex); 
+}
+
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
     #define ERROR_NOTE_COLOR "\033[0;90m"
     #define ERROR_MESSAGE_COLOR "\033[0;91;1m"
-    #define ERROR_PROCEDURE_COLOR "\033[0;91m"
+    #define ERROR_INDEX_COLOR "\033[0;90m"
+    #define ERROR_PROCEDURE_COLOR "\033[0;32;1m"
     #define ERROR_FILE_NAME_COLOR "\033[0;37m"
     #define ERROR_RESET_COLOR "\033[0m"
 #else
     #define ERROR_NOTE_COLOR ""
     #define ERROR_MESSAGE_COLOR ""
+    #define ERROR_INDEX_COLOR ""
     #define ERROR_PROCEDURE_COLOR ""
     #define ERROR_FILE_NAME_COLOR ""
     #define ERROR_RESET_COLOR ""
@@ -109,6 +212,42 @@ void gera___panic_pre() {
 
 void gera___panic_post() {
     geracoredeps_eprint("\n");
+    if(GERA_TRACE_ENTRIES.entries == NULL) { goto notrace; }
+    GeraTraceEntry* trace_entry = NULL;
+    GERACORE_THREAD_ID calling_thread = geracoredeps_thread_id();
+    size_t entry_count = GERA_TRACE_ENTRIES.entry_count;
+    for(size_t entry_idx = 0; entry_idx < entry_count; entry_idx += 1) {
+        GeraTraceEntry* entry = &GERA_TRACE_ENTRIES.entries[entry_idx];
+        if(entry->thread != calling_thread) { continue; }
+        trace_entry = entry;
+        break;
+    }
+    if(trace_entry == NULL) { goto notrace; }
+    if(trace_entry->call_depth == 0) { goto notrace; }
+    geracoredeps_eprint(ERROR_NOTE_COLOR "Stack trace (latest call first):\n");
+    for(size_t call_idx = trace_entry->call_depth - 1;;) {
+        GeraCallEntry* call_entry = &trace_entry->trace[call_idx];
+        size_t call_idx_str_len = geracoredeps_display_uint_length(call_idx);
+        char call_idx_str[call_idx_str_len + 1];
+        geracoredeps_display_uint(call_idx, call_idx_str);
+        call_idx_str[call_idx_str_len] = '\0';
+        geracoredeps_eprint(ERROR_INDEX_COLOR " ");
+        geracoredeps_eprint(call_idx_str);
+        geracoredeps_eprint(" " ERROR_PROCEDURE_COLOR);
+        geracoredeps_eprint(call_entry->name);
+        geracoredeps_eprint(ERROR_NOTE_COLOR " at " ERROR_FILE_NAME_COLOR);
+        geracoredeps_eprint(call_entry->file);
+        geracoredeps_eprint(":");
+        size_t line_str_len = geracoredeps_display_uint_length(call_entry->line);
+        char line_str[line_str_len + 1];
+        geracoredeps_display_uint(call_entry->line, line_str);
+        line_str[line_str_len] = '\0';
+        geracoredeps_eprint(line_str);
+        geracoredeps_eprint(ERROR_NOTE_COLOR "\n");
+        if(call_idx == 0) { break; }
+        call_idx -= 1;
+    }
+    notrace:
     geracoredeps_eprint(ERROR_RESET_COLOR);
     geracoredeps_exit(1);
 }

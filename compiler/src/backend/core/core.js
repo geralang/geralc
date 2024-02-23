@@ -43,7 +43,12 @@ const gera___hash = (function() {
 
 const gera___stack = {
     trace: [],
-    push: function(name, file, line) { this.trace.push({ name, file, line }); },
+    push: function(name, file, line) {
+        this.trace.push({ name, file, line });
+        if(this.trace.length > GERA_MAX_CALL_DEPTH) {
+            gera___panic("Maximum call depth exceeded!");
+        }
+    },
     pop: function() { this.trace.pop(); }
 };
 

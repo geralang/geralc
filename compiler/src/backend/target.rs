@@ -14,7 +14,7 @@ use crate::backend::{
 };
 
 pub enum CompileTarget {
-    AstConsumer(fn(TypeMap, HashMap<NamespacePath, Module<AstNode>>, HashMap<NamespacePath, StringIdx>, &mut StringMap) -> String),
-    TypedAstConsumer(fn(TypeMap, HashMap<NamespacePath, Symbol<TypedAstNode>>, HashMap<NamespacePath, StringIdx>, &mut StringMap) -> String),
-    IrConsumer(fn(Vec<IrSymbol>, TypeMap, ConstantPool, NamespacePath, &mut StringMap) -> String)
+    AstConsumer(fn(TypeMap, HashMap<NamespacePath, Module<AstNode>>, HashMap<NamespacePath, StringIdx>, &mut StringMap, usize) -> String),
+    TypedAstConsumer(fn(TypeMap, HashMap<NamespacePath, Symbol<TypedAstNode>>, HashMap<NamespacePath, StringIdx>, &mut StringMap, usize) -> String),
+    IrConsumer(fn(Vec<IrSymbol>, TypeMap, ConstantPool, NamespacePath, &mut StringMap, usize) -> String)
 }

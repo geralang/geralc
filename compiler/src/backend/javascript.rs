@@ -16,7 +16,8 @@ pub fn generate_javascript(
     mut types: TypeMap,
     mut constants: ConstantPool,
     main_procedure_path: NamespacePath,
-    strings: &mut StringMap
+    strings: &mut StringMap,
+    max_call_depth: usize
 ) -> String {
     types.replace_any_with_unit();
     let mut output = String::new();
@@ -28,6 +29,9 @@ pub fn generate_javascript(
     output.push_str("\n");
     output.push_str("(function() {\n");
     output.push_str("\"use strict\";\n");
+    output.push_str("const GERA_MAX_CALL_DEPTH = ");
+    output.push_str(&max_call_depth.to_string());
+    output.push_str(";\n");
     emit_core_library(&mut output);
     output.push_str("\n");
     let mut constant_deps = String::new();
@@ -369,7 +373,7 @@ fn emit_main_function(
 ) {
     output.push_str("gera___stack.push(");
     emit_string_literal(&main_procedure_path.display(strings), output);
-    output.push_str(", \"???\", 0);\n");
+    output.push_str(", \"<entry point>\", 0);\n");
     emit_procedure_name(main_procedure_path, 0, strings, output);
     output.push_str("();\n");
 }
