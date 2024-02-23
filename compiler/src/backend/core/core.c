@@ -109,7 +109,7 @@ void gera___stack_push(const char* name, const char* file, size_t line) {
     if(GERA_TRACE_ENTRIES.entries == NULL) {
         GERA_TRACE_ENTRIES.mutex = geracoredeps_create_mutex();
         GERA_TRACE_ENTRIES.entries_size = 1;
-        GERA_TRACE_ENTRIES.entries = malloc(
+        GERA_TRACE_ENTRIES.entries = geracoredeps_malloc(
             sizeof(GeraTraceEntry) * GERA_TRACE_ENTRIES.entries_size
         );
     }
@@ -127,7 +127,7 @@ void gera___stack_push(const char* name, const char* file, size_t line) {
     if(trace_entry == NULL) {
         if(GERA_TRACE_ENTRIES.entry_count >= GERA_TRACE_ENTRIES.entries_size) {
             GERA_TRACE_ENTRIES.entries_size *= 2;
-            GERA_TRACE_ENTRIES.entries = realloc(
+            GERA_TRACE_ENTRIES.entries = geracoredeps_realloc(
                 GERA_TRACE_ENTRIES.entries, sizeof(GeraTraceEntry) * GERA_TRACE_ENTRIES.entries_size
             );
         }
@@ -135,7 +135,7 @@ void gera___stack_push(const char* name, const char* file, size_t line) {
         GERA_TRACE_ENTRIES.entries[GERA_TRACE_ENTRIES.entry_count] = (GeraTraceEntry) {
             .thread = calling_thread,
             .call_depth = 0,
-            .trace = malloc(sizeof(GeraCallEntry) * trace_size),
+            .trace = geracoredeps_malloc(sizeof(GeraCallEntry) * trace_size),
             .trace_size = trace_size
         };
         trace_entry = &GERA_TRACE_ENTRIES.entries[GERA_TRACE_ENTRIES.entry_count];
@@ -143,7 +143,7 @@ void gera___stack_push(const char* name, const char* file, size_t line) {
     }
     if(trace_entry->call_depth >= trace_entry->trace_size) {
         trace_entry->trace_size *= 2;
-        trace_entry->trace = realloc(
+        trace_entry->trace = geracoredeps_realloc(
             trace_entry->trace, sizeof(GeraCallEntry) * trace_entry->trace_size
         );
     }
