@@ -49,7 +49,8 @@ pub struct TypeMap {
     concrete_objects: Vec<Vec<(StringIdx, TypeGroup)>>,
     closures: Vec<(Vec<TypeGroup>, TypeGroup)>,
     variants: Vec<(HashMap<StringIdx, TypeGroup>, bool)>,
-    chosen_concrete: Vec<(HashSet<Type>, Type)>
+    chosen_concrete: Vec<(HashSet<Type>, Type)>,
+    merge_queue: Vec<(usize, usize)>
 }
 
 impl TypeMap {
@@ -62,7 +63,8 @@ impl TypeMap {
             concrete_objects: Vec::new(),
             closures: Vec::new(),
             variants: Vec::new(),
-            chosen_concrete: Vec::new()
+            chosen_concrete: Vec::new(),
+            merge_queue: Vec::new()
         }
     }
 
@@ -248,16 +250,44 @@ impl TypeMap {
         self.internal_groups[internal_id] = new_types.iter().map(|t| *t).collect(); 
     }
 
+    fn compute_merged_types(
+        &mut self, a_internal: usize, b_internal: usize
+    ) -> HashSet<Type> {
+        let mut merged_types = HashSet::new();
+        let a_types = self.internal_groups[a_internal].iter().map(|t| *t).collect::<Vec<Type>>();
+        let b_types = self.internal_groups[b_internal].iter().map(|t| *t).collect::<Vec<Type>>();
+        for a_type in &a_types {
+            for b_type in &b_types {
+                if let Some(r_type) = self.try_merge_types_internal(*a_type, *b_type) {
+                    merged_types.insert(r_type);
+                }
+            }
+        }
+        return merged_types;
+    }
+
     pub fn try_merge_groups(
         &mut self,
         a: TypeGroup, b: TypeGroup
     ) -> bool {
-        self.try_merge_groups_internal(a, b, &mut HashSet::new())
+        if !self.try_merge_groups_internal(a, b) {
+            return false;
+        }
+        while self.merge_queue.len() > 0 {
+            let (a_internal, b_internal) = self.merge_queue[0];
+            let merged_types = self.compute_merged_types(a_internal, b_internal);
+            self.merge_queue.remove(0);
+            if merged_types.len() == 0 {
+                return false;
+            }
+            self.internal_groups[a_internal] = merged_types.clone();
+            self.internal_groups[b_internal] = merged_types;
+            self.merge_groups_internally(a_internal, b_internal);
+        }
+        return true;
     }
 
-    fn merge_groups_internally(&mut self, a: TypeGroup, b: TypeGroup) {
-        let a_internal = self.group_internal_id(a);
-        let b_internal = self.group_internal_id(b);
+    fn merge_groups_internally(&mut self, a_internal: usize, b_internal: usize) {
         if a_internal == b_internal { return; }
         for internal_group_idx in &mut self.groups {
             if *internal_group_idx == b_internal {
@@ -268,42 +298,25 @@ impl TypeMap {
 
     fn try_merge_groups_internal(
         &mut self,
-        a: TypeGroup, b: TypeGroup,
-        encountered: &mut HashSet<(usize, usize)>
+        a: TypeGroup, b: TypeGroup
     ) -> bool {
-        let encounter = (self.group_internal_id(a), self.group_internal_id(b));
-        if encountered.contains(&encounter) {
-            return true
-        }
-        encountered.insert(encounter);
-        let mut merged_types = HashSet::new();
-        let a_types = self.group(a).collect::<Vec<Type>>();
-        let b_types = self.group(b).collect::<Vec<Type>>();
-        for a_type in &a_types {
-            for b_type in &b_types {
-                if let Some(r_type) = self.try_merge_types_internal(
-                    *a_type, *b_type, encountered
-                ) {
-                    merged_types.insert(r_type);
-                }
-            }
-        }
-        encountered.remove(&encounter);
+        let queue_item = (self.group_internal_id(a), self.group_internal_id(b));
+        if queue_item.0 == queue_item.1 { return true; }
+        if self.merge_queue.contains(&queue_item) { return true; }
+        self.merge_queue.push(queue_item);
+        let merged_types = self.compute_merged_types(queue_item.0, queue_item.1);
         if merged_types.is_empty() { return false; }
-        let a_internal = self.group_internal_id(a);
-        let b_internal = self.group_internal_id(b);
-        self.internal_groups[a_internal] = merged_types.clone();
-        self.internal_groups[b_internal] = merged_types;
-        self.merge_groups_internally(a, b);
-        true
+        self.internal_groups[queue_item.0] = merged_types.clone();
+        self.internal_groups[queue_item.1] = merged_types;
+        return true;
     }
 
     fn try_merge_types_internal(
         &mut self,
-        a: Type, b: Type,
-        encountered: &mut HashSet<(usize, usize)>
+        a: Type, b: Type
     ) -> Option<Type> {
         match (a, b) {
+            (Type::Any, Type::Any) => Some(Type::Any),
             (Type::Any, b) => Some(b),
             (a, Type::Any) => Some(a),
             (Type::ConcreteObject(obj_a), b) => {
@@ -311,19 +324,18 @@ impl TypeMap {
                     self.concrete_object(obj_a).iter().map(|e| *e).collect(),
                     false
                 ));
-                self.try_merge_types_internal(obj_type, b, encountered)
+                self.try_merge_types_internal(obj_type, b)
             }
             (a, Type::ConcreteObject(obj_b)) => {
                 let obj_type = Type::Object(self.insert_object(
                     self.concrete_object(obj_b).iter().map(|e| *e).collect(),
                     false
                 ));
-                self.try_merge_types_internal(a, obj_type, encountered)
+                self.try_merge_types_internal(a, obj_type)
             }
             (Type::Array(arr_a), Type::Array(arr_b)) => {
                 if self.try_merge_groups_internal(
-                    self.array(arr_a), self.array(arr_b),
-                    encountered
+                    self.array(arr_a), self.array(arr_b)
                 ) { Some(a) } else { None }
             }
             (Type::Object(obj_a), Type::Object(obj_b)) => {
@@ -339,8 +351,7 @@ impl TypeMap {
                     ) {
                         (Some(member_type_a), Some(member_type_b)) => {
                             if self.try_merge_groups_internal(
-                                *member_type_a, *member_type_b,
-                                encountered
+                                *member_type_a, *member_type_b
                             ) {
                                 new_members.insert(member_name, *member_type_a);
                             } else { return None }
@@ -368,12 +379,11 @@ impl TypeMap {
                 if params_a.len() != params_b.len() { return None }
                 for p in 0..params_a.len() {
                     if !self.try_merge_groups_internal(
-                        params_a[p], params_b[p],
-                        encountered
+                        params_a[p], params_b[p]
                     ) { return None; }
                 }
                 if !self.try_merge_groups_internal(
-                    return_a, return_b, encountered
+                    return_a, return_b
                 ) { return None; }
                 Some(Type::Closure(self.insert_closure(
                     params_a.clone(),
@@ -393,8 +403,7 @@ impl TypeMap {
                     ) {
                         (Some(variant_type_a), Some(variant_type_b)) => {
                             if self.try_merge_groups_internal(
-                                *variant_type_a, *variant_type_b,
-                                encountered
+                                *variant_type_a, *variant_type_b
                             ) {
                                 new_variants.insert(variant_name, *variant_type_a);
                             } else { return None }
@@ -1389,7 +1398,7 @@ impl TypeMap {
                     return letter.clone();
                 }
             }
-            display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters)
+            format!("<{}> {}", group_internal_idx, display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters))
         }
         let mut letters = HashMap::new();
         collect_letters(&mut letters, self, t);

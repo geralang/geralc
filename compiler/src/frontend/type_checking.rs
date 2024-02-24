@@ -988,16 +988,9 @@ fn type_check_node(
                 passed_arg_vars.push(typed_argument.get_types());
                 typed_arguments.push(typed_argument);
             }
-            let passed_return_type = types.insert_group(&[Type::Any]);
-            if let Some(limited_to) = limited_to {
-                assert_types(
-                    TypeAssertion::unexplained(passed_return_type),
-                    limited_to, types
-                ).expect("should not fail");
-            }
-            let closure_tidx = types.insert_closure(
-                passed_arg_vars, passed_return_type
-            );
+            let passed_return_type = limited_to.map(|l| l.limited_to)
+            .unwrap_or_else(|| types.insert_group(&[Type::Any]));
+            let closure_tidx = types.insert_closure(passed_arg_vars.clone(), passed_return_type);
             let closure_types = types.insert_group(&[Type::Closure(closure_tidx)]);
             let accessed_object_tidx = types.insert_object([(member, closure_types)].into(), false);
             types.set_group_types(accessed_object_types, &[Type::Object(accessed_object_tidx)]);
