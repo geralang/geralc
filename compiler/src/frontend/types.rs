@@ -1398,7 +1398,7 @@ impl TypeMap {
                     return letter.clone();
                 }
             }
-            format!("<{}> {}", group_internal_idx, display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters))
+            display_group_types(&types.group(t).collect::<Vec<Type>>(), strings, types, letters)
         }
         let mut letters = HashMap::new();
         collect_letters(&mut letters, self, t);
