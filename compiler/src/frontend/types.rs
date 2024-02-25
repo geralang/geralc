@@ -270,6 +270,7 @@ impl TypeMap {
         &mut self,
         a: TypeGroup, b: TypeGroup
     ) -> bool {
+        self.merge_queue.clear();
         if !self.try_merge_groups_internal(a, b) {
             return false;
         }
