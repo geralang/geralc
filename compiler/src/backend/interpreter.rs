@@ -218,9 +218,8 @@ impl Interpreter {
             }
             Ok(Value::String(
                 src.chars()
-                    .enumerate()
-                    .filter(|(ci, _)| *ci >= start_index && *ci < end_index)
-                    .map(|(_, c)| c)
+                    .skip(start_index)
+                    .take(end_index - start_index)
                     .collect::<String>()
                     .into()
             ))
@@ -351,7 +350,8 @@ impl Interpreter {
     }
 
     pub fn stack_trace_push(&mut self, name: String, from: SourceRange, strings: &StringMap) -> Result<(), Error> {
-        let source_line = strings.get(from.file_content())[..from.start_position()]
+        let source_line = strings.get(from.file_content()).chars()
+            .take(from.start_position()).collect::<String>()
             .lines().collect::<Vec<&str>>().len();
         self.stack_trace.push((name, from.file_name(), source_line));
         if self.stack_trace.len() > self.max_call_depth {

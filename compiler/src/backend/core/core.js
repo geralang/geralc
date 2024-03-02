@@ -88,3 +88,24 @@ function gera___verify_integer_divisor(d, file, line) {
     gera___stack.push("<division>", file, line);
     gera___panic("integer division by zero");
 }
+
+function gera___substring(s, start, end) {
+    let start_offset = 0;
+    for(let i = 0; i < start; i += 1) {
+        start_offset += s.codePointAt(start_offset) > 0xFFFF? 2 : 1;
+    }
+    let end_offset = start_offset;
+    for(let c = start; c < end; c += 1) {
+        end_offset += s.codePointAt(end_offset) > 0xFFFF? 2 : 1;
+    }
+    return s.substring(start_offset, end_offset);
+}
+
+function gera___strlen(s) {
+    let length = 0;
+    for(let i = 0; i < s.length; length += 1) {
+        const code = s.codePointAt(i);
+        i += code > 0xFFFF? 2 : 1;
+    }
+    return length;
+}

@@ -695,7 +695,7 @@ impl IrGenerator {
                             og_symbol_return_type, parameter_names, body, symbols, strings,
                             external_backings, interpreter, ir_symbols, constants
                         )?;
-                        let into = into_given_or_alloc!(dup_symbol_return_type);
+                        let into = into.unwrap_or_else(|| self.allocate(dup_symbol_return_type));
                         self.add(IrInstruction::Call {
                             path: path.clone(),
                             variant: proc_variant,

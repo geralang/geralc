@@ -2242,7 +2242,8 @@ fn emit_instruction(
             output.push_str(".length, ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -2281,7 +2282,8 @@ fn emit_instruction(
             output.push_str(".length, ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -2402,7 +2404,8 @@ fn emit_instruction(
                 output.push_str(", ");
                 emit_string_literal(strings.get(source.file_name()), output);
                 output.push_str(", ");
-                let source_line = strings.get(source.file_content())[..source.start_position()]
+                let source_line = strings.get(source.file_content()).chars()
+                    .take(source.start_position()).collect::<String>()
                     .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
@@ -2429,7 +2432,8 @@ fn emit_instruction(
                 output.push_str(", ");
                 emit_string_literal(strings.get(source.file_name()), output);
                 output.push_str(", ");
-                let source_line = strings.get(source.file_content())[..source.start_position()]
+                let source_line = strings.get(source.file_content()).chars()
+                    .take(source.start_position()).collect::<String>()
                     .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
@@ -2650,7 +2654,8 @@ fn emit_instruction(
             output.push_str(", ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -2712,7 +2717,8 @@ fn emit_instruction(
             output.push_str("gera___stack_push(\"<closure>\", ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");

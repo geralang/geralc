@@ -112,10 +112,16 @@ return param0 === param1;
 return param0.tag === param1.tag;
 "#)
     });
-    builtins.insert(path_from(&["core", "length"], strings), |_, _, _, _| {
-        String::from(r#"
+    builtins.insert(path_from(&["core", "length"], strings), |param_types, _, types, _| {
+        match types.group_concrete(param_types[0]) {
+            Type::String => String::from(r#"
+return BigInt(gera___strlen(param0));
+"#),
+            Type::Array(_) => String::from(r#"
 return BigInt(param0.length);
-"#)
+"#),
+            _ => panic!("should only be array or string!")
+        }        
     });
     builtins.insert(path_from(&["core", "array"], strings), |_, _, _, _| {
         String::from(r#"
@@ -185,17 +191,17 @@ return Number(param0);
 let start_idx = param1;
 if(param1 < 0) { start_idx = BigInt(param0.length) + param1; }
 if(start_idx > param0.length) {
-    throw `the start index ${param1} is out of bounds for a string of length ${param0.length}`;
+    gera___panic(`the start index ${param1} is out of bounds for a string of length ${param0.length}`);
 }
 let end_idx = param2;
 if(param2 < 0) { end_idx = BigInt(param0.length) + param2; }
 if(end_idx > param0.length) {
-    throw `the end index ${param2} is out of bounds for a string of length ${param0.length}`;
+    gera___panic(`the end index ${param2} is out of bounds for a string of length ${param0.length}`);
 }
 if(start_idx > end_idx) {
-    throw `the start index ${param1} is larger than the end index ${param2} (length of string is ${param0.length})`;
+    gera___panic(`the start index ${param1} is larger than the end index ${param2} (length of string is ${param0.length})`);
 }
-return param0.substring(Number(start_idx), Number(end_idx));
+return gera___substring(param0, Number(start_idx), Number(end_idx));
 "#)
     });
     builtins.insert(path_from(&["core", "concat"], strings), |_, _, _, _| {
@@ -694,7 +700,8 @@ fn emit_instruction(
             output.push_str(".length, ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -719,7 +726,8 @@ fn emit_instruction(
             output.push_str(".length, ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -806,8 +814,9 @@ fn emit_instruction(
                 output.push_str(", ");
                 emit_string_literal(strings.get(source.file_name()), output);
                 output.push_str(", ");
-                let source_line = strings.get(source.file_content())[..source.start_position()]
-                .lines().collect::<Vec<&str>>().len();
+                let source_line = strings.get(source.file_content()).chars()
+                    .take(source.start_position()).collect::<String>()
+                    .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
                 emit_variable(*into, output);
@@ -835,7 +844,8 @@ fn emit_instruction(
                 output.push_str(", ");
                 emit_string_literal(strings.get(source.file_name()), output);
                 output.push_str(", ");
-                let source_line = strings.get(source.file_content())[..source.start_position()]
+                let source_line = strings.get(source.file_content()).chars()
+                    .take(source.start_position()).collect::<String>()
                     .lines().collect::<Vec<&str>>().len();
                 output.push_str(&source_line.to_string());
                 output.push_str(");\n");
@@ -999,7 +1009,8 @@ fn emit_instruction(
             output.push_str(", ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
@@ -1027,7 +1038,8 @@ fn emit_instruction(
             output.push_str("gera___stack.push(\"<closure>\", ");
             emit_string_literal(strings.get(source.file_name()), output);
             output.push_str(", ");
-            let source_line = strings.get(source.file_content())[..source.start_position()]
+            let source_line = strings.get(source.file_content()).chars()
+                .take(source.start_position()).collect::<String>()
                 .lines().collect::<Vec<&str>>().len();
             output.push_str(&source_line.to_string());
             output.push_str(");\n");
