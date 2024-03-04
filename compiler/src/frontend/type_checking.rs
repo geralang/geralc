@@ -462,14 +462,14 @@ fn type_check_symbol<'s>(
                                 assert_types(
                                     TypeAssertion::procedure_parameter(symbol_source, arguments[argument_idx].0, argument_types, types, strings),
                                     TypeAssertion::call_parameter_value(*call_param_source, *call_param_types, types, strings),
-                                    types
+                                    types, strings
                                 )?;
                             }
                         }
                         if !returns.1 {
                             let assertion_a = TypeAssertion::returned_values(*source, return_types, types, strings);
                             let assertion_b = TypeAssertion::implicit_unit_return(*source, types, strings);
-                            assert_types(assertion_a, assertion_b, types)?;
+                            assert_types(assertion_a, assertion_b, types, strings)?;
                         }
                         *body = Some(typed_body);
                     } else { panic!("procedure stack was illegally modified!"); }
@@ -566,26 +566,32 @@ fn type_check_nodes(
 
 fn error_from_type_assertions(
     a: TypeAssertion,
-    b: TypeAssertion
+    b: TypeAssertion,
+    d: Option<String>
 ) -> Error {
-    Error::new([
+    let mut parts = vec![
         ErrorSection::Error(ErrorType::NoPossibleTypes),
         ErrorSection::Info(a.reason),
         ErrorSection::Code(a.from),
         ErrorSection::Info(b.reason),
         ErrorSection::Code(b.from)
-    ].into())
+    ];
+    if let Some(d) = d {
+        parts.push(ErrorSection::Info(format!("The difference is:\n{}", d)));
+    }
+    Error::new(parts.into())
 }
 
 fn assert_types(
     a: TypeAssertion,
     b: TypeAssertion,
-    types: &mut TypeMap
+    types: &mut TypeMap, strings: &StringMap
 ) -> Result<(), Error> {
+    let d = types.display_type_difference(strings, a.limited_to, b.limited_to);
     if types.try_merge_groups(a.limited_to, b.limited_to) {
         Ok(())
     } else {
-        Err(error_from_type_assertions(a, b))
+        Err(error_from_type_assertions(a, b, d))
     }
 }
 
@@ -615,7 +621,7 @@ fn initalize_variables(
                 assert_types(
                     TypeAssertion::variable(variable_source, variable_types, types, strings),
                     TypeAssertion::variable(*scope_variable_source, *scope_variable_types, types, strings),
-                    types
+                    types, strings
                 )?;
                 continue;
             }
@@ -707,7 +713,7 @@ fn type_check_node(
                 assert_types(
                     TypeAssertion::returned_values(node_source, return_types, types, strings),
                     TypeAssertion::implicit_unit_return(node_source, types, strings),
-                    types
+                    types, strings
                 )?;
             }
             let closure_tidx = types.insert_closure(
@@ -719,7 +725,7 @@ fn type_check_node(
                 assert_types(
                     TypeAssertion::literal("closure", node_source, closure_type, types, strings),
                     limited_to.clone(),
-                    types
+                    types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -904,7 +910,7 @@ fn type_check_node(
                             if let Some(limited_to) = limited_to {
                                 assert_types(
                                     TypeAssertion::call_return_value(node_source, returned_types, types, strings),
-                                    limited_to, types
+                                    limited_to, types, strings
                                 )?;
                             }
                             let called = TypedAstNode::new(
@@ -933,7 +939,7 @@ fn type_check_node(
                             if let Some(limited_to) = limited_to {
                                 assert_types(
                                     TypeAssertion::call_return_value(node_source, symbol_return_type, types, strings),
-                                    limited_to, types
+                                    limited_to, types, strings
                                 )?;
                             }
                             let called = TypedAstNode::new(
@@ -962,7 +968,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::unexplained(passed_return_type),
-                    limited_to, types
+                    limited_to, types, strings
                 ).expect("should not fail");
             }
             let closure_tidx = types.insert_closure(
@@ -1015,7 +1021,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("object", node_source, object_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Object {
@@ -1035,7 +1041,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("array", node_source, array_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Array {
@@ -1051,7 +1057,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::access_result(node_source, accessed_object_member_types, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::ObjectAccess {
@@ -1070,7 +1076,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::access_result(node_source, accessed_array_element_types, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::ArrayAccess {
@@ -1093,7 +1099,7 @@ fn type_check_node(
                     if let Some(limited_to) = limited_to {
                         assert_types(
                             TypeAssertion::variable(*variable_source, variable_types, types, strings), 
-                            limited_to, types
+                            limited_to, types, strings
                         )?;
                     }
                     Ok((TypedAstNode::new(
@@ -1107,7 +1113,7 @@ fn type_check_node(
                     if let Some(limited_to) = limited_to {
                         assert_types(
                             TypeAssertion::variable(variable_source, variable_types, types, strings), 
-                            limited_to, types
+                            limited_to, types, strings
                         )?;
                     }
                     variables.insert(name, (variable_types, variable_mutable, variable_source));
@@ -1134,7 +1140,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("boolean", node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1148,7 +1154,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("integer", node_source, integer, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1162,7 +1168,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("float", node_source, float, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1176,7 +1182,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("string", node_source, string, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1190,7 +1196,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("unit", node_source, unit, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(
@@ -1204,7 +1210,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1220,7 +1226,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1236,7 +1242,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1252,7 +1258,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1268,7 +1274,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1284,7 +1290,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::arithmetic_result(node_source, op_type, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::arithmetic_argument(node_source, op_type, types, strings);
@@ -1298,7 +1304,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Integer, Type::Float]);
@@ -1315,7 +1321,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Integer, Type::Float]);
@@ -1332,7 +1338,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Integer, Type::Float]);
@@ -1349,7 +1355,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Integer, Type::Float]);
@@ -1366,7 +1372,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Any]);
@@ -1383,7 +1389,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::comparison_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let arg_types = types.insert_group(&[Type::Any]);
@@ -1400,7 +1406,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::logical_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::logical_argument(node_source, boolean, types, strings);
@@ -1416,7 +1422,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::logical_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::logical_argument(node_source, boolean, types, strings);
@@ -1432,7 +1438,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::logical_result(node_source, boolean, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             let assertion = TypeAssertion::logical_argument(node_source, boolean, types, strings);
@@ -1458,7 +1464,7 @@ fn type_check_node(
                     if let Some(limited_to) = limited_to {
                         assert_types(
                             TypeAssertion::constant(node_source, *value_types, types, strings),
-                            limited_to, types
+                            limited_to, types, strings
                         )?;
                     }
                     Ok((TypedAstNode::new(AstNodeVariant::ModuleAccess {
@@ -1514,7 +1520,7 @@ fn type_check_node(
             if let Some(limited_to) = limited_to {
                 assert_types(
                     TypeAssertion::literal("tag", node_source, variant_types, types, strings),
-                    limited_to, types
+                    limited_to, types, strings
                 )?;
             }
             Ok((TypedAstNode::new(AstNodeVariant::Variant {

@@ -1421,4 +1421,216 @@ impl TypeMap {
         }
         result
     }
+
+    pub fn display_type_difference(
+        &self, strings: &StringMap, a: TypeGroup, b: TypeGroup
+    ) -> Option<String> {
+        fn display_type_simple(t: Type) -> String { match t {
+            Type::Any => "any".into(),
+            Type::Unit => "unit".into(),
+            Type::Boolean => "boolean".into(),
+            Type::Integer => "integer".into(),
+            Type::Float => "float".into(),
+            Type::String => "string".into(),
+            Type::Array(_) => "array".into(),
+            Type::Object(_) | Type::ConcreteObject(_) => "object".into(),
+            Type::Closure(_) => "closure".into(),
+            Type::Variants(_) => "variants".into(),
+        } }
+        fn internal_group_difference(
+            types: &TypeMap, strings: &StringMap,
+            encountered: &mut HashSet<(usize, usize)>, a: TypeGroup, b: TypeGroup
+        ) -> TypeDifference {
+            let encounter = (types.group_internal_id(a), types.group_internal_id(b));
+            if encountered.contains(&encounter) { return TypeDifference::Recursive; }
+            encountered.insert(encounter);
+            let mut similar = false;
+            let mut r = TypeDifference::Mergable;
+            for type_a in types.group(a) {
+                for type_b in types.group(b) {
+                    let cd = internal_type_difference(types, strings, encountered, type_a, type_b);
+                    match cd {
+                        TypeDifference::Mergable => return TypeDifference::Mergable,
+                        _ => {
+                            use std::mem::discriminant;
+                            if discriminant(&type_a) == discriminant(&type_b) { similar = true; }
+                            r = r & cd;
+                        }
+                    }
+                }
+            }
+            encountered.remove(&encounter);
+            if similar { return r; }
+            return TypeDifference::Different(format!(
+                "=> {} != {}",
+                types.group(a).map(display_type_simple)
+                    .collect::<HashSet<String>>().into_iter()
+                    .collect::<Vec<String>>().join(" | "),
+                types.group(b).map(display_type_simple)
+                    .collect::<HashSet<String>>().into_iter()
+                    .collect::<Vec<String>>().join(" | ")
+            ));
+        }
+        fn internal_type_difference(
+            types: &TypeMap, strings: &StringMap,
+            encountered: &mut HashSet<(usize, usize)>, a: Type, b: Type
+        ) -> TypeDifference {
+            use std::mem::discriminant;
+            match (a, b) {
+                (Type::Any, _) | (_, Type::Any) => TypeDifference::Mergable,
+                (Type::Array(arr_a), Type::Array(arr_b)) => {
+                    internal_group_difference(
+                        types, strings, encountered, types.array(arr_a), types.array(arr_b)
+                    ).map(|d| format!("-> in any array element\n{}", d))
+                }
+                (Type::Object(obj_a), Type::Object(obj_b)) => {
+                    let (members_a, fixed_a) = types.object(obj_a);
+                    let (members_b, fixed_b) = types.object(obj_b);
+                    let mut r = TypeDifference::Mergable;
+                    for member in members_a.keys().chain(members_b.keys()) {
+                        match (members_a.get(member), members_b.get(member)) {
+                            (Some(member_a), Some(member_b)) => {
+                                let d = internal_group_difference(
+                                    types, strings, encountered, *member_a, *member_b
+                                ).map(|d| format!(
+                                    "-> in object member '{}'\n{}", strings.get(*member), d
+                                ));
+                                r = r & d;
+                            }
+                            (Some(_), None) => if *fixed_b {
+                                return TypeDifference::Different(format!(
+                                    "=> object member '{}' is missing", strings.get(*member)
+                                ))
+                            }
+                            (None, Some(_)) => if *fixed_a {
+                                return TypeDifference::Different(format!(
+                                    "=> object member '{}' is missing", strings.get(*member)
+                                ))
+                            }
+                            (None, None) => unreachable!()
+                        }
+                    }
+                    return r;
+                }
+                (Type::ConcreteObject(obj_a), Type::ConcreteObject(obj_b)) => {
+                    let members_a = types.concrete_object(obj_a);
+                    let members_b = types.concrete_object(obj_b);
+                    let mut r = TypeDifference::Mergable;
+                    for member in members_a.iter().map(|v| &v.0)
+                            .chain(members_b.iter().map(|v| &v.0)) {
+                        match (
+                            members_a.iter().find(|v| v.0 == *member).map(|v| &v.1),
+                            members_b.iter().find(|v| v.0 == *member).map(|v| &v.1)
+                        ) {
+                            (Some(member_a), Some(member_b)) => {
+                                let d = internal_group_difference(
+                                    types, strings, encountered, *member_a, *member_b
+                                ).map(|d| format!(
+                                    "-> in object member '{}'\n{}", strings.get(*member), d
+                                ));
+                                r = r & d;
+                            }
+                            (Some(_), None) |
+                            (None, Some(_)) => {}
+                            (None, None) => unreachable!()
+                        }
+                    }
+                    return r;
+                }
+                (Type::Closure(clo_a), Type::Closure(clo_b)) => {
+                    let (params_a, return_a) = types.closure(clo_a);
+                    let (params_b, return_b) = types.closure(clo_b);
+                    let mut r = TypeDifference::Mergable;
+                    if params_a.len() != params_b.len() {
+                        return TypeDifference::Different(format!(
+                            "=> functions take {} and {} argument{}",
+                            params_a.len(), params_b.len(),
+                            if params_b.len() == 1 { "s" } else { "" }
+                        ))
+                    }
+                    for p in 0..params_a.len() {
+                        let d = internal_group_difference(
+                            types, strings, encountered, params_a[p], params_b[p]
+                        ).map(|d| format!(
+                            "-> in {}{} function parameter\n{}", p + 1, match (p + 1) % 10 {
+                                1 => "st", 2 => "nd", 3 => "rd", _ => "th"
+                            }, d
+                        ));
+                        r = r & d;
+                    }
+                    return r & internal_group_difference(
+                        types, strings, encountered, *return_a, *return_b
+                    ).map(|d| format!(
+                        "-> in function return type\n{}", d
+                    ));
+                }
+                (Type::Variants(var_a), Type::Variants(var_b)) => {
+                    let (variants_a, fixed_a) = types.variants(var_a);
+                    let (variants_b, fixed_b) = types.variants(var_b);
+                    let mut r = TypeDifference::Mergable;
+                    for variant in variants_a.keys().chain(variants_b.keys()) {
+                        match (variants_a.get(variant), variants_b.get(variant)) {
+                            (Some(variant_a), Some(variant_b)) => {
+                                let d = internal_group_difference(
+                                    types, strings, encountered, *variant_a, *variant_b
+                                ).map(|d| format!(
+                                    "-> in variant '{}'\n{}", strings.get(*variant), d
+                                ));
+                                r = r & d;
+                            }
+                            (Some(_), None) => if *fixed_b {
+                                return TypeDifference::Different(format!(
+                                    "=> variant '{}' is missing", strings.get(*variant)
+                                ))
+                            }
+                            (None, Some(_)) => if *fixed_a {
+                                return TypeDifference::Different(format!(
+                                    "=> variant '{}' is missing", strings.get(*variant)
+                                ))
+                            }
+                            (None, None) => unreachable!()
+                        }
+                    }
+                    return r;
+                }
+                (a, b) => if discriminant(&a) == discriminant(&b) { TypeDifference::Mergable } else {
+                    TypeDifference::Different(format!("=> {} != {}", display_type_simple(a), display_type_simple(b)))
+                }
+            }
+        }
+        if let TypeDifference::Different(d)
+            = internal_group_difference(self, strings, &mut HashSet::new(), a, b) {
+            Some(d)
+        } else { None }
+    }
+}
+
+enum TypeDifference {
+    Different(String),
+    Recursive,
+    Mergable
+}
+
+impl TypeDifference {
+    fn map<F: Fn(String) -> String>(self, f: F) -> Self {
+        if let TypeDifference::Different(d) = self {
+            TypeDifference::Different((f)(d))
+        } else { self }
+    }
+}
+
+impl std::ops::BitAnd for TypeDifference {
+    type Output = TypeDifference;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (TypeDifference::Different(a), TypeDifference::Different(b))
+                => TypeDifference::Different(if a.len() < b.len() { a } else { b }),
+            (TypeDifference::Different(d), _) | (_, TypeDifference::Different(d))
+                => TypeDifference::Different(d),
+            (TypeDifference::Recursive, _) | (_, TypeDifference::Recursive)
+                => TypeDifference::Recursive, 
+            _ => TypeDifference::Mergable
+        }
+    }
 }

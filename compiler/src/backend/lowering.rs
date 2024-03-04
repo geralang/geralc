@@ -341,6 +341,7 @@ impl IrGenerator {
         ir_symbols: &mut Vec<IrSymbol>,
         constants: &mut ConstantPool
     ) -> Result<usize, Error> {
+        //println!("\nfinding {} with return type {}", path.display(strings), types.display_types(strings, call_return_type));
         let mut exists = false;
         let mut found_variant = 0;
         for symbol in &*ir_symbols {
@@ -356,6 +357,8 @@ impl IrGenerator {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
                 } => {
                     if path != proc_path { continue; }
+                    //println!("existing variant has return type {}", types.display_types(strings, *return_type));
+                    if *proc_variant > 10 { panic!("too many variants"); }
                     found_variant = found_variant.max(*proc_variant + 1);
                     if parameter_types.len() != call_parameter_types.len() { continue; }
                     let mut params_eq = true;
