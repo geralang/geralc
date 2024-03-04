@@ -220,7 +220,16 @@ fn emit_type_predeclaration(
             let object_idx = obj.get_internal_id();
             declaration.push_str("typedef struct ");
             emit_object_name(object_idx, &mut declaration);
-            declaration.push_str(" ");
+            declaration.push_str(" {\n    GeraAllocation* allocation;");
+            for (member_name, member_type) in types.internal_objects()[object_idx].0.clone() {
+                if let Type::Unit = types.group_concrete(member_type) { continue; }
+                declaration.push_str("\n    ");
+                emit_type_indirect(member_type, types, declared_types, type_declarations, &mut declaration);
+                declaration.push_str("* member");
+                declaration.push_str(&member_name.0.to_string());
+                declaration.push_str(";");
+            }
+            declaration.push_str("\n} ");
             emit_object_name(object_idx, &mut declaration);
             declaration.push_str(";\n");
             declaration.push_str("gbool ");
@@ -337,20 +346,6 @@ fn emit_type_declaration(
         }
         Type::Object(obj) => {
             let object_idx = obj.get_internal_id();
-            declaration.push_str("typedef struct ");
-            emit_object_name(object_idx, &mut declaration);
-            declaration.push_str(" {\n    GeraAllocation* allocation;");
-            for (member_name, member_type) in types.internal_objects()[object_idx].0.clone() {
-                if let Type::Unit = types.group_concrete(member_type) { continue; }
-                declaration.push_str("\n    ");
-                emit_type_indirect(member_type, types, declared_types, type_declarations, &mut declaration);
-                declaration.push_str("* member");
-                declaration.push_str(&member_name.0.to_string());
-                declaration.push_str(";");
-            }
-            declaration.push_str("\n} ");
-            emit_object_name(object_idx, &mut declaration);
-            declaration.push_str(";\n");
             declaration.push_str("typedef struct ");
             emit_object_alloc_name(object_idx, &mut declaration);
             declaration.push_str(" {");
