@@ -88,6 +88,11 @@ impl TypeMapping {
 
     fn map(&mut self, group: TypeGroup, types: &mut TypeMap) -> TypeGroup {
         if let Some(g) = self.0.get(&types.group_internal_id(group)) { return *g; }
+        if self.0.values().into_iter()
+            .find(|mapped| types.group_internal_id(**mapped) == types.group_internal_id(group))
+            .is_some() {
+            return group;
+        }
         let new_group = types.insert_group(&[]);
         self.0.insert(types.group_internal_id(group), new_group);
         let new_types = types.group(group).collect::<Vec<Type>>().into_iter()
@@ -341,7 +346,6 @@ impl IrGenerator {
         ir_symbols: &mut Vec<IrSymbol>,
         constants: &mut ConstantPool
     ) -> Result<usize, Error> {
-        //println!("\nfinding {} with return type {}", path.display(strings), types.display_types(strings, call_return_type));
         let mut exists = false;
         let mut found_variant = 0;
         for symbol in &*ir_symbols {
@@ -357,33 +361,27 @@ impl IrGenerator {
                     path: proc_path, variant: proc_variant, parameter_types, return_type,
                 } => {
                     if path != proc_path { continue; }
-                    //println!("existing variant has return type {}", types.display_types(strings, *return_type));
-                    if *proc_variant > 10 { panic!("too many variants"); }
                     found_variant = found_variant.max(*proc_variant + 1);
                     if parameter_types.len() != call_parameter_types.len() { continue; }
                     let mut params_eq = true;
-                    // let mut temp_types = types.clone();
+                    let mut temp_types = types.clone();
                     for param_idx in 0..parameter_types.len() {
-                        if types.groups_eq(
+                        if temp_types.try_merge_groups(
                             call_parameter_types[param_idx], parameter_types[param_idx]
                         ) { continue; }
-                        // if temp_types.try_merge_groups(
-                        //     call_parameter_types[param_idx], parameter_types[param_idx]
-                        // ) { continue; }
                         params_eq = false;
                         break;
                     }
                     if !params_eq { continue; }
-                    // if !temp_types.try_merge_groups(call_return_type, *return_type) { continue; }
-                    if !types.groups_eq(call_return_type, *return_type) { continue; }
+                    if !temp_types.try_merge_groups(call_return_type, *return_type) { continue; }
                     found_variant = *proc_variant;
                     exists = true;
-                    // for param_idx in 0..parameter_types.len() {
-                    //     types.try_merge_groups(
-                    //         call_parameter_types[param_idx], parameter_types[param_idx]
-                    //     );
-                    // }
-                    // types.try_merge_groups(call_return_type, *return_type);
+                    for param_idx in 0..parameter_types.len() {
+                        types.try_merge_groups(
+                            call_parameter_types[param_idx], parameter_types[param_idx]
+                        );
+                    }
+                    types.try_merge_groups(call_return_type, *return_type);
                     break;
                 }
                 _ => {}
@@ -501,7 +499,7 @@ impl IrGenerator {
                 let mut parameters = (HashMap::new(), Vec::new());
                 for param_idx in 0..parameter_types.len() {
                     parameters.0.insert(arguments[param_idx].0, param_idx);
-                    parameters.1.push(type_mapping.map(parameter_types[param_idx], types));
+                    parameters.1.push(parameter_types[param_idx]);
                 }
                 let body = generator.lower_nodes(
                     body, &body_captured.iter().map(|(cn, cv)| (*cn, self.variables[cv.index].1)).collect(),
@@ -512,7 +510,7 @@ impl IrGenerator {
                 let into = into_given_or_alloc!(node.get_types());
                 self.add(IrInstruction::LoadClosure {
                     parameter_types: parameters.1,
-                    return_type: type_mapping.map(return_type, types),
+                    return_type,
                     captured: body_captured,
                     variables: generator.variable_types(),
                     body,
