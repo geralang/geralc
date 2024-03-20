@@ -13,19 +13,6 @@ use std::{process::exit, fs, env, collections::HashMap};
 
 
 fn main() {
-    #[cfg(target_os = "windows")] {
-        use windows::Win32::System::Console;
-        unsafe {
-            let output = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE)
-                .expect("Failed to get console handle");
-            let mut console_mode: Console::CONSOLE_MODE = Default::default();
-            Console::GetConsoleMode(output, &mut console_mode)
-                .expect("Failed to get console mode");
-            console_mode |= Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-            Console::SetConsoleMode(output, console_mode)
-                .expect("Failed to set console mode");
-        }
-    }
     if let Err(errors) = do_compilation() {
         println!("{}", errors);
         exit(1);
@@ -66,8 +53,8 @@ pub fn do_compilation() -> Result<(), String> {
         .last()
         .expect("is required to have one value")
         .clone();
-    let color = args.values(CLI_ARG_DISABLE_COLOR)
-        .is_none();
+    let color = args.values(CLI_ARG_DISABLE_COLOR).is_none()
+        && !cfg!(target_os = "windows");
     let mut files = HashMap::new();
     for file_path in args.free_values() {
         files.insert(
