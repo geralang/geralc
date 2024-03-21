@@ -24,7 +24,7 @@ pub fn generate_c(
     let mut output = String::new();
     let mut external = HashMap::new();
     output.push_str("\n//
-// Generated from Gera source code by gerap.
+// Generated from Gera source code by gerac.
 // See: https://github.com/geralang/gerac
 //\n");
 output.push_str("\n");
