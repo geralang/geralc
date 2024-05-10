@@ -1,12 +1,9 @@
-<img src="logo.png" height="200" align="left"/>
+<p align="center">
+    <img src="logo.png" height="200"/>
+</p>
 
-# `gerac`
-*The compiler for [the Gera programming language](https://github.com/geralang).*
+# `geralc`
+*The initial (legacy) compiler for [the Gera programming language](https://github.com/geralang).*
 
-The Gera compiler is not intended to be used on its own. It is recommended to put `gerac` into the PATH and use `gerap` (the Gera package manager) to build / run code.
+This compiler is the initial implementation of Gera and was replaced by [the current Gera compiler](https://github.com/geralang/gerac).
 
-<br>
-
-## The Future of Gera
-
-Currently, there are a few bugs remaining, which will be fixed in the near future. As of now there is no documentation yet either, which shall be added soon as well.
